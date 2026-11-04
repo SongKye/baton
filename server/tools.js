@@ -28,7 +28,7 @@ export const TOOLS = {
       const r = await runCli(bin, ['auth', 'status'], { timeout: 15000 });
       return /"loggedIn":\s*true/.test(r.stdout);
     },
-    note: { ko: 'Claude Pro/Max 구독 또는 Anthropic API 키가 필요해요.', en: 'Needs a Claude Pro/Max subscription or an Anthropic API key.' },
+    note: { ko: 'Claude 구독, Anthropic API 키, Amazon Bedrock, Google Vertex, LLM 게이트웨이·내 서버 중 하나로 쓸 수 있어요.', en: 'Works with a Claude subscription, an Anthropic API key, Amazon Bedrock, Google Vertex, or an LLM gateway / your own server.' },
   },
   codex: {
     id: 'codex', name: 'Codex', short: 'X', vendor: 'OpenAI',
@@ -41,7 +41,7 @@ export const TOOLS = {
       const r = await runCli(bin, ['login', 'status'], { timeout: 15000 });
       return /logged in/i.test(r.stdout + r.stderr);
     },
-    note: { ko: 'ChatGPT Plus/Pro 계정 또는 OpenAI API 키로 로그인해요.', en: 'Sign in with a ChatGPT Plus/Pro account or an OpenAI API key.' },
+    note: { ko: 'ChatGPT 계정, OpenAI API 키, Azure OpenAI·사내 게이트웨이·내 서버(Responses API) 중 하나로 쓸 수 있어요.', en: 'Works with a ChatGPT account, an OpenAI API key, or Azure OpenAI / a company gateway / your own server (Responses API).' },
   },
   agy: {
     id: 'agy', name: 'Antigravity', short: 'A', vendor: 'Google',
@@ -50,7 +50,7 @@ export const TOOLS = {
     install: { unix: 'curl -fsSL https://antigravity.google/cli/install.sh | bash' },
     login: { args: ['-p=/usage', '--output-format', 'json'], kind: 'browser' }, // any command triggers the Google sign-in flow
     loggedIn: async () => exists(path.join(HOME, '.gemini', 'antigravity-cli', 'antigravity-oauth-token')),
-    note: { ko: 'Google 계정으로 로그인해요. Windows는 WSL에서 쓰는 걸 권장해요.', en: 'Signs in with a Google account. On Windows, WSL is recommended.' },
+    note: { ko: 'Google 계정 전용이에요 (외부 LLM 연결은 지원하지 않아요). Windows는 WSL에서 쓰는 걸 권장해요.', en: 'Google account only (no external LLMs). On Windows, WSL is recommended.' },
   },
   opencode: {
     id: 'opencode', name: 'OpenCode', short: 'O', vendor: 'SST',
@@ -60,7 +60,7 @@ export const TOOLS = {
     login: { args: ['auth', 'login'], kind: 'terminal' }, // interactive provider picker -> terminal
     loggedIn: async () => exists(path.join(XDG_DATA, 'opencode', 'auth.json')),
     optionalLogin: true,
-    note: { ko: '무료 모델은 로그인 없이 바로 쓸 수 있어요. 다른 모델은 공급자 키를 연결해요.', en: 'Free models work without signing in; connect a provider key for others.' },
+    note: { ko: '무료 모델은 로그인 없이 바로 쓸 수 있어요. Ollama·vLLM 같은 OpenAI 호환 서버도 연결할 수 있어서 자체 서빙 모델에 가장 잘 맞아요.', en: 'Free models work without signing in. Also connects to any OpenAI-compatible server (Ollama, vLLM…) — the best fit for self-hosted models.' },
   },
   cursor: {
     id: 'cursor', name: 'Cursor', short: 'U', vendor: 'Cursor',
@@ -72,7 +72,7 @@ export const TOOLS = {
       const r = await runCli(bin, ['status'], { timeout: 15000 });
       return /logged in|authenticated/i.test(r.stdout + r.stderr) && !/not logged in|not authenticated/i.test(r.stdout + r.stderr);
     },
-    note: { ko: 'Cursor 계정이 필요해요.', en: 'Needs a Cursor account.' },
+    note: { ko: 'Cursor 계정 전용이에요 (외부 LLM 연결은 지원하지 않아요).', en: 'Cursor account only (no external LLMs).' },
   },
 };
 

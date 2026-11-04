@@ -24,6 +24,7 @@ import { toolsMeta, binFor, TOOL_IDS } from './tools.js';
 import { OS_NAME, openBrowser } from './platform.js';
 import { tr, lang } from './i18n.js';
 import { providersSummary, resetProviderCache } from './providers.js';
+import { connect, testConnection } from './connect.js';
 import crypto from 'node:crypto';
 import { ensureBrief, briefPending } from './brief.js';
 import { dozingProjects, sendNudge, startNudgeScheduler } from './nudge.js';
@@ -82,6 +83,8 @@ function resolveCwd(p) {
   return abs;
 }
 
+const VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return '?'; } })();
+
 // ---------- routes ----------
 const routes = [];
 const route = (method, pattern, fn) => routes.push({ method, re: new RegExp('^' + pattern.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$'), fn });
@@ -95,6 +98,7 @@ route('GET', '/api/state', async () => ({
   home: shortHome(HOME),
   tools: toolsMeta().map((t) => ({ ...t, installed: Boolean(binFor(t.id)) })),
   defaultCwd: fs.existsSync(path.join(HOME, 'workspace')) ? '~/workspace' : '~',
+  version: VERSION,
   os: OS_NAME,
 }));
 
@@ -148,6 +152,17 @@ route('POST', '/api/env', async (req) => {
   store.setKV('extra_env', next);
   resetProviderCache();
   return { ok: true, keys: Object.keys(next), providers: await providersSummary() };
+});
+
+// ---------- connect without a subscription (API keys, Bedrock, Vertex, gateways, own servers) ----------
+route('POST', '/api/setup/connect', async (req) => {
+  const b = await body(req);
+  try { return { ok: true, ...(await connect(String(b.tool), String(b.kind), b.fields || {})), providers: await providersSummary() }; }
+  catch (e) { return [400, { error: e.message }]; }
+});
+route('POST', '/api/setup/test', async (req) => {
+  const b = await body(req);
+  try { return await testConnection(String(b.tool)); } catch (e) { return [400, { error: e.message }]; }
 });
 
 // ---------- setup / onboarding ----------
@@ -569,6 +584,7 @@ server.listen(PORT, HOST, async () => {
   const snap = await getSnapshot(0);
   console.log(`[baton] indexed ${snap.sessions.length} sessions in ${Date.now() - t}ms`);
   providersSummary().catch(() => {}); // warm the provider cache (model list, limits)
+  if (process.platform === 'win32') setTimeout(() => listPorts().catch(() => {}), 3000).unref(); // first PowerShell start is slow (~7 s)
   if (envInfo.imported.length || envInfo.extra.length) console.log(`[baton] env: ${envInfo.imported.length} vars from ${envInfo.shell || 'shell'}, ${envInfo.extra.length} from settings`);
   startNudgeScheduler();
   startWatcher();

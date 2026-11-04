@@ -5,6 +5,8 @@ import { getBrief, saveBrief, getSettings } from './store.js';
 import { oneShot } from './runner.js';
 import { DATA_DIR, clip, oneLine, shortHome } from './util.js';
 import { tr, lang } from './i18n.js';
+import { binFor, TOOL_IDS } from './tools.js';
+import { claudeProvider, codexProvider } from './providers.js';
 
 const inflight = new Map();
 
@@ -41,6 +43,20 @@ async function buildContext(root) {
     for (const r of replies) parts.push(`> ${clip(oneLine(r.text), 900)}`);
   }
   return { text: parts.join('\n'), sessions };
+}
+
+/** The configured summary tool/model, falling back to something that works on this setup. */
+async function briefTarget(st) {
+  let tool = st.briefTool;
+  if (!binFor(tool)) tool = TOOL_IDS.find((id) => binFor(id)) || tool;
+  let model = tool === st.briefTool ? st.briefModel : '';
+  if (tool === 'claude' && ['haiku', 'sonnet', 'opus'].includes(model)) {
+    // on gateways / self-hosted servers an alias like "haiku" may not exist — use the configured model
+    const p = await claudeProvider().catch(() => null);
+    if (p && (p.kind === 'gateway' || p.kind === 'apikey') && !p.models?.[model]) model = '';
+  }
+  if (tool === 'codex' && codexProvider().kind === 'custom') model = '';
+  return { tool, model };
 }
 
 const PROMPT = (ctx, language) => `You are a project-manager assistant for a "vibe coding" developer who runs many projects in parallel with AI coding agents (Claude Code, Codex, Antigravity, OpenCode, Cursor) and often forgets where they left off.
@@ -93,7 +109,8 @@ export async function ensureBrief(project, { force = false } = {}) {
   const p = (async () => {
     const { text } = await buildContext(project.id);
     const st = getSettings();
-    const out = await oneShot({ tool: st.briefTool, model: st.briefModel, prompt: PROMPT(clip(text, 40000), lang() === 'ko' ? 'Korean' : 'English'), cwd: DATA_DIR });
+    const { tool: briefTool, model: briefModel } = await briefTarget(st);
+    const out = await oneShot({ tool: briefTool, model: briefModel, prompt: PROMPT(clip(text, 40000), lang() === 'ko' ? 'Korean' : 'English'), cwd: DATA_DIR });
     const brief = parseJson(out);
     saveBrief(project.id, fp, brief);
     return getBrief(project.id);

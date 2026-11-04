@@ -106,6 +106,13 @@ function codexCatalog() {
     cfgModel = cfg.match(/^model\s*=\s*"([^"]+)"/m)?.[1] || null;
     cfgEffort = cfg.match(/^model_reasoning_effort\s*=\s*"([^"]+)"/m)?.[1] || null;
   } catch { /* ignore */ }
+  const prov = codexProvider();
+  if (prov.kind === 'custom') {
+    return {
+      models: [{ id: '', label: tr('기본값 · {model}', { model: cfgModel || prov.label }), short: cfgModel || tr('기본'), desc: `${prov.label}${prov.baseUrl ? ` · ${prov.baseUrl}` : ''}` }],
+      efforts: ['', 'minimal', 'low', 'medium', 'high'], defaults: { model: cfgModel, effort: cfgEffort }, provider: prov.label, freeform: true,
+    };
+  }
   const j = readJson(path.join(CODEX_HOME, 'models_cache.json')) || {};
   const list = (j.models || []).filter((m) => m.slug && !/auto-review/.test(m.slug)).sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
   const name = (slug) => list.find((m) => m.slug === slug)?.display_name || slug;

@@ -11,7 +11,7 @@ if (!keys) {
 // Apple's push service rejects `mailto:…@localhost` subjects (403 BadJwtToken); use Baton's own https origin.
 function vapidSubject() {
   const o = getKV('public_origin', null);
-  return o && /^https:\/\//.test(o) ? o : 'https://baton.app';
+  return o && /^https:\/\//.test(o) ? o : 'https://github.com/SongKye/baton';
 }
 export function setPublicOrigin(origin) {
   if (!origin || !/^https:\/\//.test(origin) || getKV('public_origin', null) === origin) return;

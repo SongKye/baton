@@ -21,10 +21,15 @@ const PS = ['-NoProfile', '-NonInteractive', '-Command'];
 async function listeners() {
   const rows = [];
   if (IS_WIN) {
-    const out = await sh('powershell.exe', [...PS, 'Get-NetTCPConnection -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess | ConvertTo-Json -Compress'], 12000);
-    let j = [];
-    try { j = [].concat(JSON.parse(out || '[]')); } catch { /* none */ }
-    for (const r of j) rows.push({ port: Number(r.LocalPort), addr: String(r.LocalAddress), pid: Number(r.OwningProcess) || null });
+    // ONE PowerShell call for sockets + every process (each PowerShell start costs 1-2 s)
+    const script = '$c = Get-NetTCPConnection -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess; '
+      + '$p = Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine,CreationDate; '
+      + '@{ conns = @($c); procs = @($p) } | ConvertTo-Json -Compress -Depth 3';
+    const out = await sh('powershell.exe', [...PS, script], 20000);
+    let j = {};
+    try { j = JSON.parse(out || '{}'); } catch { /* none */ }
+    for (const r of [].concat(j.conns || [])) rows.push({ port: Number(r.LocalPort), addr: String(r.LocalAddress), pid: Number(r.OwningProcess) || null });
+    winProcCache = parseWinProcs(j.procs);
     return rows;
   }
   if (IS_MAC) {
@@ -62,6 +67,17 @@ async function listeners() {
 }
 
 // ---------------------------------------------------------------- per-OS: process details
+let winProcCache = new Map();
+function parseWinProcs(list) {
+  const map = new Map();
+  for (const r of [].concat(list || [])) {
+    const created = String(r.CreationDate || '').match(/\d{10,}/);
+    const cmd = r.CommandLine || null;
+    const scriptPath = cmd && (cmd.match(/"?([A-Za-z]:\\[^"]+?\\)[^"\\]+\.(?:m?js|ts|py)"?/) || [])[1];
+    map.set(Number(r.ProcessId), { pid: Number(r.ProcessId), ppid: Number(r.ParentProcessId), cmd, cwd: scriptPath ? scriptPath.replace(/\\$/, '') : null, startedAt: created ? Number(created[0]) : null, mine: Boolean(cmd) });
+  }
+  return map;
+}
 async function winProcs(pids) {
   if (!pids.length) return new Map();
   const filter = pids.map((p) => `ProcessId=${Number(p)}`).join(' or ');
@@ -173,12 +189,7 @@ export async function listPorts() {
   const procs = new Map();
   const want = new Set([...byKey.values()].map((r) => r.pid).filter(Boolean));
   if (IS_WIN) {
-    let batch = [...want];
-    for (let depth = 0; depth < 6 && batch.length; depth++) { // walk parents a few levels for agent attribution
-      const got = await winProcs(batch.filter((p) => !procs.has(p)));
-      for (const [k, v] of got) procs.set(k, v);
-      batch = [...got.values()].map((v) => v.ppid).filter((p) => p > 4 && !procs.has(p));
-    }
+    for (const [k, v] of winProcCache) procs.set(k, v); // already fetched together with the sockets
   } else {
     for (const pid of want) {
       let p = pid;
@@ -196,9 +207,10 @@ export async function listPorts() {
   for (const r of byKey.values()) {
     if (r.addrs.every((a) => ts.ips.includes(a))) continue; // tailscale's own serve listeners
     const p = r.pid ? procs.get(r.pid) : null;
-    const mine = IS_WIN ? Boolean(p?.mine) : p?.uid === MY_UID;
+    // Windows: anything running from C:\Windows (svchost, lsass, spoolsv…) is the system, not "my server"
+    const mine = IS_WIN ? Boolean(p?.mine) && !/^"?[A-Za-z]:\\Windows\\/i.test(p?.cmd || '') : p?.uid === MY_UID;
     const local = r.addrs.every((a) => a === '127.0.0.1' || a === '::1' || a === 'localhost');
-    const page = mine || !r.pid ? await pageTitle(r.port) : null;
+    const page = mine || !r.pid ? pageTitle(r.port) : null; // resolved below, all ports in parallel
     const root = p?.cwd ? projectRoot(p.cwd) : null;
     const served = ts.serve[r.port] || [];
     out.push({
@@ -216,6 +228,7 @@ export async function listPorts() {
       page,
     });
   }
+  await Promise.all(out.map(async (o) => { o.page = await o.page; }));
   out.sort((a, b) => Number(b.mine) - Number(a.mine) || a.port - b.port);
   return { ports: out, host: ts.host };
 }

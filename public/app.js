@@ -988,7 +988,7 @@ async function viewSettings() {
       <a class="setting" href="#/usage"><div class="l"><b>${t('사용량 · 한도')}</b><span>${t('CLI별 남은 한도와 토큰 사용량')}</span></div><span class="muted">›</span></a>
       <div class="setting"><div class="l"><b>${t('목록 새로고침')}</b><span>${t('세션 파일을 다시 읽어요')}</span></div><button class="btn sm" id="reindex">${ICON.refresh}</button></div>
     </div></div>
-    <p class="small muted" style="text-align:center;margin-top:24px">${t('Baton · 바이브코딩 이어달리기 🏃‍♂️')}<br>${esc(G.state?.home || '')}</p>`;
+    <p class="small muted" style="text-align:center;margin-top:24px">${t('Baton · 바이브코딩 이어달리기 🏃‍♂️')} · v${esc(G.state?.version || '')}<br>${esc(G.state?.home || '')} · <a href="https://github.com/SongKye/baton/releases" target="_blank" rel="noopener">${t('새 버전 확인')}</a></p>`;
   $$('[data-k]', v).forEach((el) => (el.onchange = async () => {
     const k = el.dataset.k;
     const val = el.type === 'checkbox' ? el.checked : el.dataset.num !== undefined ? Number(el.value) : el.value;
@@ -1398,6 +1398,8 @@ async function viewSetup() {
     const btns = [];
     if (!x.installed && x.canInstall) btns.push(`<button class="btn sm primary" data-job="install" data-tool="${x.id}">${t('원클릭 설치')}</button>`);
     if (x.installed && !x.loggedIn && x.loginKind !== 'terminal') btns.push(`<button class="btn sm ${state === 'login' ? 'primary' : ''}" data-job="login" data-tool="${x.id}">${t('로그인')}</button>`);
+    if (x.installed && CONNECT[x.id]) btns.push(`<button class="btn sm" data-connect="${x.id}">${t('API·회사·내 서버로 연결')}</button>`);
+    if (x.installed && (x.loggedIn || x.optionalLogin)) btns.push(`<button class="btn sm ghost" data-test="${x.id}">${t('연결 테스트')}</button>`);
     btns.push(`<a class="btn sm ghost" href="${esc(x.docs)}" target="_blank" rel="noopener">${t('문서')} ↗</a>`);
     return `<div class="card setup-tool" data-tool-card="${x.id}">
       <div class="sh"><span class="tool-avatar ${x.id}">${esc(TOOL[x.id]?.short || x.name[0])}</span>
@@ -1452,6 +1454,8 @@ async function viewSetup() {
   $('#slang').onchange = async (e) => { await api('/api/settings', { body: { lang: e.target.value } }); location.reload(); };
   $('#sdone').onclick = async () => { await api('/api/settings', { body: { setupDone: true } }); await loadState(); location.hash = '#/'; };
   $$('code.copy', v).forEach((c) => (c.onclick = () => { navigator.clipboard?.writeText(c.dataset.copy); toast(t('복사했어요')); }));
+  $$('[data-connect]', v).forEach((b) => (b.onclick = () => connectSheet(b.dataset.connect, () => setTimeout(render, 400))));
+  $$('[data-test]', v).forEach((b) => (b.onclick = async () => { b.disabled = true; await testConnectionUi(b.dataset.test); b.disabled = false; }));
   $$('[data-job]', v).forEach((b) => (b.onclick = async () => {
     const action = b.dataset.job, tool = b.dataset.tool || null;
     const box = tool ? $(`[data-tool-card="${tool}"] .jobbox`, v) : $(`.jobbox[data-for="${action.replace(/-(on|off)$/, '')}"]`, v);
@@ -1679,6 +1683,71 @@ function handoffBanners(session, links, lim) {
       <button class="btn sm" data-newhere>${t('새 세션')}</button><button class="btn sm" data-handoff>${t('이어가기')}</button></div>`);
   }
   return out.join('');
+}
+
+// ---------------------------------------------------------------- CONNECT (API keys, Bedrock, Vertex, gateways, own servers)
+const CONNECT = {
+  claude: [
+    { kind: 'apikey', label: () => t('Anthropic API 키'), desc: () => t('console.anthropic.com에서 만든 키로 사용량만큼 결제'),
+      fields: [{ k: 'apiKey', label: 'API key', type: 'password', ph: 'sk-ant-…' }] },
+    { kind: 'bedrock', label: () => 'Amazon Bedrock', desc: () => t('회사 AWS 계정으로. 이 PC에 AWS 자격 증명(aws configure / SSO)이 있어야 해요'),
+      fields: [{ k: 'region', label: 'AWS region', ph: 'us-east-1', value: 'us-east-1' }, { k: 'profile', label: t('AWS 프로필 (선택)'), ph: 'default' }, { k: 'model', label: t('모델 ID 또는 추론 프로필 (선택)'), ph: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' }] },
+    { kind: 'vertex', label: () => 'Google Vertex AI', desc: () => t('회사 GCP 계정으로. gcloud auth application-default login이 되어 있어야 해요'),
+      fields: [{ k: 'project', label: 'GCP project id', ph: 'my-project' }, { k: 'region', label: 'Region', ph: 'us-east5', value: 'us-east5' }, { k: 'model', label: t('모델 ID (선택)'), ph: 'claude-sonnet-4-5@20250929' }] },
+    { kind: 'gateway', label: () => t('LLM 게이트웨이 · 내 서버'), desc: () => t('Anthropic Messages API(/v1/messages)를 지원하는 주소. LiteLLM 등으로 사내 모델·자체 서빙 모델을 연결할 때'),
+      fields: [{ k: 'baseUrl', label: 'Base URL', ph: 'https://llm.company.com' }, { k: 'apiKey', label: t('토큰 (선택)'), type: 'password' }, { k: 'model', label: t('모델 이름'), ph: 'my-model' }] },
+    { kind: 'subscription', label: () => t('Claude 구독으로 되돌리기'), desc: () => t('위 설정을 지우고 claude.ai 로그인으로 (필요하면 로그인 버튼을 눌러주세요)'), fields: [] },
+  ],
+  codex: [
+    { kind: 'apikey', label: () => t('OpenAI API 키'), desc: () => t('platform.openai.com 키로 사용량만큼 결제 (codex login --with-api-key)'),
+      fields: [{ k: 'apiKey', label: 'API key', type: 'password', ph: 'sk-…' }] },
+    { kind: 'server', label: () => t('내 서버 · 사내 게이트웨이 · Azure OpenAI'), desc: () => t('OpenAI Responses API(/v1/responses)를 지원해야 해요. chat 전용 서버는 LiteLLM 같은 프록시를 앞에 두세요'),
+      fields: [{ k: 'name', label: t('이름'), ph: 'Company LLM', value: 'Custom server' }, { k: 'baseUrl', label: 'Base URL', ph: 'https://llm.company.com/v1' }, { k: 'apiKey', label: t('API 키 (선택)'), type: 'password' }, { k: 'model', label: t('모델 이름'), ph: 'gpt-oss-120b' }] },
+    { kind: 'subscription', label: () => t('ChatGPT 계정으로 되돌리기'), desc: () => t('Baton이 추가한 사용자 지정 서버 설정을 끄고 기본(OpenAI)으로'), fields: [] },
+  ],
+  opencode: [
+    { kind: 'server', label: () => t('OpenAI 호환 서버 (Ollama·vLLM·LM Studio 등)'), desc: () => t('chat completions(/v1/chat/completions)만 지원해도 돼요. 자체 서빙 모델에 가장 잘 맞아요'),
+      fields: [{ k: 'name', label: t('이름'), ph: 'Local LLM', value: 'Local LLM' }, { k: 'baseUrl', label: 'Base URL', ph: 'http://localhost:11434/v1' }, { k: 'apiKey', label: t('API 키 (선택)'), type: 'password' }, { k: 'model', label: t('모델 이름'), ph: 'qwen2.5-coder:32b' }] },
+  ],
+};
+
+async function connectSheet(tool, after) {
+  const opts = CONNECT[tool];
+  if (!opts) return;
+  const kind = await pick(t('{name}를 어떻게 연결할까요?', { name: TOOL[tool].name }), opts.map((o) => ({ value: o.kind, label: o.label(), desc: o.desc() })));
+  if (!kind) return;
+  const o = opts.find((x) => x.kind === kind);
+  let fields = {};
+  if (o.fields.length) {
+    fields = await sheet({
+      title: o.label(),
+      body: `<div class="pwform connect-form"><p class="small muted">${esc(o.desc())}</p>${o.fields.map((f) => `<label><span>${esc(f.label)}</span>
+        <input data-f="${f.k}" type="${f.type || 'text'}" placeholder="${esc(f.ph || '')}" value="${esc(f.value || '')}" autocomplete="off" spellcheck="false"></label>`).join('')}
+        <p class="small muted">${t('CLI 자체 설정 파일에 저장돼서 터미널에서도 똑같이 동작해요. 기존 파일은 백업해둬요.')}</p></div>`,
+      footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('연결')}</button>`,
+      onMount: (el, close) => {
+        $('[data-x]', el).onclick = () => close(undefined);
+        $('[data-ok]', el).onclick = () => close(Object.fromEntries($$('[data-f]', el).map((i) => [i.dataset.f, i.value])));
+      },
+    });
+    if (!fields) return;
+  }
+  try {
+    const r = await api('/api/setup/connect', { body: { tool, kind, fields } });
+    toast(t('저장했어요: {file}', { file: r.file }));
+  } catch (e) { toast(e.message, true); return; }
+  await testConnectionUi(tool);
+  after?.();
+}
+
+async function testConnectionUi(tool) {
+  toast(t('{name} 연결을 확인하는 중…', { name: TOOL[tool].name }));
+  try {
+    const r = await api('/api/setup/test', { body: { tool } });
+    if (r.ok) toast(t('✅ 연결됐어요 ({s}초) · 답: {reply}', { s: (r.ms / 1000).toFixed(1), reply: r.reply.slice(0, 40) }));
+    else toast(t('⚠️ 연결 실패: {e}', { e: r.error.slice(0, 160) }), true);
+    return r;
+  } catch (e) { toast(e.message, true); return null; }
 }
 
 // ---------------------------------------------------------------- boot
