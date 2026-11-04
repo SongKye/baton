@@ -196,9 +196,10 @@ export async function listPorts() {
   for (const r of byKey.values()) {
     if (r.addrs.every((a) => ts.ips.includes(a))) continue; // tailscale's own serve listeners
     const p = r.pid ? procs.get(r.pid) : null;
-    const mine = IS_WIN ? Boolean(p?.mine) : p?.uid === MY_UID;
+    // Windows: anything running from C:\Windows (svchost, lsass, spoolsv…) is the system, not "my server"
+    const mine = IS_WIN ? Boolean(p?.mine) && !/^"?[A-Za-z]:\\Windows\\/i.test(p?.cmd || '') : p?.uid === MY_UID;
     const local = r.addrs.every((a) => a === '127.0.0.1' || a === '::1' || a === 'localhost');
-    const page = mine || !r.pid ? await pageTitle(r.port) : null;
+    const page = mine || !r.pid ? pageTitle(r.port) : null; // resolved below, all ports in parallel
     const root = p?.cwd ? projectRoot(p.cwd) : null;
     const served = ts.serve[r.port] || [];
     out.push({
@@ -216,6 +217,7 @@ export async function listPorts() {
       page,
     });
   }
+  await Promise.all(out.map(async (o) => { o.page = await o.page; }));
   out.sort((a, b) => Number(b.mine) - Number(a.mine) || a.port - b.port);
   return { ports: out, host: ts.host };
 }
