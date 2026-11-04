@@ -73,6 +73,7 @@ async function api(path, opts = {}) {
   const r = await fetch(path, init);
   let j = null;
   try { j = await r.json(); } catch { /* empty */ }
+  if (r.status === 401 && j?.code === 'AUTH' && !G.needLogin) { G.needLogin = true; viewLogin(); }
   if (!r.ok) { const e = new Error(j?.error || t('요청 실패 ({code})', { code: r.status })); e.data = j; e.status = r.status; throw e; }
   return j;
 }
@@ -113,10 +114,10 @@ function pick(title, options, current) {
   const body = options.map((o, i) => `<button class="opt-row ${o.danger ? 'danger' : ''}" data-i="${i}"><div class="l"><b>${esc(o.label)}</b>${o.desc ? `<span>${esc(o.desc)}</span>` : ''}</div>${current !== undefined && o.value === current ? `<span class="check">${ICON.check}</span>` : ''}</button>`).join('');
   return sheet({ title, body, onMount: (el, close) => $$('.opt-row', el).forEach((b) => (b.onclick = () => close(options[+b.dataset.i].value))) });
 }
-function promptSheet(title, value = '', { multiline = false, placeholder = '' } = {}) {
+function promptSheet(title, value = '', { multiline = false, placeholder = '', okLabel = '' } = {}) {
   const field = multiline ? `<textarea placeholder="${esc(placeholder)}">${esc(value)}</textarea>` : `<input type="text" value="${esc(value)}" placeholder="${esc(placeholder)}">`;
   return sheet({
-    title, body: `<div style="padding:0 8px">${field}</div>`, footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('저장')}</button>`,
+    title, body: `<div style="padding:0 8px">${field}</div>`, footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${okLabel || t('저장')}</button>`,
     onMount: (el, close) => {
       const f = $('input,textarea', el); setTimeout(() => f.focus(), 250);
       $('[data-x]', el).onclick = () => close(undefined);
@@ -180,6 +181,7 @@ const routes = [
 ];
 
 async function render() {
+  if (G.needLogin) return viewLogin();
   const raw = location.hash || '#/';
   if (G.skipHash && G.skipHash === raw) { G.skipHash = null; return; }
   const [hash, qs] = raw.split('?');
@@ -229,7 +231,7 @@ function sessionRow(s, { showProject = true } = {}) {
       ${preview ? `<div class="p">${esc(preview)}</div>` : ''}
     </div></a>`;
 }
-function toolDots(tools) { return `<span class="tooldots">${Object.keys(tools || {}).map((t) => `<i class="${t}"></i>`).join('')}</span>`; }
+function toolDots(tools) { return `<span class="tooldots">${Object.keys(tools || {}).map((k) => `<i class="${k}"></i>`).join('')}</span>`; }
 function projectRow(p) {
   const line = p.brief?.oneLiner || p.lastSession?.title || '';
   return `<a class="card prow" href="#/p/${encodeURIComponent(p.id)}">
@@ -474,8 +476,8 @@ async function viewSessions() {
   };
   G.cleanup = () => document.body.classList.remove('selecting');
   const reload = async () => { store.set('sfilter', f); drawChips(); offset = 0; await fetchPage(); draw(); };
-  let t;
-  $('#sq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { q = e.target.value.trim(); sessionStorage.setItem('sq', q); reload(); }, 220); };
+  let searchTimer;
+  $('#sq').oninput = (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { q = e.target.value.trim(); sessionStorage.setItem('sq', q); reload(); }, 220); };
   await reload();
 }
 
@@ -499,6 +501,7 @@ async function sessionMenuFromHref(href) {
 async function sessionMenu(s, after, { onTrashed } = {}) {
   const act = await pick(s.title, [
     { value: 'notify', label: s.notify ? `${t('🔔 끝나면 알림')} · ${s.notify === 2 ? t('매번') : t('한 번')}` : t('🔔 끝나면 폰으로 알림'), desc: t('PC 터미널에서 돌리는 중이어도 알려줘요') },
+    { value: 'handoff', label: t('🔀 다른 CLI로 이어가기'), desc: t('토큰이 부족할 때 다른 도구가 이 세션을 이어받아요') },
     { value: 'pin', label: s.pinned ? t('고정 해제') : t('📌 고정') },
     { value: 'rename', label: t('이름 바꾸기') },
     { value: 'project', label: t('프로젝트 보기'), desc: shortPath(s.project || s.cwd) },
@@ -511,6 +514,7 @@ async function sessionMenu(s, after, { onTrashed } = {}) {
   else if (act === 'rename') { const n = await promptSheet(t('세션 이름 (Baton에서만 보여요)'), s.title); if (n === undefined) return; await meta({ title: n || null }); }
   else if (act === 'project') { if (s.project) location.hash = `#/p/${encodeURIComponent(s.project)}`; return; }
   else if (act === 'notify') { await notifyMenu(s); }
+  else if (act === 'handoff') { const d = await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}?limit=1&seen=0`).catch(() => ({})); await handoffSheet(s, d.links); return; }
   else if (act === 'trash') { if (await trashOne(s)) { if (onTrashed) onTrashed(); else after?.(); } return; }
   else return;
   after?.();
@@ -548,7 +552,12 @@ function msgsHtml(msgs) {
   return groupMessages(msgs).map((g) => {
     if (g.kind === 'tools') return toolsHtml(g.items);
     const m = g.m;
-    if (m.role === 'user') return `<div class="msg-user">${esc(m.text)}${m.images ? `<div class="imgs">${t('🖼 사진 {n}장', { n: m.images })}</div>` : ''}</div>`;
+    if (m.role === 'user') {
+      // Baton handoff prompts: show a compact marker + the user's actual request
+      const h = String(m.text).match(/^(?:You are continuing a session handed over from (.+?) \(|While you were paused, this work continued in another agent \((.+?)\))[\s\S]*?`([^`]+)`[\s\S]*?User's request: ([\s\S]*)$/);
+      if (h) return `<div class="handoff-mark">🔀 ${t('{name}에서 넘겨받음', { name: esc(h[1] || h[2]) })} · <code>${esc(h[3])}</code></div><div class="msg-user">${esc(h[4].trim())}</div>`;
+      return `<div class="msg-user">${esc(m.text)}${m.images ? `<div class="imgs">${t('🖼 사진 {n}장', { n: m.images })}</div>` : ''}</div>`;
+    }
     if (m.role === 'assistant') return `<div class="msg-ai">${md(m.text)}</div>`;
     return `<div class="msg-sys">${esc(m.text)}</div>`;
   }).join('');
@@ -764,18 +773,23 @@ async function viewChat([tool, id]) {
   const cleanVV = setupViewport();
   const key = `${tool}:${id}`;
   chatLayout({ backHref: '#/', title: t('불러오는 중…'), subHtml: `<span class="tool-badge ${tool}">${TOOL[tool].name}</span>`, tool, extraHead: `<button class="icon-btn" id="cmore">${ICON.more}</button>` });
-  let live = null, session = null, start = 0, busy = false;
+  let live = null, session = null, start = 0, busy = false, links = { from: [], to: [] };
   const msgsEl = $('#msgs'), scroll = $('#scroll');
   G.cleanup = () => { live?.close(); cleanVV(); };
 
   const load = async ({ keepScroll = false } = {}) => {
     const d = await api(`/api/sessions/${tool}/${encodeURIComponent(id)}`);
-    session = d.session; start = d.start;
+    session = d.session; start = d.start; links = d.links || links;
     $('#ctitle').textContent = session.title;
     $('#csub').innerHTML = `<span class="tool-badge ${tool}">${TOOL[tool].name}</span><span>${esc(projectName(session.project || session.cwd))}</span>${session.model ? `<span>· ${esc(session.model)}</span>` : ''}${session.notify ? `<span class="flag bell">${t('🔔 끝나면 알림')}</span>` : ''}`;
     $('#back').setAttribute('href', session.project ? `#/p/${encodeURIComponent(session.project)}` : '#/sessions');
     const banner = session.terminal ? `<div class="banner warn" style="margin-bottom:4px">${t('⚠️ 이 세션은 PC 터미널에서도 열려 있어요. 여기서 보내면 기록이 갈라질 수 있으니 PC 쪽이 쉬고 있을 때 보내세요.')}</div>` : '';
-    msgsEl.innerHTML = `${start > 0 ? `<button class="btn sm ghost load-older" id="older">${t('이전 대화 더 보기')}</button>` : ''}${banner}${msgsHtml(d.messages)}`;
+    msgsEl.innerHTML = `${start > 0 ? `<button class="btn sm ghost load-older" id="older">${t('이전 대화 더 보기')}</button>` : ''}${banner}<div id="hobanners"></div>${msgsHtml(d.messages)}`;
+    api('/api/limits').catch(() => ({})).then((lim) => {
+      const hb = $('#hobanners'); if (!hb) return;
+      hb.innerHTML = handoffBanners(session, links, lim);
+      $$('[data-handoff]', hb).forEach((b) => (b.onclick = () => handoffSheet(session, links)));
+    });
     if (!d.messages.length) msgsEl.insertAdjacentHTML('beforeend', `<div class="empty">${t('표시할 대화가 없어요')}</div>`);
     const older = $('#older');
     if (older) older.onclick = async () => {
@@ -798,7 +812,11 @@ async function viewChat([tool, id]) {
         live = null; busy = false; comp.setBusy(false);
         await load({ keepScroll: true });
         scroll.scrollTop = scroll.scrollHeight;
-        if (ev.denied?.length) showDenied(ev.denied);
+        if (ev.limited) {
+          msgsEl.insertAdjacentHTML('beforeend', `<div class="done-card denied"><div>⏳ ${t('{name} 사용 한도에 걸린 것 같아요. 다른 CLI가 이 세션을 이어받아 계속할 수 있어요.', { name: TOOL[tool].name })}</div>
+            <div class="row"><button class="btn sm primary" data-handoff-now>${t('다른 CLI로 이어가기')}</button></div></div>`);
+          $$('[data-handoff-now]', msgsEl).forEach((b) => (b.onclick = () => handoffSheet(session, links, { reason: t('한도에 걸렸어요. 어디서 이어갈까요?') })));
+        } else if (ev.denied?.length) showDenied(ev.denied);
         else if (ev.ok === false && ev.error) msgsEl.insertAdjacentHTML('beforeend', `<div class="done-card err">⚠️ ${esc(ev.error)}</div>`);
         loadState();
       },
@@ -872,9 +890,13 @@ async function viewNew(_, params) {
         ({ run } = await api('/api/run', { body: { ...body, mkdir: true } }));
       } else { toast(e.message, true); return false; }
     }
+    showLive(run, text, imgs);
+    return true;
+  };
+  const showLive = (run, text, imgs = []) => {
     $('.newbar')?.remove();
     const msgs = $('#msgs');
-    msgs.innerHTML = userBubble(text, imgs);
+    msgs.innerHTML = (params.get('from') ? `<div class="banner link">↩ ${t('{name} 세션을 이어받는 중', { name: TOOL[params.get('from').split(':')[0]]?.name || '' })}</div>` : '') + userBubble(text, imgs);
     $('#ctitle').textContent = text.slice(0, 60);
     $('#csub').innerHTML = `<span class="tool-badge ${tool}">${TOOL[tool].name}</span><span>${esc(projectName(cwd))}</span>`;
     let sid = null;
@@ -888,10 +910,10 @@ async function viewNew(_, params) {
     });
     G.cleanup = () => { live.close(); cleanVV(); };
     loadState();
-    return true;
   };
   G.cleanup = cleanVV;
   render2();
+  if (params.get('attach')) showLive({ id: params.get('attach') }, params.get('label') || t('이어서 진행해줘'));
 }
 
 // ---------------------------------------------------------------- SETTINGS
@@ -929,6 +951,7 @@ async function viewSettings() {
       <a class="setting" href="#/setup"><div class="l"><b>🚀 ${t('시작하기 · 도구 설치/연동')}</b><span>${t('Claude Code·Codex·Antigravity·OpenCode·Cursor 설치, 로그인, 폰 연결, 자동 시작')}</span></div><span class="muted">›</span></a>
       <div class="setting"><div class="l"><b>Language · 언어</b></div><select data-k="lang" data-reload><option value="en" ${s.lang !== 'ko' ? 'selected' : ''}>English</option><option value="ko" ${s.lang === 'ko' ? 'selected' : ''}>한국어</option></select></div>
     </div></div>
+    <div class="section"><div class="section-h"><h2>🔒 ${t('보안')}</h2></div><div class="card" id="secbox"><div class="skeleton" style="height:60px;margin:14px"></div></div></div>
     <div class="section"><div class="section-h"><h2>${t('알림')}</h2></div><div class="card">
       ${!ps.supported || (isIOS && !standalone) ? `<div class="setting"><div class="l"><b>${t('홈 화면에 추가해야 알림을 받을 수 있어요')}</b><span>${t('Safari 공유 버튼 → 「홈 화면에 추가」 → 추가된 Baton 앱에서 이 화면을 다시 열어주세요')}</span></div></div>`
         : `<div class="setting"><div class="l"><b>${t('푸시 알림')}</b><span>${ps.sub ? t('이 기기에서 켜져 있어요') : t('응답 완료·잠자는 프로젝트 알림을 받아요')}</span></div>
@@ -975,6 +998,7 @@ async function viewSettings() {
     e.target.disabled = false; e.target.textContent = t('보내기');
   };
   $('#reindex').onclick = async () => { await api('/api/refresh', { method: 'POST' }); toast(t('새로 읽었어요')); };
+  securitySection(v);
 }
 
 async function viewInbox() {
@@ -1436,11 +1460,156 @@ function runJobBox(box, job, onEnd) {
   es.onerror = () => { /* the server closes the stream at the end */ };
 }
 
+// ---------------------------------------------------------------- AUTH (password gate)
+function viewLogin() {
+  document.body.classList.add('auth-mode');
+  app.innerHTML = `<div class="login">
+    <div class="login-card">
+      <div class="logo">🏃</div>
+      <h1>Baton</h1>
+      <p class="muted">${t('처음 보는 기기예요. 비밀번호를 입력하면 이 기기를 기억해둘게요.')}</p>
+      <form id="lform">
+        <input id="lpw" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••" autofocus>
+        <button class="btn primary block" id="lbtn">${t('들어가기')}</button>
+      </form>
+      <p class="small err" id="lerr"></p>
+      <p class="small muted">${t('비밀번호는 Baton이 실행 중인 PC의 설정에서 바꿀 수 있어요.')}</p>
+    </div></div>`;
+  $('#lform').onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $('#lbtn');
+    btn.disabled = true;
+    try {
+      await api('/api/auth/login', { body: { password: $('#lpw').value } });
+      document.body.classList.remove('auth-mode');
+      G.needLogin = false;
+      await loadState();
+      render();
+    } catch (err) {
+      $('#lerr').textContent = err.message;
+      $('#lpw').value = '';
+      $('#lpw').focus();
+      btn.disabled = false;
+    }
+  };
+}
+
+async function securitySection(v) {
+  const box = $('#secbox', v);
+  if (!box) return;
+  const d = await api('/api/security');
+  const days = [1, 7, 30, 90];
+  box.innerHTML = `
+    ${d.defaultPassword ? `<div class="banner warn-banner">⚠️ ${t('아직 기본 비밀번호(0000)를 쓰고 있어요. 바꿔주세요.')}</div>` : ''}
+    <div class="setting"><div class="l"><b>${t('비밀번호')}</b><span>${t('새 기기에서 처음 들어올 때 물어봐요')}</span></div><button class="btn sm" id="pwchange">${t('바꾸기')}</button></div>
+    <div class="setting"><div class="l"><b>${t('기기 기억 기간')}</b><span>${t('마지막 접속 후 이 기간 동안 다시 묻지 않아요')}</span></div>
+      <select data-k="trustDays" data-num>${days.map((n) => `<option value="${n}" ${d.trustDays === n ? 'selected' : ''}>${t('{n}일', { n })}</option>`).join('')}</select></div>
+    <div class="setting col"><div class="l"><b>${t('기억된 기기')}</b><span>${d.local ? t('지금 이 PC에서 직접 열고 있어요 (비밀번호 없이 허용)') : ''}</span></div>
+      <div class="devices">${d.devices.length ? d.devices.map((x) => `<div class="dev"><div class="l"><b>${esc(x.name || '?')}${x.current ? ` <span class="pill ok">${t('이 기기')}</span>` : ''}</b>
+        <span>${esc(x.ip || '')} · ${t('마지막 접속 {when}', { when: ago(x.lastSeen) })} · ${t('{date}까지', { date: new Date(x.expiresAt).toLocaleDateString(LOCALE) })}</span></div>
+        <button class="btn sm ghost" data-revoke="${x.id}">${t('내보내기')}</button></div>`).join('') : `<span class="small muted">${t('아직 없어요')}</span>`}</div>
+      ${d.devices.length > 1 ? `<button class="btn sm ghost danger" id="revall">${t('이 기기 빼고 모두 내보내기')}</button>` : ''}</div>`;
+  $('#pwchange', box).onclick = async () => {
+    const r = await sheet({
+      title: t('비밀번호 바꾸기'),
+      body: `<div class="pwform"><input type="password" id="pwcur" placeholder="${t('현재 비밀번호')}" autocomplete="current-password">
+        <input type="password" id="pwnew" placeholder="${t('새 비밀번호 (4자 이상)')}" autocomplete="new-password">
+        <input type="password" id="pwnew2" placeholder="${t('새 비밀번호 확인')}" autocomplete="new-password"></div>`,
+      footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('저장')}</button>`,
+      onMount: (el, close) => {
+        $('[data-x]', el).onclick = () => close(undefined);
+        $('[data-ok]', el).onclick = async () => {
+          const cur = $('#pwcur', el).value, nw = $('#pwnew', el).value;
+          if (nw !== $('#pwnew2', el).value) { toast(t('새 비밀번호가 서로 달라요'), true); return; }
+          try { await api('/api/security/password', { body: { current: cur, next: nw } }); close(true); }
+          catch (e) { toast(e.message, true); }
+        };
+      },
+    });
+    if (r) { toast(t('비밀번호를 바꿨어요')); securitySection(v); }
+  };
+  $$('[data-revoke]', box).forEach((b) => (b.onclick = async () => { await api(`/api/security/devices/${b.dataset.revoke}/revoke`, { method: 'POST' }); toast(t('내보냈어요')); securitySection(v); }));
+  $('#revall', box) && ($('#revall', box).onclick = async () => { await api('/api/security/revoke-all', { method: 'POST' }); toast(t('내보냈어요')); securitySection(v); });
+  $$('[data-k]', box).forEach((el) => (el.onchange = async () => { await api('/api/settings', { body: { trustDays: Number(el.value) } }); toast(t('저장했어요')); securitySection(v); }));
+}
+
+// ---------------------------------------------------------------- HANDOFF (continue a session in another CLI)
+/** Highest current usage % for a tool from /api/limits (null if unknown). */
+function toolUsage(lim, id) {
+  const ws = (lim?.[id]?.windows || []).filter((w) => w.usedPercent != null && !(w.resetsAt && w.resetsAt < Date.now()));
+  if (!ws.length) return null;
+  return ws.reduce((a, w) => (w.usedPercent > a.usedPercent ? w : a));
+}
+
+/**
+ * Sheet: pick where to continue `session` — another installed CLI (new session with a handoff note),
+ * or back to a linked session it came from. Then send.
+ */
+async function handoffSheet(session, links = { from: [], to: [] }, { reason = '' } = {}) {
+  const lim = await api('/api/limits').catch(() => ({}));
+  const others = INSTALLED().filter((id) => id !== session.tool);
+  const scored = others.map((id) => ({ id, u: toolUsage(lim, id) })).sort((a, b) => (a.u?.usedPercent ?? 50) - (b.u?.usedPercent ?? 50));
+  const best = scored[0]?.id;
+  const back = (links.from || []).find((l) => l.tool !== session.tool);
+  const options = [];
+  if (back) options.push({ value: `back:${back.tool}:${back.id}`, label: t('↩ 원래 {name} 세션으로 돌아가기', { name: TOOL[back.tool]?.name || back.tool }), desc: back.title || '' });
+  for (const { id, u } of scored) {
+    const usage = u ? t('{label} {p}% 사용', { label: u.weekly ? t('주간') : t('5시간'), p: u.usedPercent }) : t('한도 정보 없음');
+    options.push({ value: `new:${id}`, label: `${TOOL[id].name}${id === best ? ` · ${t('추천')}` : ''}`, desc: `${usage} · ${t('새 세션에서 이어서')}` });
+  }
+  if (!options.length) { toast(t('다른 CLI가 설치되어 있지 않아요. 시작하기에서 설치할 수 있어요'), true); return; }
+  const pickV = await pick(reason || t('어느 CLI에서 이어갈까요?'), options);
+  if (!pickV) return;
+  const [kind, toTool, ...rest] = pickV.split(':');
+  const toSessionId = kind === 'back' ? rest.join(':') : null;
+  // how to carry the context over: the source agent summarizes itself (like /compact) or Baton extracts it
+  let mode = 'extract';
+  if (['claude', 'codex'].includes(session.tool)) {
+    const srcU = toolUsage(lim, session.tool);
+    const exhausted = Boolean(reason) || (srcU && srcU.usedPercent >= 98);
+    const opts = [
+      { value: 'summary', label: t('{name}가 직접 요약 (compact처럼)', { name: TOOL[session.tool].name }) + (exhausted ? '' : ` · ${t('추천')}`), desc: t('대화 전체를 아는 원래 CLI가 결정·시도·현재 상태를 정리해요. 가장 정확하지만 원래 CLI 토큰을 한 번 써요 (30~90초). 실패하면 자동 정리로 넘어가요') },
+      { value: 'extract', label: t('기록에서 자동 정리 (토큰 0)') + (exhausted ? ` · ${t('추천')}` : ''), desc: t('이미 한도에 걸렸을 때. 세션 기록·할 일 목록·파일·git에서 Baton이 뽑아요') },
+    ];
+    if (exhausted) opts.reverse();
+    const m = await pick(t('맥락을 어떻게 넘길까요?'), opts);
+    if (!m) return;
+    mode = m;
+  }
+  const msg = await promptSheet(t('{name}에게 보낼 메시지', { name: TOOL[toTool].name }), t('이어서 진행해줘'), { multiline: true, okLabel: t('넘기기') });
+  if (msg === undefined || msg === null) return;
+  const prefs = composerPrefs(toTool);
+  let r;
+  if (mode === 'summary') toast(t('{name}가 지금까지를 정리하는 중… (최대 2분)', { name: TOOL[session.tool].name }));
+  try {
+    r = await api('/api/handoff', { body: { fromTool: session.tool, fromId: session.id, toTool, toSessionId, prompt: msg, model: prefs.model, effort: prefs.effort, perm: prefs.perm, mode } });
+  } catch (e) { toast(e.message, true); return; }
+  if (r.summaryFailed) toast(t('원래 CLI가 요약하지 못해서 기록에서 자동 정리했어요'), true);
+  else toast(t('{name}로 넘겼어요 · 정리 노트: {note}', { name: TOOL[toTool].name, note: r.note }));
+  if (toSessionId) location.hash = `#/s/${toTool}/${encodeURIComponent(toSessionId)}`;
+  else location.hash = `#/new?tool=${toTool}&attach=${r.run.id}&from=${encodeURIComponent(`${session.tool}:${session.id}`)}&label=${encodeURIComponent(msg)}`;
+}
+
+/** Banners in a chat: where this session came from / continued to, and a nudge when its CLI is near the limit. */
+function handoffBanners(session, links, lim) {
+  const out = [];
+  for (const l of links.from || []) out.push(`<a class="banner link" href="#/s/${l.tool}/${encodeURIComponent(l.id)}">↩ ${t('{name} 세션에서 이어받았어요', { name: TOOL[l.tool]?.name || l.tool })}${l.title ? ` · ${esc(l.title)}` : ''}</a>`);
+  for (const l of (links.to || []).slice(0, 2)) out.push(`<a class="banner link" href="#/s/${l.tool}/${encodeURIComponent(l.id)}">→ ${t('{name}에서 이어서 진행 중', { name: TOOL[l.tool]?.name || l.tool })}${l.title ? ` · ${esc(l.title)}` : ''}</a>`);
+  const u = toolUsage(lim, session.tool);
+  if (u && u.usedPercent >= 80 && INSTALLED().some((id) => id !== session.tool)) {
+    out.push(`<div class="banner warn">⚡ ${t('{name} {label} 한도 {p}% 사용', { name: TOOL[session.tool].name, label: u.weekly ? t('주간') : t('5시간'), p: u.usedPercent })}
+      <button class="btn sm" data-handoff>${t('다른 CLI로 이어가기')}</button></div>`);
+  }
+  return out.join('');
+}
+
 // ---------------------------------------------------------------- boot
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.type === 'navigate' && e.data.url) location.href = e.data.url; });
 (async () => {
   $$('[data-t]', $('#tabbar')).forEach((el) => { el.textContent = t(el.dataset.t); });
+  const auth = await api('/api/auth/status').catch(() => ({ authed: true }));
+  if (!auth.authed) { G.needLogin = true; viewLogin(); return; }
   await loadState();
   // first run: nothing set up yet -> onboarding
   if (G.state && !G.state.settings?.setupDone && !(G.state.tools || []).some((x) => x.installed) && !location.hash.startsWith('#/setup')) location.hash = '#/setup';

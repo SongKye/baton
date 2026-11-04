@@ -54,6 +54,7 @@ try { db.exec('ALTER TABLE session_meta ADD COLUMN notify INTEGER NOT NULL DEFAU
 const DEFAULT_SETTINGS = {
   lang: 'en',                   // UI language: 'en' (default) or 'ko'
   setupDone: false,             // onboarding finished or skipped
+  trustDays: 30,                // a signed-in device stays trusted this many days after its last visit
   showAutomated: false,         // codex exec / agy subagent / tmp sessions
   nudgeEnabled: true,
   nudgeHour: 21,                // local hour to send the daily nudge
