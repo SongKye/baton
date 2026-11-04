@@ -584,6 +584,7 @@ server.listen(PORT, HOST, async () => {
   const snap = await getSnapshot(0);
   console.log(`[baton] indexed ${snap.sessions.length} sessions in ${Date.now() - t}ms`);
   providersSummary().catch(() => {}); // warm the provider cache (model list, limits)
+  if (process.platform === 'win32') setTimeout(() => listPorts().catch(() => {}), 3000).unref(); // first PowerShell start is slow (~7 s)
   if (envInfo.imported.length || envInfo.extra.length) console.log(`[baton] env: ${envInfo.imported.length} vars from ${envInfo.shell || 'shell'}, ${envInfo.extra.length} from settings`);
   startNudgeScheduler();
   startWatcher();
