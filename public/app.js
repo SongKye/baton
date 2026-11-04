@@ -1604,19 +1604,15 @@ async function moveSessionSheet(s) {
   let cwd = await pick(t('어느 폴더로 옮길까요? (지금: {p})', { p: d.current }), opts);
   if (!cwd) return false;
   if (cwd === '__custom') { cwd = await promptSheet(t('폴더 경로'), d.current, { placeholder: '~/workspace/my-app' }); if (!cwd) return false; }
-  let moveFiles = false;
-  if (s.tool === 'claude') {
-    const live = s.live || s.running;
-    const v = await pick(t('Claude Code 터미널에서도 옮길까요?'), [
-      { value: 'baton', label: t('Baton에서만 옮기기 (추천)'), desc: t('목록·프로젝트·Baton에서 보내는 메시지가 새 폴더를 써요. 원래 파일은 그대로예요') },
-      ...(live ? [] : [{ value: 'files', label: t('터미널 목록에서도 옮기기'), desc: t('새 폴더에서 claude --resume 하면 이 세션이 보여요. 세션 파일을 옮겨요') }]),
-    ]);
-    if (!v) return false;
-    moveFiles = v === 'files';
-  }
   try {
-    const r = await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}/move`, { body: { cwd, moveFiles } });
-    toast(t('{p}로 옮겼어요. 다음 메시지부터 이 폴더에서 작업해요', { p: cwd }));
+    const r = await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}/move`, { body: { cwd } });
+    const msg = {
+      moved: t('{p}로 옮겼어요. Baton과 터미널(claude --resume) 모두 새 폴더 기준이에요', { p: cwd }),
+      pending: t('{p}로 옮겼어요. 지금 실행 중이라 터미널 목록은 끝나면 자동으로 옮길게요', { p: cwd }),
+      same: t('{p}로 옮겼어요', { p: cwd }),
+      unsupported: t('{p}로 옮겼어요. Baton에서 이어가면 새 폴더에서 작업해요', { p: cwd }),
+    }[r.terminal] || t('{p}로 옮겼어요', { p: cwd });
+    toast(msg);
     return true;
   } catch (e) { toast(e.message, true); return false; }
 }

@@ -17,7 +17,7 @@ import { listPorts, shareToPhone, unshare, stopPort } from './ports.js';
 import { skillsReport, skillDetail } from './skills.js';
 import { setupStatus, startJob, getJob, jobInput, stopJob, publicJob } from './setup.js';
 import { handoff, linksOf, buildHandoffNote } from './handoff.js';
-import { moveSession, folderSuggestions, consumeMoveNote } from './move.js';
+import { moveSession, folderSuggestions, consumeMoveNote, startPendingMoves, TERMINAL_MOVE } from './move.js';
 import { isLocal, checkDevice, login, logout, changePassword, listDevices, revokeDevice, revokeAll, usingDefaultPassword } from './auth.js';
 import { toolsMeta, binFor, TOOL_IDS } from './tools.js';
 import { OS_NAME, openBrowser } from './platform.js';
@@ -320,13 +320,13 @@ route('GET', '/api/usage', async () => usageReport());
 route('GET', '/api/sessions/:tool/:id/folders', async (req, url, { tool, id }) => {
   const s = await findSession(tool, decodeURIComponent(id));
   if (!s) return [404, { error: tr('세션을 찾을 수 없어요') }];
-  return { current: shortHome(s.cwd), original: shortHome(s.origCwd || s.cwd), moved: Boolean(s.moved), suggestions: await folderSuggestions(s) };
+  return { current: shortHome(s.cwd), original: shortHome(s.origCwd || s.cwd), moved: Boolean(s.moved), terminalMove: TERMINAL_MOVE.has(tool), suggestions: await folderSuggestions(s) };
 });
 route('POST', '/api/sessions/:tool/:id/move', async (req, url, { tool, id }) => {
   const b = await body(req);
   const sid = decodeURIComponent(id);
   const d = (await decoratedSessions({ includeAutomated: true, includeHidden: true })).find((x) => x.key === `${tool}:${sid}`);
-  try { return await moveSession({ tool, id: sid, cwd: b.cwd, moveFiles: Boolean(b.moveFiles), live: Boolean(d?.live || d?.running) }); }
+  try { return await moveSession({ tool, id: sid, cwd: b.cwd, live: Boolean(d?.live || d?.running) }); }
   catch (e) { return [400, { error: e.message }]; }
 });
 
@@ -535,6 +535,10 @@ server.listen(PORT, HOST, async () => {
   startNudgeScheduler();
   startWatcher();
   startTrashPurge();
+  startPendingMoves(async (key) => {
+    const d = (await decoratedSessions({ includeAutomated: true, includeHidden: true })).find((x) => x.key === key);
+    return Boolean(d?.live || d?.running);
+  });
   startUsageScheduler();
   seedDefaults();
 });

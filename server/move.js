@@ -47,7 +47,43 @@ export async function folderSuggestions(s) {
 
 const encodeClaude = (dir) => dir.replace(/[^a-zA-Z0-9]/g, '-');
 
-export async function moveSession({ tool, id, cwd, moveFiles = false, live = false }) {
+// ---------------------------------------------------------------- terminal-side moves
+// Only where it's safe: Claude Code keeps transcripts in ~/.claude/projects/<encoded folder>/, and
+// `claude --resume` lists that folder's files -> moving the file is all it takes (verified).
+// Codex (state_5.sqlite threads.cwd) and Antigravity (conversation_summaries.db) index sessions in their
+// own databases; editing another app's live DB could corrupt it, and OpenCode/Cursor formats aren't
+// verified here. For those, the Baton-level move is what we do — they still resume in the new folder
+// from Baton, and their own CLIs can still open the session by id from any folder.
+export const TERMINAL_MOVE = new Set(['claude']);
+
+async function moveClaudeFile(s, target) {
+  const destDir = path.join(HOME, '.claude', 'projects', encodeClaude(target));
+  const dest = path.join(destDir, path.basename(s.file));
+  if (path.resolve(dest) === path.resolve(s.file)) return null;
+  await fsp.mkdir(destDir, { recursive: true });
+  await fsp.rename(s.file, dest); // same filesystem: instant, keeps mtime
+  const sub = s.file.replace(/\.jsonl$/, '');
+  if (fs.existsSync(sub)) await fsp.rename(sub, dest.replace(/\.jsonl$/, '')).catch(() => {});
+  return dest;
+}
+
+async function terminalMove(key, target) {
+  const [tool, ...rest] = key.split(':');
+  const s = await findSession(tool, rest.join(':'));
+  if (!s?.file) return null;
+  if (tool === 'claude') return moveClaudeFile(s, target);
+  return null;
+}
+
+/** Terminal-side moves waiting for a running session to finish: key -> target folder. */
+const pendingMoves = () => getKV('pending_moves', {}) || {};
+
+/**
+ * Move a session. Always moves it in Baton; also moves it in the CLI's own resume list when that CLI
+ * supports it — right away if the session is idle, otherwise automatically as soon as it finishes.
+ * Returns { cwd, terminal: 'moved' | 'pending' | 'unsupported' | 'same' }.
+ */
+export async function moveSession({ tool, id, cwd, live = false }) {
   const s = await findSession(tool, id);
   if (!s) throw new Error(tr('세션을 찾을 수 없어요'));
   let target = String(cwd || '').trim();
@@ -61,21 +97,35 @@ export async function moveSession({ tool, id, cwd, moveFiles = false, live = fal
   // tell the agent once, on the next message, that its folder changed
   if (target !== (s.cwd || original)) setKV(`moved_note:${key}`, { from: s.cwd || original, to: target });
 
-  let movedFile = null;
-  if (moveFiles && tool === 'claude') {
-    if (live) throw new Error(tr('지금 실행 중인 세션은 파일을 옮길 수 없어요. 끝난 뒤에 다시 해주세요'));
-    const destDir = path.join(HOME, '.claude', 'projects', encodeClaude(target));
-    const dest = path.join(destDir, path.basename(s.file));
-    if (path.resolve(dest) !== path.resolve(s.file)) {
-      await fsp.mkdir(destDir, { recursive: true });
-      await fsp.rename(s.file, dest);
-      const sub = s.file.replace(/\.jsonl$/, '');
-      if (fs.existsSync(sub)) await fsp.rename(sub, dest.replace(/\.jsonl$/, '')).catch(() => {});
-      movedFile = dest;
+  let terminal = 'unsupported';
+  if (TERMINAL_MOVE.has(tool)) {
+    const pend = pendingMoves();
+    if (live) { pend[key] = target; setKV('pending_moves', pend); terminal = 'pending'; }
+    else {
+      delete pend[key]; setKV('pending_moves', pend);
+      terminal = (await terminalMove(key, target)) ? 'moved' : 'same';
     }
   }
   await forceRefresh();
-  return { cwd: target, movedFile: movedFile ? shortHome(movedFile) : null };
+  return { cwd: target, terminal };
+}
+
+/** Finishes terminal-side moves for sessions that were running when they were moved. */
+export function startPendingMoves(isLive) {
+  const tick = async () => {
+    const pend = pendingMoves();
+    const keys = Object.keys(pend);
+    if (!keys.length) return;
+    for (const key of keys) {
+      try {
+        if (await isLive(key)) continue;
+        await terminalMove(key, pend[key]);
+        const cur = pendingMoves(); delete cur[key]; setKV('pending_moves', cur);
+        await forceRefresh();
+      } catch (e) { console.warn('[move]', key, e.message); }
+    }
+  };
+  setInterval(() => { tick().catch(() => {}); }, 20_000).unref();
 }
 
 /** If the session was moved since the last message, prefix the prompt with a one-time note. */
