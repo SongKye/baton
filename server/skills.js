@@ -7,6 +7,7 @@ import { HOME, shortHome } from './util.js';
 import { projectsList } from './indexer.js';
 import { skillUses } from './usage.js';
 import { tr } from './i18n.js';
+import { CLAUDE_HOME, CODEX_HOME } from './env.js';
 
 const exists = (p) => { try { return fs.statSync(p); } catch { return null; } };
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
@@ -65,8 +66,8 @@ async function commandsIn(root, base) {
 }
 
 async function discover() {
-  const C = path.join(HOME, '.claude');
-  const X = path.join(HOME, '.codex');
+  const C = CLAUDE_HOME;
+  const X = CODEX_HOME;
   const G = path.join(HOME, '.gemini', 'antigravity-cli');
   const all = [];
   // ---- Claude Code

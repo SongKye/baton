@@ -11,6 +11,8 @@ import { HOME } from './util.js';
 import { getKV, setKV } from './store.js';
 import { childEnv } from './runner.js';
 import { tr } from './i18n.js';
+import { claudeProvider, codexProvider } from './providers.js';
+import { CLAUDE_HOME, CODEX_HOME } from './env.js';
 
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
 const UA = 'baton/1.0';
@@ -31,7 +33,9 @@ const iso = (s) => (s ? Date.parse(s) || null : null);
 // ---------------------------------------------------------------- claude
 const CLAUDE_EXTRA = () => ({ seven_day_opus: tr('주간 · Opus'), seven_day_sonnet: tr('주간 · Sonnet'), seven_day_oauth_apps: tr('주간 · 외부 앱') });
 async function claudeLimits() {
-  const cred = readJson(path.join(HOME, '.claude', '.credentials.json'))?.claudeAiOauth;
+  const prov = await claudeProvider().catch(() => null);
+  if (prov && !prov.subscription) return { plan: prov.label, windows: [], noLimits: true, provider: prov.label };
+  const cred = readJson(path.join(CLAUDE_HOME, '.credentials.json'))?.claudeAiOauth;
   if (!cred?.accessToken) throw Object.assign(new Error(tr('Claude Code 로그인 정보가 없어요')), { code: 'NOAUTH' });
   if (cred.expiresAt && cred.expiresAt < Date.now()) throw Object.assign(new Error(tr('토큰 만료 — Claude Code를 한 번 쓰면 갱신돼요')), { code: 'EXPIRED' });
   const j = await getJson('https://api.anthropic.com/api/oauth/usage', {
@@ -50,7 +54,9 @@ async function claudeLimits() {
 
 // ---------------------------------------------------------------- codex
 async function codexLimits() {
-  const auth = readJson(path.join(HOME, '.codex', 'auth.json'));
+  const prov = codexProvider();
+  if (!prov.subscription) return { plan: prov.label, windows: [], noLimits: true, provider: prov.label };
+  const auth = readJson(path.join(CODEX_HOME, 'auth.json'));
   const t = auth?.tokens;
   if (!t?.access_token) throw Object.assign(new Error(tr('Codex 로그인 정보가 없어요')), { code: 'NOAUTH' });
   const j = await getJson('https://chatgpt.com/backend-api/wham/usage', {

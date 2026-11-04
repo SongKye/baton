@@ -5,6 +5,7 @@ import { HOME, tailJsonl } from './util.js';
 import { getKV, setKV, } from './store.js';
 import { findSession, forceRefresh } from './indexer.js';
 import { agyConversationModel } from './sources/agy.js';
+import { CLAUDE_HOME } from './env.js';
 
 async function modelEffortFromFile(tool, file) {
   if (tool === 'agy') return { model: agyConversationModel(file), effort: null };
@@ -45,7 +46,7 @@ export async function observeRun(run) {
 export async function seedDefaults() {
   if (getKV('observed_default_claude', null)) return;
   try {
-    const root = path.join(HOME, '.claude', 'projects');
+    const root = path.join(CLAUDE_HOME, 'projects');
     let best = null;
     for (const d of fs.readdirSync(root)) {
       let ents = [];

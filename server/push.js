@@ -28,7 +28,8 @@ export async function notify({ kind, title, body, url, tag }) {
   webpush.setVapidDetails(vapidSubject(), keys.publicKey, keys.privateKey);
   await Promise.all(subs.map(async (s) => {
     try {
-      await webpush.sendNotification(s, payload, { TTL: 6 * 3600, urgency: kind === 'nudge' ? 'low' : 'normal' });
+      const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || undefined;
+      await webpush.sendNotification(s, payload, { TTL: 6 * 3600, urgency: kind === 'nudge' ? 'low' : 'normal', ...(proxy ? { proxy } : {}) });
     } catch (e) {
       if (e.statusCode === 404 || e.statusCode === 410) removePushSub(s.endpoint);
       else console.warn('[push] failed', e.statusCode || e.message, e.body || '');

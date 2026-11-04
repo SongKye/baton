@@ -26,6 +26,7 @@ import { clip, oneLine, shortHome } from './util.js';
 import { TOOLS, binFor } from './tools.js';
 import { spawnCli } from './platform.js';
 import { tr } from './i18n.js';
+import { CLAUDE_HOME } from './env.js';
 
 db.exec(`CREATE TABLE IF NOT EXISTS session_links (
   from_key TEXT NOT NULL, to_key TEXT NOT NULL, created INTEGER NOT NULL, note TEXT,
@@ -83,7 +84,7 @@ function claudeMemory(dirs) {
   const out = [];
   let size = 0;
   for (const d of [...new Set(dirs.filter(Boolean))]) {
-    const memDir = path.join(os.homedir(), '.claude', 'projects', d.replace(/[^a-zA-Z0-9]/g, '-'), 'memory');
+    const memDir = path.join(CLAUDE_HOME, 'projects', d.replace(/[^a-zA-Z0-9]/g, '-'), 'memory');
     let names = [];
     try { names = fs.readdirSync(memDir).filter((n) => n.endsWith('.md')); } catch { continue; }
     for (const n of names.sort((a, b) => (a === 'MEMORY.md' ? -1 : b === 'MEMORY.md' ? 1 : a.localeCompare(b)))) {
