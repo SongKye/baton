@@ -7,6 +7,9 @@ import { execFile } from 'node:child_process';
 import { HOME } from './util.js';
 import { childEnv } from './runner.js';
 import { getKV, setKV } from './store.js';
+import { binFor } from './tools.js';
+import { runCli } from './platform.js';
+import { tr } from './i18n.js';
 
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
 
@@ -128,6 +131,39 @@ function agyCatalog() {
   };
 }
 
+// ---------------------------------------------------------------- opencode / cursor
+// Both list their models with a `models` subcommand; refreshed in the background every 6h.
+const listCache = { opencode: { at: 0, models: [] }, cursor: { at: 0, models: [] } };
+function refreshList(tool) {
+  const c = listCache[tool];
+  if (Date.now() - c.at < 6 * 3600 * 1000) return;
+  c.at = Date.now();
+  const bin = binFor(tool);
+  if (!bin) return;
+  runCli(bin, ['models'], { timeout: 30000 }).then(({ stdout }) => {
+    const models = [];
+    for (const raw of stdout.split('\n')) {
+      const line = raw.replace(/\x1b\[[0-9;]*m/g, '').trim();
+      if (!line || /^(available|models|usage|error)/i.test(line)) continue;
+      const m = line.match(/^([\w./:@-]+)(?:\s+[-–—]\s+(.+)|\s{2,}(.+))?$/);
+      if (m) models.push({ id: m[1], label: (m[2] || m[3] || m[1]).trim() });
+    }
+    if (models.length) c.models = models;
+  });
+}
+function simpleCatalog(tool, note) {
+  refreshList(tool);
+  return {
+    models: [{ id: '', label: tr('기본값'), short: tr('기본'), desc: note }, ...listCache[tool].models.map((m) => ({ ...m, short: m.label, desc: m.id }))],
+    efforts: [''],
+    defaults: { model: null, effort: null },
+  };
+}
+
 export function catalogs() {
-  return { claude: claudeCatalog(), codex: codexCatalog(), agy: agyCatalog() };
+  return {
+    claude: claudeCatalog(), codex: codexCatalog(), agy: agyCatalog(),
+    opencode: simpleCatalog('opencode', tr('opencode 설정(opencode.json)의 기본 모델')),
+    cursor: simpleCatalog('cursor', tr('Cursor 계정의 기본 모델 (auto)')),
+  };
 }

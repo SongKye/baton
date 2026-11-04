@@ -1,9 +1,11 @@
 // Group sessions into projects and compute "where did I leave off" signals.
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { HOME, DAY, shortHome } from './util.js';
+import { tr } from './i18n.js';
 
 const run = promisify(execFile);
 const MARKERS = ['.git', 'package.json', 'pubspec.yaml', 'pyproject.toml', 'requirements.txt', 'Cargo.toml', 'go.mod', 'CLAUDE.md', 'AGENTS.md', 'GEMINI.md', 'project.godot', 'index.html'];
@@ -12,12 +14,12 @@ const rootCache = new Map();
 /** Resolve the project root for a cwd: nearest ancestor with a .git, else nearest with a marker file. */
 export function projectRoot(cwd) {
   if (!cwd) return null;
-  if (cwd.startsWith('/tmp') || cwd.startsWith('/var/tmp')) return null;
+  if (cwd.startsWith('/tmp') || cwd.startsWith('/var/tmp') || cwd.toLowerCase().startsWith(os.tmpdir().toLowerCase())) return null;
   if (rootCache.has(cwd)) return rootCache.get(cwd);
   let gitRoot = null, markerRoot = null;
   let dir = cwd;
   const stop = path.dirname(HOME);
-  while (dir && dir !== '/' && dir !== stop && dir !== HOME) {
+  while (dir && path.dirname(dir) !== dir && dir !== stop && dir !== HOME) { // stops at "/" and "C:\\" 
     let names;
     try { names = fs.readdirSync(dir); } catch { names = null; }
     if (names) {
@@ -30,15 +32,15 @@ export function projectRoot(cwd) {
   // Don't collapse a deep folder into a generic container like ~/workspace.
   if (root === path.join(HOME, 'workspace') && cwd !== root) root = markerRoot && markerRoot !== root ? markerRoot : cwd;
   // Asset/gen sub-folders belong to their parent project.
-  const sub = root.match(/^(.*?)\/(assets-src|assets|concept|scratchpad|node_modules|dist|build)(\/|$)/);
+  const sub = root.match(/^(.*?)[\\/](assets-src|assets|concept|scratchpad|node_modules|dist|build)([\\/]|$)/);
   if (sub) root = sub[1];
   rootCache.set(cwd, root);
   return root;
 }
 
 export function projectName(root) {
-  if (!root) return '기타';
-  if (root === HOME) return '홈 (~)';
+  if (!root) return tr('기타');
+  if (root === HOME) return tr('홈 (~)');
   const base = path.basename(root);
   // "261010_yupum" -> "yupum" (keep date prefix out of the name; it's shown separately)
   return base.replace(/^\d{6}[_-]/, '') || base;

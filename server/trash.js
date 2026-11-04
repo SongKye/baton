@@ -24,6 +24,11 @@ function sessionFiles(s) {
   const add = (p) => { if (p && fs.existsSync(p)) out.push(p); };
   add(s.file);
   if (s.tool === 'claude') add(s.file.replace(/\.jsonl$/, '')); // subagent transcripts live in <id>/
+  if (s.tool === 'opencode') {
+    const storage = path.resolve(path.dirname(s.file), '..', '..'); // storage/session/<proj>/<id>.json
+    add(path.join(storage, 'message', s.id)); // parts stay (keyed by message id) — harmless orphans
+  }
+  if (s.tool === 'cursor') { out.length = 0; add(path.dirname(s.file)); } // whole chat folder
   if (s.tool === 'agy') {
     add(`${s.file}-wal`); add(`${s.file}-shm`);
     add(path.join(HOME, '.gemini', 'antigravity-cli', 'brain', s.id)); // plan/artifact files

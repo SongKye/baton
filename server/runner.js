@@ -1,4 +1,4 @@
-// Spawns Claude / Codex / Antigravity CLIs headlessly and normalizes their streaming output
+// Spawns Claude / Codex / Antigravity / OpenCode / Cursor CLIs headlessly and normalizes their streaming output
 // into a small event vocabulary the UI understands:
 //   {t:'session', id}            session id became known (new sessions)
 //   {t:'text', text}             assistant text delta
@@ -10,6 +10,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { spawnCli, IS_WIN } from './platform.js';
+import { binFor, TOOL_IDS } from './tools.js';
+import { tr } from './i18n.js';
 import { EventEmitter } from 'node:events';
 import crypto from 'node:crypto';
 import { summarizeTool } from './sources/common.js';
@@ -27,7 +30,7 @@ export const childPids = new Set();
 export function childEnv(extra = {}) {
   const env = { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1', ...extra };
   for (const k of Object.keys(env)) {
-    if (k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_') || k === 'CLAUDE_PID' || k === 'CLAUDE_EFFORT' || k.startsWith('CODEX_THREAD') || k === 'CODEX_SANDBOX') delete env[k];
+    if (k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_') || k === 'CLAUDE_PID' || k === 'CLAUDE_EFFORT' || k.startsWith('CODEX_THREAD') || k === 'CODEX_SANDBOX' || k === 'OPENCODE' || k === 'CURSOR_AGENT') delete env[k];
   }
   return env;
 }
@@ -103,6 +106,30 @@ function agyCmd({ sessionId, model, effort, perm, prompt, images, cwd }) {
   else if (perm === 'full') args.push('--dangerously-skip-permissions');
   else args.push('--mode', 'accept-edits'); // `auto` isn't available on every account
   return { bin: 'agy', args, stdin: null };
+}
+
+function opencodeCmd({ sessionId, model, perm, prompt, images }) {
+  // `opencode run` reads the message from stdin when it isn't a TTY; --format json emits one JSON event per line
+  const args = ['run', '--format', 'json'];
+  if (sessionId) args.push('--session', sessionId);
+  if (model) args.push('--model', model);
+  args.push('--agent', perm === 'plan' ? 'plan' : 'build');
+  for (const im of images || []) args.push('--file', im.path);
+  return { bin: 'opencode', args, stdin: prompt };
+}
+
+function cursorCmd({ sessionId, model, perm, prompt, images, cwd }) {
+  if (images?.length) {
+    const rel = images.map((im) => `- ${path.relative(cwd, im.path)}`).join('\n');
+    prompt = `${prompt}\n\n[Attached images — open these files to view them]\n${rel}`;
+  }
+  if (perm === 'plan') prompt = `${prompt}\n\n(Plan only: do not modify files or run commands that change anything.)`;
+  const args = ['-p', '--output-format', 'stream-json'];
+  if (sessionId) args.push('--resume', sessionId);
+  if (model) args.push('--model', model);
+  if (perm === 'full') args.push('--force');
+  args.push(prompt);
+  return { bin: 'cursor-agent', args, stdin: null };
 }
 
 // ---------- stream parsers ----------
@@ -199,16 +226,66 @@ function agyParser(run) {
   };
 }
 
+function opencodeParser(run) {
+  const usage = { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 };
+  return (e) => {
+    if (e.sessionID) run.setSession(e.sessionID);
+    const p = e.part || {};
+    if (e.type === 'text' && p.text) { run.emit({ t: 'text', text: p.text }); run.emit({ t: 'text_end' }); run.lastText = p.text; }
+    else if (e.type === 'reasoning') run.emit({ t: 'thinking' });
+    else if (e.type === 'tool_use' || e.type === 'tool') {
+      const st = p.state || {};
+      run.emit({ t: 'tool', name: p.tool || 'tool', summary: summarizeTool(p.tool, st.input || {}) || st.title || '' });
+      if (st.status === 'completed' || st.status === 'error') run.emit({ t: 'tool_done', error: st.status === 'error' });
+    } else if (e.type === 'step_finish' && p.tokens) {
+      usage.input_tokens += p.tokens.input || 0;
+      usage.output_tokens += (p.tokens.output || 0) + (p.tokens.reasoning || 0);
+      usage.cache_read_tokens += p.tokens.cache?.read || 0;
+      run.result = { ok: true, result: run.lastText, usage, cost: p.cost };
+    } else if (e.type === 'error') {
+      const err = e.error || {};
+      run.result = { ok: false, error: err.data?.message || err.message || err.name || 'error' };
+    }
+  };
+}
+
+function cursorParser(run) {
+  let inText = false;
+  return (e) => {
+    if (e.session_id) run.setSession(e.session_id);
+    if (e.type === 'system' && e.subtype === 'init') { if (e.model) run.model = run.model || e.model; }
+    else if (e.type === 'assistant') {
+      for (const c of e.message?.content || []) {
+        if (c.type === 'text' && c.text) { run.emit({ t: 'text', text: c.text }); run.lastText = (run.lastText || '') + c.text; inText = true; }
+      }
+    } else if (e.type === 'tool_call') {
+      if (inText) { run.emit({ t: 'text_end' }); inText = false; }
+      const tc = e.tool_call || {};
+      const kind = Object.keys(tc)[0] || 'tool';
+      const name = kind.replace(/ToolCall$/, '');
+      if (e.subtype === 'started') run.emit({ t: 'tool', name, summary: summarizeTool(name, tc[kind]?.args || {}) });
+      else if (e.subtype === 'completed') run.emit({ t: 'tool_done', error: Boolean(tc[kind]?.result?.error || tc[kind]?.result?.rejected) });
+    } else if (e.type === 'result') {
+      if (inText) { run.emit({ t: 'text_end' }); inText = false; }
+      run.result = { ok: !e.is_error && e.subtype !== 'error', result: e.result || run.lastText, error: e.is_error ? (e.result || e.subtype) : null, usage: e.usage };
+    }
+  };
+}
+
+const BUILDERS = { claude: claudeCmd, codex: codexCmd, agy: agyCmd, opencode: opencodeCmd, cursor: cursorCmd };
+const PARSERS = { claude: claudeParser, codex: codexParser, agy: agyParser, opencode: opencodeParser, cursor: cursorParser };
+
 // ---------- run lifecycle ----------
 export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, title, images }) {
-  if (!['claude', 'codex', 'agy'].includes(tool)) throw new Error('unknown tool');
+  if (!TOOL_IDS.includes(tool)) throw new Error('unknown tool');
   if (!prompt || !prompt.trim()) throw new Error('empty prompt');
+  if (!binFor(tool)) throw new Error(tr('{name}가 설치되어 있지 않아요. 설정 → 시작하기에서 설치할 수 있어요', { name: tool }));
   if (sessionId) {
     const existing = activeRunFor(`${tool}:${sessionId}`);
-    if (existing) throw Object.assign(new Error('이 세션은 이미 응답 중이에요'), { code: 'BUSY', runId: existing.id });
+    if (existing) throw Object.assign(new Error(tr('이 세션은 이미 응답 중이에요')), { code: 'BUSY', runId: existing.id });
   }
   const opts = { sessionId, model, effort, perm, prompt, images, cwd };
-  const cmd = tool === 'claude' ? claudeCmd(opts) : tool === 'codex' ? codexCmd(opts) : agyCmd(opts);
+  const cmd = BUILDERS[tool](opts);
 
   const run = {
     id: crypto.randomUUID(), tool, sessionId: sessionId || null, cwd, prompt, model: model || null, reqModel: model || null, effort: effort || null, images: images?.length || 0, perm: perm || 'auto',
@@ -230,8 +307,8 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
     run.emit({ t: 'session', id });
   };
 
-  const parse = tool === 'claude' ? claudeParser(run) : tool === 'codex' ? codexParser(run) : agyParser(run);
-  const child = spawn(cmd.bin, cmd.args, {
+  const parse = PARSERS[tool](run);
+  const child = spawnCli(binFor(tool) || cmd.bin, cmd.args, {
     cwd,
     env: childEnv({ BATON_RUN: run.id }),
     stdio: [cmd.stdin != null ? 'pipe' : 'ignore', 'pipe', 'pipe'],
@@ -262,9 +339,9 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
     const res = run.result || {};
     let ok = res.ok ?? (code === 0);
     let error = res.error || null;
-    if (spawnErr) { ok = false; error = `${cmd.bin} 실행 실패: ${spawnErr.message}`; }
-    else if (run.stopped) { ok = false; error = '사용자가 중지했어요'; }
-    else if (!ok && !error) error = clip(run.stderr.trim().split('\n').slice(-6).join('\n'), 1200) || `종료 코드 ${code ?? signal}`;
+    if (spawnErr) { ok = false; error = tr('{bin} 실행 실패: {msg}', { bin: cmd.bin, msg: spawnErr.message }); }
+    else if (run.stopped) { ok = false; error = tr('사용자가 중지했어요'); }
+    else if (!ok && !error) error = clip(run.stderr.trim().split('\n').slice(-6).join('\n'), 1200) || tr('종료 코드 {code}', { code: code ?? signal });
     run.status = ok ? 'done' : 'error';
     run.error = error;
     const denied = [...new Set(res.denied || [])];
@@ -286,6 +363,10 @@ export function stopRun(id) {
   const run = runs.get(id);
   if (!run || run.status !== 'running' || !run.child) return false;
   run.stopped = true;
+  if (IS_WIN && run.child.pid) { // kill the whole tree (cmd.exe shim -> node -> tools)
+    spawn('taskkill', ['/pid', String(run.child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+    return true;
+  }
   run.child.kill('SIGINT');
   setTimeout(() => { if (run.status === 'running') run.child.kill('SIGTERM'); }, 4000).unref();
   setTimeout(() => { if (run.status === 'running') run.child.kill('SIGKILL'); }, 10000).unref();
@@ -296,7 +377,17 @@ export function stopRun(id) {
 export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
   return new Promise((resolve, reject) => {
     let bin, args, stdin = true;
-    if (tool === 'codex') {
+    if (tool === 'opencode') {
+      bin = 'opencode';
+      args = ['run', '--format', 'json', '--agent', 'plan'];
+      if (model) args.push('--model', model);
+    } else if (tool === 'cursor') {
+      bin = 'cursor-agent';
+      args = ['-p', '--output-format', 'json'];
+      if (model) args.push('--model', model);
+      args.push(prompt);
+      stdin = false;
+    } else if (tool === 'codex') {
       bin = 'codex';
       args = ['exec', '--json', '--skip-git-repo-check', '--ephemeral', '-c', 'sandbox_mode="read-only"'];
       if (model) args.push('-m', model);
@@ -311,7 +402,7 @@ export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
       args = ['-p', '--output-format', 'json', '--no-session-persistence', '--permission-mode', 'plan', '--tools', ''];
       if (model) args.push('--model', model);
     }
-    const child = spawn(bin, args, { cwd, env: childEnv(), stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+    const child = spawnCli(binFor(tool) || bin, args, { cwd, env: childEnv(), stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     if (child.pid) childPids.add(child.pid);
     let out = '', err = '';
     const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
@@ -322,7 +413,13 @@ export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
       clearTimeout(timer);
       if (child.pid) childPids.delete(child.pid);
       try {
-        if (tool === 'codex') {
+        if (tool === 'opencode') {
+          const texts = [];
+          for (const line of out.split('\n')) {
+            try { const e = JSON.parse(line); if (e.type === 'text' && e.part?.text) texts.push(e.part.text); } catch { /* skip */ }
+          }
+          if (texts.length) return resolve(texts.join('\n'));
+        } else if (tool === 'codex') {
           let text = '';
           for (const line of out.split('\n')) {
             try { const e = JSON.parse(line); if (e.type === 'item.completed' && e.item?.type === 'agent_message') text = e.item.text; } catch { /* skip */ }
@@ -334,8 +431,8 @@ export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
           if (typeof text === 'string' && text) return resolve(text);
         }
       } catch { /* fallthrough */ }
-      reject(new Error(`요약 생성 실패 (code ${code}): ${clip(err || out, 400)}`));
+      reject(new Error(tr('요약 생성 실패 (code {code}): {msg}', { code, msg: clip(err || out, 400) })));
     });
-    if (stdin) child.stdin.end(prompt);
+    if (stdin) { child.stdin.on('error', () => {}); child.stdin.end(prompt); }
   });
 }

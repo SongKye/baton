@@ -3,6 +3,8 @@ import path from 'node:path';
 import { listClaude, readClaude } from './sources/claude.js';
 import { listCodex, readCodex } from './sources/codex.js';
 import { listAgy, readAgy } from './sources/agy.js';
+import { listOpencode, readOpencode } from './sources/opencode.js';
+import { listCursor, readCursor, noteCursorDirs } from './sources/cursor.js';
 import { liveSessions } from './live.js';
 import { projectRoot, groupProjects } from './projects.js';
 import { allSessionMeta, allProjectMeta, allBriefs, getSettings } from './store.js';
@@ -13,12 +15,15 @@ let snapshot = { at: 0, sessions: [], byKey: new Map(), byFile: new Map() };
 let refreshing = null;
 
 async function rebuild() {
-  const [cl, cx, ag] = await Promise.all([
+  const [cl, cx, ag, oc] = await Promise.all([
     listClaude().catch((e) => { console.warn('[claude]', e.message); return []; }),
     listCodex().catch((e) => { console.warn('[codex]', e.message); return []; }),
     listAgy().catch((e) => { console.warn('[agy]', e.message); return []; }),
+    listOpencode().catch((e) => { console.warn('[opencode]', e.message); return []; }),
   ]);
-  const sessions = [...cl, ...cx, ...ag].map((s) => ({ ...s, key: `${s.tool}:${s.id}`, project: projectRoot(s.cwd) }));
+  noteCursorDirs([...cl, ...cx, ...ag, ...oc].map((s) => s.cwd));
+  const cu = await listCursor().catch((e) => { console.warn('[cursor]', e.message); return []; });
+  const sessions = [...cl, ...cx, ...ag, ...oc, ...cu].map((s) => ({ ...s, key: `${s.tool}:${s.id}`, project: projectRoot(s.cwd) }));
   const byKey = new Map(sessions.map((s) => [s.key, s]));
   const byFile = new Map(sessions.map((s) => [s.file, s]));
   snapshot = { at: Date.now(), sessions, byKey, byFile };
@@ -93,6 +98,8 @@ export async function readMessages(s) {
   if (s.tool === 'claude') return readClaude(s.file);
   if (s.tool === 'codex') return readCodex(s.file);
   if (s.tool === 'agy') return readAgy(s.file);
+  if (s.tool === 'opencode') return readOpencode(s.file);
+  if (s.tool === 'cursor') return readCursor(s.file);
   return [];
 }
 
