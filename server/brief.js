@@ -4,6 +4,7 @@ import { gitInfo, projectDocs, projectName, projectFingerprint } from './project
 import { getBrief, saveBrief, getSettings } from './store.js';
 import { oneShot } from './runner.js';
 import { DATA_DIR, clip, oneLine, shortHome } from './util.js';
+import { tr, lang } from './i18n.js';
 
 const inflight = new Map();
 
@@ -17,59 +18,59 @@ async function buildContext(root) {
   const human = sessions.filter((s) => !s.automated);
   const picked = (human.length ? human : sessions).slice(0, 4);
   const parts = [];
-  parts.push(`# 프로젝트: ${projectName(root)} (${shortHome(root)})`);
-  parts.push(`세션 수: ${sessions.length} (사람이 연 세션 ${human.length}), 마지막 활동: ${fmtDate(sessions[0]?.updated)}, 첫 활동: ${fmtDate(sessions.at(-1)?.created)}`);
+  parts.push(`# Project: ${projectName(root)} (${shortHome(root)})`);
+  parts.push(`Sessions: ${sessions.length} (opened by a human: ${human.length}), last activity: ${fmtDate(sessions[0]?.updated)}, first activity: ${fmtDate(sessions.at(-1)?.created)}`);
   const git = await gitInfo(root);
   if (git) {
-    parts.push(`\n## git (branch ${git.branch || '?'}, 미커밋 변경 ${git.dirty}개)`);
+    parts.push(`\n## git (branch ${git.branch || '?'}, ${git.dirty} uncommitted changes)`);
     for (const c of git.commits.slice(0, 12)) parts.push(`- ${fmtDate(c.ts)} ${c.subject}`);
-    if (git.changed.length) parts.push(`미커밋 파일: ${git.changed.slice(0, 15).map((l) => l.slice(3)).join(', ')}`);
+    if (git.changed.length) parts.push(`Uncommitted files: ${git.changed.slice(0, 15).map((l) => l.slice(3)).join(', ')}`);
   }
   for (const d of projectDocs(root)) {
-    parts.push(`\n## ${d.file} (앞부분)\n${clip(d.text, 1800)}`);
+    parts.push(`\n## ${d.file} (beginning)\n${clip(d.text, 1800)}`);
   }
   for (const s of picked) {
     const full = await findSession(s.tool, s.id);
     const msgs = await readMessages(full);
     const users = msgs.filter((m) => m.role === 'user').slice(-10);
     const replies = msgs.filter((m) => m.role === 'assistant').slice(-3);
-    parts.push(`\n## 세션 [${s.tool}] "${s.title}" (${fmtDate(s.created)} ~ ${fmtDate(s.updated)}, 메시지 ${msgs.length}개)`);
-    parts.push('사용자 요청(최근순 아님, 시간순):');
+    parts.push(`\n## Session [${s.tool}] "${s.title}" (${fmtDate(s.created)} ~ ${fmtDate(s.updated)}, ${msgs.length} messages)`);
+    parts.push('User requests (chronological):');
     for (const u of users) parts.push(`- ${clip(oneLine(u.text), 320)}`);
-    parts.push('에이전트 마지막 답변들:');
+    parts.push('Last agent replies:');
     for (const r of replies) parts.push(`> ${clip(oneLine(r.text), 900)}`);
   }
   return { text: parts.join('\n'), sessions };
 }
 
-const PROMPT = (ctx) => `너는 바이브코딩 개발자의 프로젝트 매니저 비서야. 개발자는 여러 프로젝트를 AI 코딩 에이전트(Claude Code, Codex, Antigravity)로 동시에 진행하다가 어디까지 했는지 자주 잊어버려.
-아래 자료(대화 세션 기록, git 로그, 문서)를 보고 이 프로젝트를 "다시 이어서 하려는 사람"이 바로 행동할 수 있도록 브리핑을 만들어.
+const PROMPT = (ctx, language) => `You are a project-manager assistant for a "vibe coding" developer who runs many projects in parallel with AI coding agents (Claude Code, Codex, Antigravity, OpenCode, Cursor) and often forgets where they left off.
+From the material below (session transcripts, git log, docs), write a briefing that lets someone coming back to this project act immediately.
 
-규칙:
-- 반드시 한국어, 짧고 구체적으로. 추측은 "(추정)" 표시.
-- next[].prompt 는 개발자가 에이전트에게 그대로 보낼 수 있는 구체적인 요청문(1~3문장)으로 써.
-- 자료에 없는 사실을 지어내지 마.
-- 출력은 JSON 하나만. 코드블록/설명 없이.
+Rules:
+- Write every text value in ${language}. Short and concrete. Mark guesses with "(guess)".
+- next[].prompt must be a concrete request (1-3 sentences) the developer can send to an agent as-is.
+- Never invent facts that are not in the material.
+- Output exactly one JSON object. No code fences, no explanation.
 
-JSON 형식:
+JSON shape:
 {
-  "what": "이 프로젝트가 무엇인지 한 줄",
-  "oneLiner": "현재 상태를 한 문장으로 (예: 3D 자물쇠 회전까지 구현, 결제 연동 전)",
-  "progress": 0~100 정수 (완성도 추정),
-  "phase": "아이디어|설계|구현 초기|구현 중반|마무리|운영/유지보수 중 하나",
-  "lastDone": ["최근에 끝낸 일 (최대 4개)"],
-  "next": [{"title": "다음 할 일 (짧게)", "why": "왜 지금 이걸 해야 하는지 한 줄", "prompt": "에이전트에게 보낼 요청문"}],
-  "openQuestions": ["결정이 필요한 것 / 막힌 것 (최대 3개, 없으면 빈 배열)"],
-  "resumeTip": "다시 시작할 때 첫 5분 동안 할 일 한 줄"
+  "what": "one line: what this project is",
+  "oneLiner": "current state in one sentence (e.g. 3D lock rotation done, payments not wired yet)",
+  "progress": integer 0-100 (estimated completeness),
+  "phase": "one of: idea | design | early build | mid build | polishing | live/maintenance (in ${language})",
+  "lastDone": ["recently finished work (max 4)"],
+  "next": [{"title": "next thing to do (short)", "why": "one line on why now", "prompt": "request to send to the agent"}],
+  "openQuestions": ["decisions needed / blockers (max 3, empty array if none)"],
+  "resumeTip": "one line: what to do in the first 5 minutes when resuming"
 }
 
---- 자료 ---
+--- material ---
 ${ctx}`;
 
 function parseJson(text) {
   const s = text.indexOf('{');
   const e = text.lastIndexOf('}');
-  if (s < 0 || e < s) throw new Error('JSON을 찾지 못했어요');
+  if (s < 0 || e < s) throw new Error(tr('JSON을 찾지 못했어요'));
   const j = JSON.parse(text.slice(s, e + 1));
   return {
     what: String(j.what || ''),
@@ -92,7 +93,7 @@ export async function ensureBrief(project, { force = false } = {}) {
   const p = (async () => {
     const { text } = await buildContext(project.id);
     const st = getSettings();
-    const out = await oneShot({ tool: st.briefTool, model: st.briefModel, prompt: PROMPT(clip(text, 40000)), cwd: DATA_DIR });
+    const out = await oneShot({ tool: st.briefTool, model: st.briefModel, prompt: PROMPT(clip(text, 40000), lang() === 'ko' ? 'Korean' : 'English'), cwd: DATA_DIR });
     const brief = parseJson(out);
     saveBrief(project.id, fp, brief);
     return getBrief(project.id);

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { HOME, eachJsonl, headJsonl, tailJsonl, cleanPrompt, clip, oneLine, statSafe } from '../util.js';
 import { summarizeTool, toolOutputText } from './common.js';
 import { getKV } from '../store.js';
+import { tr } from '../i18n.js';
 
 const ROOT = path.join(HOME, '.codex');
 const SESSIONS = path.join(ROOT, 'sessions');
@@ -113,7 +114,7 @@ export async function listCodex() {
     if (!c.summary) continue;
     const s = c.summary;
     if (s.automated && batonIds.has(s.id)) s.automated = false;
-    s.title = t.get(s.id) || s.fallbackTitle || '(제목 없음)';
+    s.title = t.get(s.id) || s.fallbackTitle || tr('(제목 없음)');
     out.push(s);
   }
   for (const k of cache.keys()) if (!seen.has(k)) cache.delete(k);
@@ -134,7 +135,7 @@ export async function readCodex(file) {
       return;
     }
     if (e.type === 'event_msg' && p.type === 'context_compacted') {
-      msgs.push({ role: 'system', text: '대화가 압축(compact)되었어요', ts });
+      msgs.push({ role: 'system', text: tr('대화가 압축(compact)되었어요'), ts });
       return;
     }
     if (e.type !== 'response_item') return;

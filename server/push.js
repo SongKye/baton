@@ -1,6 +1,7 @@
 // Web Push (VAPID) — works on iOS 16.4+ when Baton is added to the home screen.
 import webpush from 'web-push';
 import { getKV, setKV, listPushSubs, removePushSub, addEvent } from './store.js';
+import { tr } from './i18n.js';
 
 let keys = getKV('vapid');
 if (!keys) {

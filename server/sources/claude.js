@@ -4,6 +4,7 @@ import path from 'node:path';
 import { getKV } from '../store.js';
 import { HOME, eachJsonl, headJsonl, tailJsonl, cleanPrompt, clip, oneLine, pidAlive, statSafe } from '../util.js';
 import { summarizeTool, toolOutputText } from './common.js';
+import { tr } from '../i18n.js';
 
 const PROJECTS = path.join(HOME, '.claude', 'projects');
 const LIVE_DIR = path.join(HOME, '.claude', 'sessions');
@@ -67,7 +68,7 @@ async function summarize(file, st) {
   return {
     tool: 'claude',
     id,
-    title: customTitle || aiTitle || summaryTitle || clip(oneLine(firstPrompt || lastPrompt), 80) || '(제목 없음)',
+    title: customTitle || aiTitle || summaryTitle || clip(oneLine(firstPrompt || lastPrompt), 80) || tr('(제목 없음)'),
     cwd,
     created: created || st.birthtimeMs,
     updated: updated || st.mtimeMs,
@@ -135,7 +136,7 @@ export async function readClaude(file) {
     if (e.isSidechain) return;
     const ts = e.timestamp ? Date.parse(e.timestamp) : null;
     if (e.type === 'system' && e.subtype === 'compact_boundary') {
-      msgs.push({ role: 'system', text: '대화가 압축(compact)되었어요', ts });
+      msgs.push({ role: 'system', text: tr('대화가 압축(compact)되었어요'), ts });
       return;
     }
     if (e.type === 'user') {

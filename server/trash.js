@@ -5,6 +5,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { DATA_DIR, HOME, DAY } from './util.js';
 import { db } from './store.js';
+import { tr } from './i18n.js';
 
 const TRASH_DIR = path.join(DATA_DIR, 'trash');
 const TRASH_DAYS = 30;
@@ -24,6 +25,11 @@ function sessionFiles(s) {
   const add = (p) => { if (p && fs.existsSync(p)) out.push(p); };
   add(s.file);
   if (s.tool === 'claude') add(s.file.replace(/\.jsonl$/, '')); // subagent transcripts live in <id>/
+  if (s.tool === 'opencode') {
+    const storage = path.resolve(path.dirname(s.file), '..', '..'); // storage/session/<proj>/<id>.json
+    add(path.join(storage, 'message', s.id)); // parts stay (keyed by message id) — harmless orphans
+  }
+  if (s.tool === 'cursor') { out.length = 0; add(path.dirname(s.file)); } // whole chat folder
   if (s.tool === 'agy') {
     add(`${s.file}-wal`); add(`${s.file}-shm`);
     add(path.join(HOME, '.gemini', 'antigravity-cli', 'brain', s.id)); // plan/artifact files
@@ -42,7 +48,7 @@ async function move(from, to) {
 
 export async function trashSession(s) {
   const files = sessionFiles(s);
-  if (!files.length) throw new Error('세션 파일을 찾을 수 없어요');
+  if (!files.length) throw new Error(tr('세션 파일을 찾을 수 없어요'));
   const dir = path.join(TRASH_DIR, `${Date.now()}-${s.tool}-${s.id}`.replace(/[^\w.-]/g, '_'));
   const moved = [];
   for (const [i, f] of files.entries()) {
@@ -56,7 +62,7 @@ export async function trashSession(s) {
 
 export async function restoreSession(key) {
   const r = db.prepare('SELECT * FROM trash WHERE key = ?').get(key);
-  if (!r) throw new Error('휴지통에 없어요');
+  if (!r) throw new Error(tr('휴지통에 없어요'));
   for (const { from, to } of JSON.parse(r.files)) {
     if (fs.existsSync(from) || !fs.existsSync(to)) continue;
     await move(to, from);

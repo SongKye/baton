@@ -9,12 +9,84 @@ import { shortHome, clip } from './util.js';
 import { projectRoot } from './projects.js';
 import { getSnapshot } from './indexer.js';
 import { liveSessions } from './live.js';
+import { IS_WIN, IS_MAC, sh } from './platform.js';
+import { tr } from './i18n.js';
 
 const pexec = promisify(execFile);
 const MY_UID = os.userInfo().uid;
 const BATON_PORT = Number(process.env.BATON_PORT || 7420);
+const PS = ['-NoProfile', '-NonInteractive', '-Command'];
+
+// ---------------------------------------------------------------- per-OS: listening sockets
+async function listeners() {
+  const rows = [];
+  if (IS_WIN) {
+    const out = await sh('powershell.exe', [...PS, 'Get-NetTCPConnection -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess | ConvertTo-Json -Compress'], 12000);
+    let j = [];
+    try { j = [].concat(JSON.parse(out || '[]')); } catch { /* none */ }
+    for (const r of j) rows.push({ port: Number(r.LocalPort), addr: String(r.LocalAddress), pid: Number(r.OwningProcess) || null });
+    return rows;
+  }
+  if (IS_MAC) {
+    const out = await sh('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN', '-F', 'pn'], 8000);
+    let pid = null;
+    for (const line of out.split('\n')) {
+      if (line[0] === 'p') pid = Number(line.slice(1));
+      else if (line[0] === 'n') {
+        const a = line.slice(1);
+        rows.push({ port: Number(a.slice(a.lastIndexOf(':') + 1)), addr: a.slice(0, a.lastIndexOf(':')).replace(/^\*$/, '0.0.0.0').replace(/^\[|\]$/g, ''), pid });
+      }
+    }
+    return rows;
+  }
+  let out = await sh('ss', ['-ltnpH'], 5000);
+  if (out) {
+    for (const line of out.split('\n')) {
+      const cols = line.trim().split(/\s+/);
+      if (cols.length < 4) continue;
+      const local = cols[3];
+      rows.push({
+        port: Number(local.slice(local.lastIndexOf(':') + 1)),
+        addr: local.slice(0, local.lastIndexOf(':')).replace(/%.*$/, '').replace(/^\[|\]$/g, ''),
+        pid: Number((line.match(/pid=(\d+)/) || [])[1]) || null,
+      });
+    }
+    return rows;
+  }
+  out = await sh('netstat', ['-tlnp'], 5000); // fallback (older distros)
+  for (const line of out.split('\n')) {
+    const m = line.match(/^tcp6?\s+\d+\s+\d+\s+(\S+):(\d+)\s+\S+\s+LISTEN\s+(\d+)?/);
+    if (m) rows.push({ port: Number(m[2]), addr: m[1], pid: Number(m[3]) || null });
+  }
+  return rows;
+}
+
+// ---------------------------------------------------------------- per-OS: process details
+async function winProcs(pids) {
+  if (!pids.length) return new Map();
+  const filter = pids.map((p) => `ProcessId=${Number(p)}`).join(' or ');
+  const out = await sh('powershell.exe', [...PS, `Get-CimInstance Win32_Process -Filter "${filter}" | Select-Object ProcessId,ParentProcessId,CommandLine,CreationDate | ConvertTo-Json -Compress`], 15000);
+  const map = new Map();
+  let j = [];
+  try { j = [].concat(JSON.parse(out || '[]')); } catch { /* none */ }
+  for (const r of j) {
+    const created = String(r.CreationDate || '').match(/\d{10,}/);
+    const cmd = r.CommandLine || null;
+    // best-effort cwd: the folder of a script path in the command line
+    const scriptPath = cmd && (cmd.match(/"?([A-Za-z]:\\[^"]+?\\)[^"\\]+\.(?:m?js|ts|py)"?/) || [])[1];
+    map.set(Number(r.ProcessId), { pid: Number(r.ProcessId), ppid: Number(r.ParentProcessId), cmd, cwd: scriptPath ? scriptPath.replace(/\\$/, '') : null, startedAt: created ? Number(created[0]) : null, mine: Boolean(cmd) });
+  }
+  return map;
+}
 
 async function procInfo(pid) {
+  if (IS_MAC) {
+    const out = (await sh('ps', ['-o', 'ppid=,uid=,etime=,command=', '-p', String(pid)])).trim();
+    const m = out.match(/^(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/);
+    const cwdOut = await sh('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn']);
+    const cwd = (cwdOut.split('\n').find((l) => l[0] === 'n') || '').slice(1) || null;
+    return m ? { pid, ppid: Number(m[1]), uid: Number(m[2]), startedAt: Date.now() - etimeMs(m[3]), cmd: m[4], cwd } : { pid };
+  }
   const r = { pid };
   try { r.cmd = (await fsp.readFile(`/proc/${pid}/cmdline`, 'utf8')).split('\0').filter(Boolean).join(' '); } catch { /* gone */ }
   try { r.cwd = await fsp.readlink(`/proc/${pid}/cwd`); } catch { /* not ours */ }
@@ -28,6 +100,11 @@ async function procInfo(pid) {
   } catch { /* ignore */ }
   try { r.uid = fs.statSync(`/proc/${pid}`).uid; } catch { /* ignore */ }
   return r;
+}
+
+function etimeMs(t) { // [[dd-]hh:]mm:ss
+  const m = String(t).match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
+  return m ? ((+(m[1] || 0) * 24 + +(m[2] || 0)) * 3600 + +m[3] * 60 + +m[4]) * 1000 : 0;
 }
 
 const titleCache = new Map();
@@ -84,17 +161,7 @@ function agentFor(pid, procs, liveByPid) {
 }
 
 export async function listPorts() {
-  const { stdout } = await pexec('ss', ['-ltnpH'], { timeout: 4000 });
-  const rows = [];
-  for (const line of stdout.split('\n')) {
-    const cols = line.trim().split(/\s+/);
-    if (cols.length < 4) continue;
-    const local = cols[3];
-    const port = Number(local.slice(local.lastIndexOf(':') + 1));
-    const addr = local.slice(0, local.lastIndexOf(':')).replace(/%.*$/, '').replace(/^\[|\]$/g, '');
-    const pid = Number((line.match(/pid=(\d+)/) || [])[1]) || null;
-    rows.push({ port, addr, pid });
-  }
+  const rows = (await listeners()).filter((r) => r.port > 0);
   // merge v4/v6 duplicates of the same port+pid
   const byKey = new Map();
   for (const r of rows) {
@@ -105,9 +172,18 @@ export async function listPorts() {
   const ts = await tailscaleInfo();
   const procs = new Map();
   const want = new Set([...byKey.values()].map((r) => r.pid).filter(Boolean));
-  for (const pid of want) {
-    let p = pid;
-    for (let i = 0; i < 12 && p > 1 && !procs.has(p); i++) { const info = await procInfo(p); procs.set(p, info); p = info.ppid; }
+  if (IS_WIN) {
+    let batch = [...want];
+    for (let depth = 0; depth < 6 && batch.length; depth++) { // walk parents a few levels for agent attribution
+      const got = await winProcs(batch.filter((p) => !procs.has(p)));
+      for (const [k, v] of got) procs.set(k, v);
+      batch = [...got.values()].map((v) => v.ppid).filter((p) => p > 4 && !procs.has(p));
+    }
+  } else {
+    for (const pid of want) {
+      let p = pid;
+      for (let i = 0; i < 12 && p > 1 && !procs.has(p); i++) { const info = await procInfo(p); procs.set(p, info); p = info.ppid; }
+    }
   }
   const snap = await getSnapshot(10_000);
   const live = await liveSessions(snap.byFile);
@@ -120,7 +196,7 @@ export async function listPorts() {
   for (const r of byKey.values()) {
     if (r.addrs.every((a) => ts.ips.includes(a))) continue; // tailscale's own serve listeners
     const p = r.pid ? procs.get(r.pid) : null;
-    const mine = p?.uid === MY_UID;
+    const mine = IS_WIN ? Boolean(p?.mine) : p?.uid === MY_UID;
     const local = r.addrs.every((a) => a === '127.0.0.1' || a === '::1' || a === 'localhost');
     const page = mine || !r.pid ? await pageTitle(r.port) : null;
     const root = p?.cwd ? projectRoot(p.cwd) : null;
@@ -145,8 +221,8 @@ export async function listPorts() {
 }
 
 function progName(cmd) {
-  const parts = cmd.split(' ');
-  const bin = parts[0].split('/').pop();
+  const parts = cmd.replace(/"/g, '').split(' ');
+  const bin = parts[0].split(/[\\/]/).pop().replace(/\.exe$/i, '');
   const find = (re) => parts.find((x) => re.test(x));
   if (/node|bun|deno/.test(bin)) {
     const s = find(/vite|next|nuxt|astro|webpack|serve|http-server|nodemon|tsx|ts-node|remix|svelte/);
@@ -164,7 +240,7 @@ const tsPortsBusy = new Set([443, 8443]);
 /** Expose a localhost-only port to the tailnet (https://host:<port>), tailnet only — never Funnel. */
 export async function shareToPhone(port) {
   port = Number(port);
-  if (!Number.isInteger(port) || port < 1024 || port > 65535 || tsPortsBusy.has(port)) throw new Error('이 포트는 열 수 없어요');
+  if (!Number.isInteger(port) || port < 1024 || port > 65535 || tsPortsBusy.has(port)) throw new Error(tr('이 포트는 열 수 없어요'));
   await pexec('tailscale', ['serve', '--bg', `--https=${port}`, `http://127.0.0.1:${port}`], { timeout: 15000 });
   tsCache.at = 0;
   const ts = await tailscaleInfo();
@@ -172,16 +248,22 @@ export async function shareToPhone(port) {
 }
 export async function unshare(port) {
   port = Number(port);
-  if (tsPortsBusy.has(port)) throw new Error('Baton·기존 서비스 포트는 닫을 수 없어요');
+  if (tsPortsBusy.has(port)) throw new Error(tr('Baton·기존 서비스 포트는 닫을 수 없어요'));
   await pexec('tailscale', ['serve', `--https=${port}`, 'off'], { timeout: 15000 });
   tsCache.at = 0;
 }
 
 export async function stopPort(pid) {
   pid = Number(pid);
+  if (pid === process.pid) throw new Error(tr('Baton 자신은 멈출 수 없어요'));
+  if (IS_WIN) {
+    const info = (await winProcs([pid])).get(pid);
+    if (!info?.mine) throw new Error(tr('내 프로세스만 멈출 수 있어요'));
+    await sh('taskkill', ['/pid', String(pid), '/T', '/F']);
+    return { ok: true };
+  }
   const info = await procInfo(pid);
-  if (info.uid !== MY_UID) throw new Error('내 프로세스만 멈출 수 있어요');
-  if (pid === process.pid) throw new Error('Baton 자신은 멈출 수 없어요');
+  if (info.uid !== MY_UID) throw new Error(tr('내 프로세스만 멈출 수 있어요'));
   process.kill(pid, 'SIGTERM');
   return { ok: true };
 }

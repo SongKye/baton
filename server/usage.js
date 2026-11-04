@@ -10,6 +10,7 @@ import readline from 'node:readline';
 import { HOME, DATA_DIR, DAY } from './util.js';
 import { noteClaudeModels } from './models.js';
 import { agyUsage, agyConversationModel, agySkillReads } from './sources/agy.js';
+import { OPENCODE_STORAGE, opencodeUsage } from './sources/opencode.js';
 
 const WINDOW_DAYS = 31;
 const CACHE_FILE = path.join(DATA_DIR, 'usage-cache.json');
@@ -30,7 +31,7 @@ function skillPaths(text, cwd) {
   const out = [];
   for (const m of String(text).matchAll(SKILL_PATH_RE)) {
     let p = m[1].replace(/^~(?=\/)/, HOME);
-    if (!p.startsWith('/')) p = cwd ? path.resolve(cwd, p) : null;
+    if (!path.isAbsolute(p)) p = cwd ? path.resolve(cwd, p) : null;
     out.push({ path: p, name: m[2] });
   }
   return out;
@@ -159,6 +160,28 @@ function scanAgy(file) {
   return { b, sk, sid: `agy:${path.basename(file, '.db')}` };
 }
 
+async function listOpencodeSessions(minMtime) {
+  const out = [];
+  const root = path.join(OPENCODE_STORAGE, 'session');
+  for (const proj of await fsp.readdir(root).catch(() => [])) {
+    for (const f of await fsp.readdir(path.join(root, proj)).catch(() => [])) {
+      if (!f.endsWith('.json')) continue;
+      const p = path.join(root, proj, f);
+      const st = await fsp.stat(p).catch(() => null);
+      const md = await fsp.stat(path.join(OPENCODE_STORAGE, 'message', f.replace(/\.json$/, ''))).catch(() => null);
+      const m = Math.max(st?.mtimeMs || 0, md?.mtimeMs || 0);
+      if (st && m >= minMtime) out.push({ p, st: { mtimeMs: m, size: st.size } });
+    }
+  }
+  return out;
+}
+
+async function scanOpencode(file) {
+  const b = {};
+  for (const u of await opencodeUsage(file)) add(b, `${dayKey(u.ts || Date.now())}|${u.model}`, [Math.max(0, u.input), u.cacheWrite, u.cacheRead, u.output]);
+  return { b, sk: [], sid: `opencode:${path.basename(file, '.json')}` };
+}
+
 let scanning = null;
 let lastScan = 0;
 
@@ -166,18 +189,18 @@ export function refreshUsage() {
   if (scanning) return scanning;
   scanning = (async () => {
     const minMtime = Date.now() - WINDOW_DAYS * DAY;
-    const files = { claude: [], codex: [], agy: await listAgyDbs(minMtime) };
+    const files = { claude: [], codex: [], agy: await listAgyDbs(minMtime), opencode: await listOpencodeSessions(minMtime) };
     await walk(CLAUDE_DIR, files.claude, minMtime);
     await walk(CODEX_DIR, files.codex, minMtime);
     const next = {};
     let limits = cache.codexLimits;
-    for (const tool of ['claude', 'codex', 'agy']) {
+    for (const tool of Object.keys(files)) {
       for (const { p, st } of files[tool]) {
         const old = cache.files[p];
         if (old && old.m === st.mtimeMs && old.s === st.size) { next[p] = old; }
         else {
           try {
-            const r = tool === 'claude' ? await scanClaude(p) : tool === 'codex' ? await scanCodex(p) : scanAgy(p);
+            const r = tool === 'claude' ? await scanClaude(p) : tool === 'codex' ? await scanCodex(p) : tool === 'opencode' ? await scanOpencode(p) : scanAgy(p);
             next[p] = { t: tool, m: st.mtimeMs, s: st.size, b: r.b, sk: r.sk?.length ? r.sk : undefined, sid: r.sid || undefined };
             if (r.limits && (!limits || r.limits.at > limits.at)) limits = r.limits;
           } catch { /* unreadable */ }
@@ -204,7 +227,7 @@ export async function skillUses() {
 export async function usageReport() {
   if (!lastScan) await refreshUsage();
   else if (Date.now() - lastScan > 60_000) refreshUsage(); // stale-while-revalidate
-  const merged = { claude: {}, codex: {}, agy: {} };
+  const merged = { claude: {}, codex: {}, agy: {}, opencode: {}, cursor: {} };
   for (const f of Object.values(cache.files)) for (const [k, v] of Object.entries(f.b)) add(merged[f.t], k, v);
 
   noteClaudeModels(Object.keys(merged.claude).map((k) => k.split('|')[1]));

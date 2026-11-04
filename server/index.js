@@ -15,6 +15,10 @@ import { trashSession, restoreSession, listTrash, emptyTrash, startTrashPurge, c
 import { startWatcher } from './watch.js';
 import { listPorts, shareToPhone, unshare, stopPort } from './ports.js';
 import { skillsReport, skillDetail } from './skills.js';
+import { setupStatus, startJob, getJob, jobInput, stopJob, publicJob } from './setup.js';
+import { toolsMeta, binFor, TOOL_IDS } from './tools.js';
+import { OS_NAME, openBrowser } from './platform.js';
+import { tr, lang } from './i18n.js';
 import crypto from 'node:crypto';
 import { ensureBrief, briefPending } from './brief.js';
 import { dozingProjects, sendNudge, startNudgeScheduler } from './nudge.js';
@@ -67,7 +71,7 @@ function resolveCwd(p) {
   if (!p) return null;
   let abs = p.startsWith('~') ? path.join(HOME, p.slice(1)) : p;
   abs = path.resolve(abs);
-  if (!abs.startsWith(HOME)) throw new Error('홈 디렉터리 밖은 열 수 없어요');
+  if (!abs.startsWith(HOME)) throw new Error(tr('홈 디렉터리 밖은 열 수 없어요'));
   return abs;
 }
 
@@ -82,7 +86,20 @@ route('GET', '/api/state', async () => ({
   unread: store.unreadCount(),
   runs: listRuns().filter((r) => r.status === 'running'),
   home: shortHome(HOME),
+  tools: toolsMeta().map((t) => ({ ...t, installed: Boolean(binFor(t.id)) })),
+  defaultCwd: fs.existsSync(path.join(HOME, 'workspace')) ? '~/workspace' : '~',
+  os: OS_NAME,
 }));
+
+// ---------- setup / onboarding ----------
+route('GET', '/api/setup', async (req, url) => setupStatus({ fresh: url.searchParams.get('fresh') === '1' }));
+route('POST', '/api/setup/jobs', async (req) => {
+  const b = await body(req);
+  try { return { job: publicJob(await startJob(String(b.action || ''), b.tool || null)) }; }
+  catch (e) { return [400, { error: e.message }]; }
+});
+route('POST', '/api/setup/jobs/:id/input', async (req, url, { id }) => ({ ok: jobInput(id, (await body(req)).text || '') }));
+route('POST', '/api/setup/jobs/:id/stop', async (req, url, { id }) => ({ ok: stopJob(id) }));
 
 route('GET', '/api/home', async () => {
   const sessions = await decoratedSessions();
@@ -119,7 +136,7 @@ route('GET', '/api/sessions', async (req, url) => {
 
 route('GET', '/api/sessions/:tool/:id', async (req, url, { tool, id }) => {
   const s = await findSession(tool, decodeURIComponent(id));
-  if (!s) return [404, { error: '세션을 찾을 수 없어요' }];
+  if (!s) return [404, { error: tr('세션을 찾을 수 없어요') }];
   const before = url.searchParams.has('before') ? Number(url.searchParams.get('before')) : null;
   const msgs = await readMessages(s);
   const page = pageMessages(msgs, before, Number(url.searchParams.get('limit') || 80));
@@ -145,16 +162,16 @@ route('POST', '/api/sessions/:tool/:id/meta', async (req, url, { tool, id }) => 
 const IMG_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 async function saveImages(tool, cwd, list) {
   if (!Array.isArray(list) || !list.length) return [];
-  if (list.length > 8) throw new Error('이미지는 한 번에 8장까지 보낼 수 있어요');
+  if (list.length > 8) throw new Error(tr('이미지는 한 번에 8장까지 보낼 수 있어요'));
   const dir = tool === 'agy' ? path.join(cwd, '.baton-uploads') : path.join(ROOT, 'data', 'uploads', new Date().toISOString().slice(0, 10));
   await fsp.mkdir(dir, { recursive: true });
   if (tool === 'agy') await fsp.writeFile(path.join(dir, '.gitignore'), '*\n').catch(() => {});
   const out = [];
   for (const im of list) {
     const ext = IMG_EXT[im?.mime];
-    if (!ext || typeof im.data !== 'string') throw new Error('지원하지 않는 이미지 형식이에요');
+    if (!ext || typeof im.data !== 'string') throw new Error(tr('지원하지 않는 이미지 형식이에요'));
     const buf = Buffer.from(im.data, 'base64');
-    if (buf.length > 12e6) throw new Error('이미지가 너무 커요');
+    if (buf.length > 12e6) throw new Error(tr('이미지가 너무 커요'));
     const file = path.join(dir, `img-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}.${ext}`);
     await fsp.writeFile(file, buf);
     out.push({ path: file, mime: im.mime });
@@ -167,13 +184,13 @@ route('POST', '/api/run', async (req) => {
   let cwd = null, title = null;
   if (b.sessionId) {
     const s = await findSession(b.tool, b.sessionId);
-    if (!s) return [404, { error: '세션을 찾을 수 없어요' }];
+    if (!s) return [404, { error: tr('세션을 찾을 수 없어요') }];
     cwd = s.cwd && fs.existsSync(s.cwd) ? s.cwd : (s.project || HOME);
     title = s.title;
   } else {
     cwd = resolveCwd(b.cwd || '~/workspace');
     if (!fs.existsSync(cwd)) {
-      if (!b.mkdir) return [400, { error: `폴더가 없어요: ${shortHome(cwd)}` }];
+      if (!b.mkdir) return [400, { error: tr('폴더가 없어요: {p}', { p: shortHome(cwd) }), code: 'NO_DIR' }];
       await fsp.mkdir(cwd, { recursive: true });
     }
     title = clip(b.prompt, 60);
@@ -201,7 +218,7 @@ route('GET', '/api/projects/:pid', async (req, url, { pid }) => {
   const id = decodeURIComponent(pid);
   const projects = await projectsList();
   const p = projects.find((x) => x.id === id);
-  if (!p) return [404, { error: '프로젝트를 찾을 수 없어요' }];
+  if (!p) return [404, { error: tr('프로젝트를 찾을 수 없어요') }];
   const all = await decoratedSessions({ includeAutomated: url.searchParams.get('automated') === '1' });
   const sessions = all.filter((s) => s.project === id).map(sessionView);
   const brief = store.getBrief(id);
@@ -224,7 +241,7 @@ route('POST', '/api/projects/:pid/meta', async (req, url, { pid }) => {
 route('POST', '/api/projects/:pid/brief', async (req, url, { pid }) => {
   const id = decodeURIComponent(pid);
   const p = (await projectsList()).find((x) => x.id === id);
-  if (!p) return [404, { error: '프로젝트를 찾을 수 없어요' }];
+  if (!p) return [404, { error: tr('프로젝트를 찾을 수 없어요') }];
   try {
     return { brief: await ensureBrief(p, { force: url.searchParams.get('force') === '1' }) };
   } catch (e) {
@@ -266,7 +283,7 @@ route('POST', '/api/events/read', async () => { store.markEventsRead(); return {
 
 route('POST', '/api/push/subscribe', async (req) => { const b = await body(req); if (!b?.endpoint) return [400, { error: 'bad subscription' }]; store.addPushSub(b); return { ok: true }; });
 route('POST', '/api/push/unsubscribe', async (req) => { const b = await body(req); store.removePushSub(b.endpoint); return { ok: true }; });
-route('POST', '/api/push/test', async () => ({ sent: await notify({ kind: 'test', title: '🏃 Baton 알림 테스트', body: '알림이 잘 도착했어요!', url: '/#/' }) }));
+route('POST', '/api/push/test', async () => ({ sent: await notify({ kind: 'test', title: tr('🏃 Baton 알림 테스트'), body: tr('알림이 잘 도착했어요!'), url: '/#/' }) }));
 route('POST', '/api/nudge/now', async () => ({ nudge: await sendNudge({ ignoreCooldown: true }) }));
 
 route('GET', '/api/usage', async () => usageReport());
@@ -288,7 +305,7 @@ route('POST', '/api/sessions/trash', async (req) => {
     const s = snap.byKey.get(key);
     const d = all.get(key);
     if (!s) continue;
-    if (d?.live || d?.running) { errors.push(`${d.title}: 실행 중이라 건너뛰었어요`); continue; }
+    if (d?.live || d?.running) { errors.push(tr('{title}: 실행 중이라 건너뛰었어요', { title: d.title })); continue; }
     try { await trashSession({ ...s, title: d?.title || s.title }); moved++; } catch (e) { errors.push(`${s.title}: ${e.message}`); }
   }
   await forceRefresh();
@@ -309,13 +326,26 @@ route('POST', '/api/ports/:port/share', async (req, url, { port }) => shareToPho
 route('POST', '/api/ports/:port/unshare', async (req, url, { port }) => { await unshare(port); return { ok: true }; });
 route('POST', '/api/pids/:pid/stop', async (req, url, { pid }) => stopPort(pid));
 route('GET', '/api/skills', async () => skillsReport());
-route('GET', '/api/skills/:id', async (req, url, { id }) => (await skillDetail(id)) || [404, { error: '스킬을 찾을 수 없어요' }]);
+route('GET', '/api/skills/:id', async (req, url, { id }) => (await skillDetail(id)) || [404, { error: tr('스킬을 찾을 수 없어요') }]);
 route('GET', '/api/limits', async (req, url) => allLimits({ force: url.searchParams.get('force') === '1' }));
 route('GET', '/api/settings', async () => store.getSettings());
 route('POST', '/api/settings', async (req) => store.updateSettings(await body(req)));
 route('POST', '/api/refresh', async () => { await forceRefresh(); return { ok: true }; });
 
 // ---------- SSE for runs ----------
+function streamJob(req, res, id, from) {
+  const job = getJob(id);
+  if (!job) { send(res, 404, { error: 'job not found' }); return; }
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+  const write = (ev) => res.write(`data: ${JSON.stringify(ev)}\n\n`);
+  for (const ev of job.lines.slice(Math.max(0, from))) write(ev);
+  if (job.status !== 'running') { res.end(); return; }
+  const listener = (ev) => { write(ev); if (ev.t === 'end') res.end(); };
+  job.listeners.add(listener);
+  const ping = setInterval(() => res.write(': ping\n\n'), 15000);
+  req.on('close', () => { clearInterval(ping); job.listeners.delete(listener); });
+}
+
 function streamRun(req, res, id, from) {
   const run = getRun(id);
   if (!run) { send(res, 404, { error: 'run not found' }); return; }
@@ -346,7 +376,7 @@ bus.on('run_end', (run) => {
   const ok = run.status === 'done';
   const title = ok ? `✅ ${label}` : `⚠️ ${label}`;
   const res = run.events.findLast?.((e) => e.t === 'done');
-  const bodyText = ok ? clip((res?.result || '응답이 끝났어요').replace(/\s+/g, ' '), 140) : clip(run.error || '실패했어요', 140);
+  const bodyText = ok ? clip((res?.result || tr('응답이 끝났어요')).replace(/\s+/g, ' '), 140) : clip(run.error || tr('실패했어요'), 140);
   if (settings.notifyOnRunDone && !watching) notify({ kind: ok ? 'run_done' : 'run_error', title, body: bodyText, url, tag: `run-${run.sessionId || run.id}` }).catch(() => {});
   else store.addEvent(ok ? 'run_done' : 'run_error', title, bodyText, url);
   forceRefresh().catch(() => {});
@@ -354,7 +384,22 @@ bus.on('run_end', (run) => {
 });
 
 // ---------- static ----------
+// Blocking script loaded before app.js: language, dictionary and t() for the browser.
+function serveI18n(res) {
+  let en = {};
+  try { en = JSON.parse(fs.readFileSync(path.join(PUBLIC, 'locales', 'en.json'), 'utf8')); } catch { /* ko only */ }
+  const L = lang();
+  const js = `window.LANG=${JSON.stringify(L)};window.LOCALE=${JSON.stringify(L === 'ko' ? 'ko-KR' : 'en-US')};
+window.I18N_EN=${L === 'ko' ? '{}' : JSON.stringify(en)};
+window.t=function(ko,vars){var s=window.LANG==='ko'?ko:(window.I18N_EN[ko]!=null?window.I18N_EN[ko]:ko);if(vars)s=s.replace(/\\{(\\w+)\\}/g,function(m,k){return vars[k]!=null?vars[k]:m;});return s;};
+window.hourLabel=function(h){return new Date(2000,0,1,h).toLocaleTimeString(window.LOCALE,{hour:'numeric'});};
+document.documentElement.lang=window.LANG;`;
+  res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(js);
+}
+
 async function serveStatic(req, res, pathname) {
+  if (pathname === '/i18n.js') return serveI18n(res);
   let file = VENDOR[pathname];
   if (!file) {
     const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
@@ -384,6 +429,8 @@ const server = http.createServer(async (req, res) => {
   try {
     const m = url.pathname.match(/^\/api\/runs\/([^/]+)\/stream$/);
     if (m && req.method === 'GET') return streamRun(req, res, m[1], Number(url.searchParams.get('from') || 0));
+    const mj = url.pathname.match(/^\/api\/setup\/jobs\/([^/]+)\/stream$/);
+    if (mj && req.method === 'GET') return streamJob(req, res, mj[1], Number(url.searchParams.get('from') || 0));
     if (url.pathname.startsWith('/api/')) {
       for (const r of routes) {
         if (r.method !== req.method) continue;
@@ -403,8 +450,18 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.log(`[baton] already running → http://localhost:${PORT}`);
+    if (process.argv.includes('--open')) openBrowser(`http://localhost:${PORT}`);
+    process.exit(0);
+  }
+  throw e;
+});
 server.listen(PORT, HOST, async () => {
   console.log(`[baton] listening on http://${HOST}:${PORT}`);
+  console.log(`[baton] open  →  http://localhost:${PORT}`);
+  if (process.argv.includes('--open')) openBrowser(`http://localhost:${PORT}`);
   const t = Date.now();
   const snap = await getSnapshot(0);
   console.log(`[baton] indexed ${snap.sessions.length} sessions in ${Date.now() - t}ms`);
