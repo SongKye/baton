@@ -613,5 +613,6 @@
  "연결 테스트": "Test connection",
  "{name}을(를) 입력해주세요": "Please enter {name}",
  "Claude 구독으로 되돌리기": "Back to the Claude subscription",
- "위 설정을 지우고 claude.ai 로그인으로 (필요하면 로그인 버튼을 눌러주세요)": "Removes the settings above and goes back to the claude.ai login (press Sign in if needed)"
+ "위 설정을 지우고 claude.ai 로그인으로 (필요하면 로그인 버튼을 눌러주세요)": "Removes the settings above and goes back to the claude.ai login (press Sign in if needed)",
+ "새 버전 확인": "Check for updates"
 }

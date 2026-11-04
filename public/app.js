@@ -988,7 +988,7 @@ async function viewSettings() {
       <a class="setting" href="#/usage"><div class="l"><b>${t('사용량 · 한도')}</b><span>${t('CLI별 남은 한도와 토큰 사용량')}</span></div><span class="muted">›</span></a>
       <div class="setting"><div class="l"><b>${t('목록 새로고침')}</b><span>${t('세션 파일을 다시 읽어요')}</span></div><button class="btn sm" id="reindex">${ICON.refresh}</button></div>
     </div></div>
-    <p class="small muted" style="text-align:center;margin-top:24px">${t('Baton · 바이브코딩 이어달리기 🏃‍♂️')}<br>${esc(G.state?.home || '')}</p>`;
+    <p class="small muted" style="text-align:center;margin-top:24px">${t('Baton · 바이브코딩 이어달리기 🏃‍♂️')} · v${esc(G.state?.version || '')}<br>${esc(G.state?.home || '')} · <a href="https://github.com/SongKye/baton/releases" target="_blank" rel="noopener">${t('새 버전 확인')}</a></p>`;
   $$('[data-k]', v).forEach((el) => (el.onchange = async () => {
     const k = el.dataset.k;
     const val = el.type === 'checkbox' ? el.checked : el.dataset.num !== undefined ? Number(el.value) : el.value;

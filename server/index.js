@@ -83,6 +83,8 @@ function resolveCwd(p) {
   return abs;
 }
 
+const VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return '?'; } })();
+
 // ---------- routes ----------
 const routes = [];
 const route = (method, pattern, fn) => routes.push({ method, re: new RegExp('^' + pattern.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$'), fn });
@@ -96,6 +98,7 @@ route('GET', '/api/state', async () => ({
   home: shortHome(HOME),
   tools: toolsMeta().map((t) => ({ ...t, installed: Boolean(binFor(t.id)) })),
   defaultCwd: fs.existsSync(path.join(HOME, 'workspace')) ? '~/workspace' : '~',
+  version: VERSION,
   os: OS_NAME,
 }));
 

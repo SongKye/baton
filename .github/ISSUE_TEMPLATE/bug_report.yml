@@ -1,0 +1,40 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead? Screenshots help.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Where does Baton run?
+      options: [Linux, macOS, Windows, WSL]
+    validations:
+      required: true
+  - type: dropdown
+    id: cli
+    attributes:
+      label: Which CLI is involved?
+      multiple: true
+      options: [Claude Code, Codex, Antigravity, OpenCode, Cursor, Not CLI-specific]
+  - type: dropdown
+    id: backend
+    attributes:
+      label: How is that CLI connected?
+      options: [Subscription login, API key, Amazon Bedrock, Google Vertex, LLM gateway / own server, Other]
+  - type: input
+    id: version
+    attributes:
+      label: Baton version
+      description: Shown at the bottom of Settings
+  - type: textarea
+    id: log
+    attributes:
+      label: Server log
+      description: Output of `npm start` (or `journalctl --user -u baton` on Linux). Remove anything secret.
+      render: text
