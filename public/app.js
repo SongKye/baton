@@ -502,6 +502,7 @@ async function sessionMenu(s, after, { onTrashed } = {}) {
   const act = await pick(s.title, [
     { value: 'notify', label: s.notify ? `${t('🔔 끝나면 알림')} · ${s.notify === 2 ? t('매번') : t('한 번')}` : t('🔔 끝나면 폰으로 알림'), desc: t('PC 터미널에서 돌리는 중이어도 알려줘요') },
     { value: 'newhere', label: t('➕ 이 프로젝트에서 새 세션'), desc: t('같은 폴더에서 원하는 CLI로 새 작업을 시작해요 (맥락은 넘기지 않아요)') },
+    { value: 'move', label: t('📁 작업 폴더 옮기기'), desc: s.moved ? t('지금: {p}', { p: s.cwd }) : t('실제 작업하는 프로젝트 폴더로 이 세션을 옮겨요') },
     { value: 'handoff', label: t('🔀 다른 CLI로 이어가기'), desc: t('토큰이 부족할 때 다른 도구가 이 세션을 이어받아요') },
     { value: 'pin', label: s.pinned ? t('고정 해제') : t('📌 고정') },
     { value: 'rename', label: t('이름 바꾸기') },
@@ -516,6 +517,7 @@ async function sessionMenu(s, after, { onTrashed } = {}) {
   else if (act === 'project') { if (s.project) location.hash = `#/p/${encodeURIComponent(s.project)}`; return; }
   else if (act === 'notify') { await notifyMenu(s); }
   else if (act === 'newhere') { await newSessionHere(s); return; }
+  else if (act === 'move') { if (await moveSessionSheet(s)) after?.(); return; }
   else if (act === 'handoff') { const d = await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}?limit=1&seen=0`).catch(() => ({})); await handoffSheet(s, d.links); return; }
   else if (act === 'trash') { if (await trashOne(s)) { if (onTrashed) onTrashed(); else after?.(); } return; }
   else return;
@@ -789,7 +791,7 @@ async function viewChat([tool, id]) {
     msgsEl.innerHTML = `${start > 0 ? `<button class="btn sm ghost load-older" id="older">${t('이전 대화 더 보기')}</button>` : ''}${banner}<div id="hobanners"></div>${msgsHtml(d.messages)}`;
     api('/api/limits').catch(() => ({})).then((lim) => {
       const hb = $('#hobanners'); if (!hb) return;
-      hb.innerHTML = handoffBanners(session, links, lim);
+      hb.innerHTML = (session.moved ? `<div class="banner">📁 ${t('작업 폴더: {p} (원래 {o})', { p: esc(session.cwd), o: esc(session.origCwd || '') })}</div>` : '') + handoffBanners(session, links, lim);
       $$('[data-handoff]', hb).forEach((b) => (b.onclick = () => handoffSheet(session, links)));
       $$('[data-newhere]', hb).forEach((b) => (b.onclick = () => newSessionHere(session)));
     });
@@ -1591,6 +1593,32 @@ async function handoffSheet(session, links = { from: [], to: [] }, { reason = ''
   else toast(t('{name}로 넘겼어요 · 정리 노트: {note}', { name: TOOL[toTool].name, note: r.note }));
   if (toSessionId) location.hash = `#/s/${toTool}/${encodeURIComponent(toSessionId)}`;
   else location.hash = `#/new?tool=${toTool}&attach=${r.run.id}&from=${encodeURIComponent(`${session.tool}:${session.id}`)}&label=${encodeURIComponent(msg)}`;
+}
+
+/** Move a session to the folder it really works in (suggested from the files it edited). */
+async function moveSessionSheet(s) {
+  const d = await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}/folders`);
+  const opts = d.suggestions.filter((x) => x.short !== d.current).map((x) => ({ value: x.short, label: projectName(x.short), desc: `${x.short} · ${t('이 세션이 {n}번 작업한 폴더', { n: x.uses })}` }));
+  if (d.moved) opts.push({ value: d.original, label: t('↩ 원래 폴더로 되돌리기'), desc: d.original });
+  opts.push({ value: '__custom', label: t('✏️ 직접 입력') });
+  let cwd = await pick(t('어느 폴더로 옮길까요? (지금: {p})', { p: d.current }), opts);
+  if (!cwd) return false;
+  if (cwd === '__custom') { cwd = await promptSheet(t('폴더 경로'), d.current, { placeholder: '~/workspace/my-app' }); if (!cwd) return false; }
+  let moveFiles = false;
+  if (s.tool === 'claude') {
+    const live = s.live || s.running;
+    const v = await pick(t('Claude Code 터미널에서도 옮길까요?'), [
+      { value: 'baton', label: t('Baton에서만 옮기기 (추천)'), desc: t('목록·프로젝트·Baton에서 보내는 메시지가 새 폴더를 써요. 원래 파일은 그대로예요') },
+      ...(live ? [] : [{ value: 'files', label: t('터미널 목록에서도 옮기기'), desc: t('새 폴더에서 claude --resume 하면 이 세션이 보여요. 세션 파일을 옮겨요') }]),
+    ]);
+    if (!v) return false;
+    moveFiles = v === 'files';
+  }
+  try {
+    const r = await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}/move`, { body: { cwd, moveFiles } });
+    toast(t('{p}로 옮겼어요. 다음 메시지부터 이 폴더에서 작업해요', { p: cwd }));
+    return true;
+  } catch (e) { toast(e.message, true); return false; }
 }
 
 /** New session in the same project folder with any installed CLI (no context carried over). */

@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS events (
 const q = (sql) => db.prepare(sql);
 // migrations
 try { db.exec('ALTER TABLE session_meta ADD COLUMN notify INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ }
+try { db.exec('ALTER TABLE session_meta ADD COLUMN cwd_override TEXT'); } catch { /* exists */ }
 
 // ---------- kv / settings ----------
 const DEFAULT_SETTINGS = {
@@ -95,11 +96,11 @@ export function allSessionMeta() {
   return map;
 }
 export function patchSessionMeta(key, patch) {
-  const cur = q('SELECT * FROM session_meta WHERE key = ?').get(key) || { key, pinned: 0, hidden: 0, title: null, last_seen: null, notify: 0 };
+  const cur = q('SELECT * FROM session_meta WHERE key = ?').get(key) || { key, pinned: 0, hidden: 0, title: null, last_seen: null, notify: 0, cwd_override: null };
   const next = { ...cur, ...patch };
-  q(`INSERT INTO session_meta (key, pinned, hidden, title, last_seen, notify) VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET pinned=excluded.pinned, hidden=excluded.hidden, title=excluded.title, last_seen=excluded.last_seen, notify=excluded.notify`)
-    .run(key, next.pinned ? 1 : 0, next.hidden ? 1 : 0, next.title ?? null, next.last_seen ?? null, Number(next.notify) || 0);
+  q(`INSERT INTO session_meta (key, pinned, hidden, title, last_seen, notify, cwd_override) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET pinned=excluded.pinned, hidden=excluded.hidden, title=excluded.title, last_seen=excluded.last_seen, notify=excluded.notify, cwd_override=excluded.cwd_override`)
+    .run(key, next.pinned ? 1 : 0, next.hidden ? 1 : 0, next.title ?? null, next.last_seen ?? null, Number(next.notify) || 0, next.cwd_override ?? null);
   return next;
 }
 
@@ -166,6 +167,13 @@ export function markEventsRead() {
 }
 export function unreadCount() {
   return q('SELECT COUNT(*) AS n FROM events WHERE read = 0').get().n;
+}
+
+/** Sessions moved to another working folder in Baton: key -> folder. */
+export function cwdOverrides() {
+  const map = new Map();
+  for (const r of q('SELECT key, cwd_override FROM session_meta WHERE cwd_override IS NOT NULL').all()) map.set(r.key, r.cwd_override);
+  return map;
 }
 
 /** Sessions the user asked to be pinged about when the agent finishes (1 = once, 2 = every time). */
