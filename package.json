@@ -1,0 +1,18 @@
+{
+  "name": "baton",
+  "version": "0.1.0",
+  "description": "Vibe-coding companion dashboard: all Claude / Codex / Antigravity sessions in one mobile PWA",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node --no-warnings server/index.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.6",
+    "marked": "^15.0.12",
+    "web-push": "^3.6.7"
+  }
+}

@@ -1,0 +1,103 @@
+// Unified session index across all CLIs, with project grouping and live state.
+import path from 'node:path';
+import { listClaude, readClaude } from './sources/claude.js';
+import { listCodex, readCodex } from './sources/codex.js';
+import { listAgy, readAgy } from './sources/agy.js';
+import { liveSessions } from './live.js';
+import { projectRoot, groupProjects } from './projects.js';
+import { allSessionMeta, allProjectMeta, allBriefs, getSettings } from './store.js';
+import { activeRunFor, childPids } from './runner.js';
+import { trashedKeys } from './trash.js';
+
+let snapshot = { at: 0, sessions: [], byKey: new Map(), byFile: new Map() };
+let refreshing = null;
+
+async function rebuild() {
+  const [cl, cx, ag] = await Promise.all([
+    listClaude().catch((e) => { console.warn('[claude]', e.message); return []; }),
+    listCodex().catch((e) => { console.warn('[codex]', e.message); return []; }),
+    listAgy().catch((e) => { console.warn('[agy]', e.message); return []; }),
+  ]);
+  const sessions = [...cl, ...cx, ...ag].map((s) => ({ ...s, key: `${s.tool}:${s.id}`, project: projectRoot(s.cwd) }));
+  const byKey = new Map(sessions.map((s) => [s.key, s]));
+  const byFile = new Map(sessions.map((s) => [s.file, s]));
+  snapshot = { at: Date.now(), sessions, byKey, byFile };
+  return snapshot;
+}
+
+/** Returns the latest snapshot; rebuilds if older than maxAgeMs. */
+export async function getSnapshot(maxAgeMs = 3000) {
+  if (Date.now() - snapshot.at > maxAgeMs) {
+    if (!refreshing) refreshing = rebuild().finally(() => { refreshing = null; });
+    if (!snapshot.at) await refreshing; // first load: wait
+    else if (Date.now() - snapshot.at > 60_000) await refreshing; // very stale: wait
+  }
+  return snapshot;
+}
+
+export async function forceRefresh() {
+  if (!refreshing) refreshing = rebuild().finally(() => { refreshing = null; });
+  return refreshing;
+}
+
+/** Sessions decorated with user meta, live/terminal state and running Baton runs. */
+export async function decoratedSessions({ includeAutomated, includeHidden } = {}) {
+  const snap = await getSnapshot();
+  const meta = allSessionMeta();
+  const live = await liveSessions(snap.byFile);
+  const settings = getSettings();
+  const showAuto = includeAutomated ?? settings.showAutomated;
+  const trashed = trashedKeys();
+  const out = [];
+  for (const s of snap.sessions) {
+    if (trashed.has(s.key)) continue;
+    const m = meta.get(s.key);
+    const hidden = Boolean(m?.hidden);
+    if (hidden && !includeHidden) continue;
+    if (s.automated && !showAuto && !m?.pinned) continue;
+    const lv = live.get(s.key);
+    const terminal = lv && !childPids.has(lv.pid) ? lv : null;
+    const run = activeRunFor(s.key);
+    out.push({
+      ...s,
+      file: undefined,
+      title: m?.title || s.title,
+      pinned: Boolean(m?.pinned),
+      hidden,
+      lastSeen: m?.last_seen || null,
+      notify: m?.notify || 0,
+      terminal: terminal ? terminal.status : null,
+      running: run ? run.id : null,
+      live: Boolean(terminal || run || (s.tool === 'agy' && s.busy && Date.now() - s.updated < 10 * 60_000)),
+      unseen: Boolean(m?.last_seen && s.updated > m.last_seen + 2000),
+    });
+  }
+  out.sort((a, b) => b.updated - a.updated);
+  return out;
+}
+
+export async function projectsList() {
+  const sessions = await decoratedSessions({ includeAutomated: true });
+  return groupProjects(sessions, allProjectMeta(), allBriefs());
+}
+
+export async function findSession(tool, id) {
+  let snap = await getSnapshot();
+  let s = snap.byKey.get(`${tool}:${id}`);
+  if (!s) { snap = await forceRefresh(); s = snap.byKey.get(`${tool}:${id}`); }
+  return s || null;
+}
+
+export async function readMessages(s) {
+  if (!s?.file) return [];
+  if (s.tool === 'claude') return readClaude(s.file);
+  if (s.tool === 'codex') return readCodex(s.file);
+  if (s.tool === 'agy') return readAgy(s.file);
+  return [];
+}
+
+export function sessionsOfProject(sessions, root) {
+  return sessions.filter((s) => s.project === root);
+}
+
+export { path };

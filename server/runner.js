@@ -1,0 +1,341 @@
+// Spawns Claude / Codex / Antigravity CLIs headlessly and normalizes their streaming output
+// into a small event vocabulary the UI understands:
+//   {t:'session', id}            session id became known (new sessions)
+//   {t:'text', text}             assistant text delta
+//   {t:'text_end'}               assistant text block finished
+//   {t:'thinking'}               model is reasoning
+//   {t:'tool', name, summary}    tool call started
+//   {t:'tool_done', error}       tool call finished
+//   {t:'done', ok, error, result, cost, usage, durationMs}
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import crypto from 'node:crypto';
+import { summarizeTool } from './sources/common.js';
+import { getKV, setKV } from './store.js';
+import { clip } from './util.js';
+
+const runs = new Map();         // runId -> run
+const activeByKey = new Map();  // "<tool>:<sessionId>" -> runId
+export const bus = new EventEmitter(); // 'run_end' (run)
+bus.setMaxListeners(100);
+
+export const childPids = new Set();
+
+/** Environment for child CLIs: drop variables that would make a nested CLI think it's inside another session. */
+export function childEnv(extra = {}) {
+  const env = { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1', ...extra };
+  for (const k of Object.keys(env)) {
+    if (k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_') || k === 'CLAUDE_PID' || k === 'CLAUDE_EFFORT' || k.startsWith('CODEX_THREAD') || k === 'CODEX_SANDBOX') delete env[k];
+  }
+  return env;
+}
+
+export function getRun(id) { return runs.get(id) || null; }
+export function activeRunFor(key) {
+  const id = activeByKey.get(key);
+  const r = id && runs.get(id);
+  return r && r.status === 'running' ? r : null;
+}
+export function listRuns() {
+  return [...runs.values()].map(publicRun).sort((a, b) => b.startedAt - a.startedAt);
+}
+export function publicRun(r) {
+  return {
+    id: r.id, tool: r.tool, sessionId: r.sessionId, cwd: r.cwd, status: r.status, startedAt: r.startedAt,
+    endedAt: r.endedAt, prompt: clip(r.prompt, 200), model: r.model, perm: r.perm, error: r.error, title: r.title,
+  };
+}
+
+function rememberBatonSession(tool, id) {
+  if (!id) return;
+  const k = `baton_${tool}_ids`;
+  const ids = new Set(getKV(k, []) || []);
+  if (!ids.has(id)) { ids.add(id); setKV(k, [...ids].slice(-2000)); }
+}
+
+// ---------- command builders ----------
+function claudeCmd({ sessionId, model, effort, perm, prompt, images }) {
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+  let stdin = prompt;
+  if (images?.length) {
+    // stream-json input lets us pass real image blocks alongside the text
+    args.push('--input-format', 'stream-json');
+    const content = [{ type: 'text', text: prompt }];
+    for (const im of images) content.push({ type: 'image', source: { type: 'base64', media_type: im.mime, data: fs.readFileSync(im.path).toString('base64') } });
+    stdin = JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n';
+  }
+  if (sessionId) args.push('--resume', sessionId);
+  if (model) args.push('--model', model);
+  if (effort) args.push('--effort', effort);
+  if (perm === 'plan') args.push('--permission-mode', 'plan');
+  else if (perm === 'full') args.push('--dangerously-skip-permissions');
+  else args.push('--permission-mode', 'auto');
+  return { bin: 'claude', args, stdin };
+}
+
+function codexCmd({ sessionId, model, effort, perm, prompt, images }) {
+  const args = ['exec'];
+  if (sessionId) args.push('resume');
+  for (const im of images || []) args.push(`--image=${im.path}`);
+  args.push('--json', '--skip-git-repo-check');
+  if (model) args.push('-m', model);
+  if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
+  if (perm === 'full') args.push('--dangerously-bypass-approvals-and-sandbox');
+  else args.push('-c', `sandbox_mode="${perm === 'plan' ? 'read-only' : 'workspace-write'}"`);
+  if (sessionId) args.push(sessionId);
+  args.push('-');
+  return { bin: 'codex', args, stdin: prompt };
+}
+
+function agyCmd({ sessionId, model, effort, perm, prompt, images, cwd }) {
+  // agy print mode only accepts text, so images are saved inside the workspace and referenced by path
+  if (images?.length) {
+    const rel = images.map((im) => `- ${path.relative(cwd, im.path)}`).join('\n');
+    prompt = `${prompt}\n\n[Baton 첨부 이미지 ${images.length}장 — read_file 도구로 열어서 확인하세요]\n${rel}`;
+  }
+  const args = [`-p=${prompt}`, '--output-format', 'stream-json'];
+  if (sessionId) args.push('--conversation', sessionId);
+  if (model) args.push('--model', model);
+  if (effort) args.push('--effort', effort);
+  if (perm === 'plan') args.push('--mode', 'plan');
+  else if (perm === 'full') args.push('--dangerously-skip-permissions');
+  else args.push('--mode', 'accept-edits'); // `auto` isn't available on every account
+  return { bin: 'agy', args, stdin: null };
+}
+
+// ---------- stream parsers ----------
+function claudeParser(run) {
+  const toolIdx = new Map();
+  return (e) => {
+    if (e.type === 'system' && e.subtype === 'init') {
+      if (e.session_id) run.setSession(e.session_id);
+      if (e.model) run.model = run.model || e.model;
+    } else if (e.type === 'stream_event') {
+      const ev = e.event || {};
+      if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') run.emit({ t: 'text', text: ev.delta.text });
+      else if (ev.type === 'content_block_start' && ev.content_block?.type === 'thinking') run.emit({ t: 'thinking' });
+      else if (ev.type === 'content_block_stop') run.emit({ t: 'text_end' });
+    } else if (e.type === 'assistant') {
+      for (const p of e.message?.content || []) {
+        if (p.type === 'tool_use') {
+          toolIdx.set(p.id, true);
+          run.emit({ t: 'tool', name: p.name, summary: summarizeTool(p.name, p.input) });
+        }
+      }
+    } else if (e.type === 'user') {
+      for (const p of e.message?.content || []) {
+        if (p.type === 'tool_result') run.emit({ t: 'tool_done', error: Boolean(p.is_error) });
+      }
+    } else if (e.type === 'result') {
+      if (e.session_id) run.setSession(e.session_id);
+      run.result = {
+        ok: !e.is_error, result: e.result, cost: e.total_cost_usd, usage: e.usage, error: e.is_error ? (e.result || e.subtype) : null,
+        denied: (e.permission_denials || []).map((d) => d.tool_name || d.name || 'tool'),
+      };
+    }
+  };
+}
+
+function codexParser(run) {
+  return (e) => {
+    const it = e.item || {};
+    if (e.type === 'thread.started' && e.thread_id) run.setSession(e.thread_id);
+    else if (e.type === 'item.started') {
+      if (it.type === 'command_execution') run.emit({ t: 'tool', name: 'shell', summary: clip(it.command, 160) });
+      else if (it.type === 'mcp_tool_call') run.emit({ t: 'tool', name: `${it.server || 'mcp'}.${it.tool || ''}`, summary: '' });
+      else if (it.type === 'web_search') run.emit({ t: 'tool', name: 'web_search', summary: it.query || '' });
+      else if (it.type === 'reasoning') run.emit({ t: 'thinking' });
+    } else if (e.type === 'item.completed') {
+      if (it.type === 'agent_message' && it.text) { run.emit({ t: 'text', text: it.text }); run.emit({ t: 'text_end' }); run.lastText = it.text; }
+      else if (it.type === 'reasoning') run.emit({ t: 'thinking' });
+      else if (it.type === 'command_execution') run.emit({ t: 'tool_done', error: it.exit_code ? it.exit_code !== 0 : false });
+      else if (it.type === 'file_change') {
+        const files = (it.changes || []).map((c) => `${c.kind || ''} ${c.path || ''}`.trim()).join(', ');
+        run.emit({ t: 'tool', name: 'edit', summary: clip(files, 160) });
+        run.emit({ t: 'tool_done', error: it.status === 'failed' });
+      } else if (it.type === 'mcp_tool_call' || it.type === 'web_search') run.emit({ t: 'tool_done', error: it.status === 'failed' });
+      else if (it.type === 'todo_list') run.emit({ t: 'tool', name: 'todo', summary: (it.items || []).map((x) => (x.completed ? '☑' : '☐') + ' ' + x.text).join(' · ') });
+    } else if (e.type === 'turn.completed') {
+      run.result = { ok: true, result: run.lastText, usage: e.usage };
+    } else if (e.type === 'turn.failed') {
+      run.result = { ok: false, error: e.error?.message || 'turn failed' };
+    } else if (e.type === 'error') {
+      run.result = { ok: false, error: e.message || 'error' };
+    }
+  };
+}
+
+function agyParser(run) {
+  const seen = new Set();
+  return (e) => {
+    if (e.event === 'init' && e.conversation_id) {
+      run.setSession(e.conversation_id);
+      if (e.init?.model) run.model = run.model || e.init.model;
+    } else if (e.event === 'step_update') {
+      const s = e.step_update || {};
+      if (s.step_type === 'agent_response') {
+        if (s.text_delta) run.emit({ t: 'text', text: s.text_delta });
+        if (s.thinking_delta) run.emit({ t: 'thinking' });
+        if (s.state === 'DONE') run.emit({ t: 'text_end' });
+      } else if (s.step_type && s.step_type !== 'user_input' && !/system_message|ephemeral|checkpoint/.test(s.tool_name || s.step_type)) {
+        const k = s.step_index;
+        if (!seen.has(k)) {
+          seen.add(k);
+          const name = s.tool_name || s.tool_info?.name || s.step_type;
+          run.emit({ t: 'tool', name, summary: summarizeTool(name, s.tool_info?.parameters || {}) });
+        }
+        if (s.state === 'DONE' || s.state === 'ERROR' || s.state === 'CANCELED') run.emit({ t: 'tool_done', error: s.state !== 'DONE' });
+      }
+    } else if (e.event === 'result') {
+      const r = e.result || {};
+      if (r.conversation_id) run.setSession(r.conversation_id);
+      run.result = {
+        ok: r.status === 'SUCCESS', result: r.response, usage: r.usage, error: r.status === 'SUCCESS' ? null : (r.error || r.status),
+        denied: (r.denied_actions || []).map((d) => d.display_name || d.action),
+      };
+    }
+  };
+}
+
+// ---------- run lifecycle ----------
+export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, title, images }) {
+  if (!['claude', 'codex', 'agy'].includes(tool)) throw new Error('unknown tool');
+  if (!prompt || !prompt.trim()) throw new Error('empty prompt');
+  if (sessionId) {
+    const existing = activeRunFor(`${tool}:${sessionId}`);
+    if (existing) throw Object.assign(new Error('이 세션은 이미 응답 중이에요'), { code: 'BUSY', runId: existing.id });
+  }
+  const opts = { sessionId, model, effort, perm, prompt, images, cwd };
+  const cmd = tool === 'claude' ? claudeCmd(opts) : tool === 'codex' ? codexCmd(opts) : agyCmd(opts);
+
+  const run = {
+    id: crypto.randomUUID(), tool, sessionId: sessionId || null, cwd, prompt, model: model || null, reqModel: model || null, effort: effort || null, images: images?.length || 0, perm: perm || 'auto',
+    title: title || null, status: 'running', startedAt: Date.now(), endedAt: null, events: [], result: null, error: null,
+    stderr: '', listeners: new Set(), child: null, lastText: '',
+  };
+  run.emit = (ev) => {
+    ev.i = run.events.length;
+    run.events.push(ev);
+    if (run.events.length > 20000) run.events.splice(0, 5000); // safety cap
+    for (const l of run.listeners) { try { l(ev); } catch { /* ignore */ } }
+  };
+  run.setSession = (id) => {
+    if (!id || run.sessionId === id) return;
+    const isNew = !run.sessionId;
+    run.sessionId = id;
+    activeByKey.set(`${tool}:${id}`, run.id);
+    if (isNew) rememberBatonSession(tool, id);
+    run.emit({ t: 'session', id });
+  };
+
+  const parse = tool === 'claude' ? claudeParser(run) : tool === 'codex' ? codexParser(run) : agyParser(run);
+  const child = spawn(cmd.bin, cmd.args, {
+    cwd,
+    env: childEnv({ BATON_RUN: run.id }),
+    stdio: [cmd.stdin != null ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+  });
+  run.child = child;
+  if (child.pid) childPids.add(child.pid);
+  if (cmd.stdin != null) { child.stdin.on('error', () => {}); child.stdin.end(cmd.stdin); }
+
+  let buf = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => {
+    buf += chunk;
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line || line[0] !== '{') continue;
+      try { parse(JSON.parse(line)); } catch { /* not json */ }
+    }
+  });
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (c) => { run.stderr = (run.stderr + c).slice(-8000); });
+
+  const finish = (code, signal, spawnErr) => {
+    if (run.status !== 'running') return;
+    if (child.pid) childPids.delete(child.pid);
+    run.endedAt = Date.now();
+    const res = run.result || {};
+    let ok = res.ok ?? (code === 0);
+    let error = res.error || null;
+    if (spawnErr) { ok = false; error = `${cmd.bin} 실행 실패: ${spawnErr.message}`; }
+    else if (run.stopped) { ok = false; error = '사용자가 중지했어요'; }
+    else if (!ok && !error) error = clip(run.stderr.trim().split('\n').slice(-6).join('\n'), 1200) || `종료 코드 ${code ?? signal}`;
+    run.status = ok ? 'done' : 'error';
+    run.error = error;
+    const denied = [...new Set(res.denied || [])];
+    run.denied = denied;
+    run.emit({ t: 'done', ok, error, denied, result: res.result ? clip(res.result, 4000) : null, cost: res.cost ?? null, usage: res.usage ?? null, durationMs: run.endedAt - run.startedAt });
+    if (run.sessionId) activeByKey.delete(`${tool}:${run.sessionId}`);
+    bus.emit('run_end', run);
+    setTimeout(() => { run.listeners.clear(); runs.delete(run.id); }, 45 * 60 * 1000).unref();
+  };
+  child.on('error', (err) => finish(null, null, err));
+  child.on('close', (code, signal) => finish(code, signal));
+
+  runs.set(run.id, run);
+  if (run.sessionId) activeByKey.set(`${tool}:${run.sessionId}`, run.id);
+  return run;
+}
+
+export function stopRun(id) {
+  const run = runs.get(id);
+  if (!run || run.status !== 'running' || !run.child) return false;
+  run.stopped = true;
+  run.child.kill('SIGINT');
+  setTimeout(() => { if (run.status === 'running') run.child.kill('SIGTERM'); }, 4000).unref();
+  setTimeout(() => { if (run.status === 'running') run.child.kill('SIGKILL'); }, 10000).unref();
+  return true;
+}
+
+/** One-shot, non-persisted completion used for project briefs. Resolves to the final text. */
+export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
+  return new Promise((resolve, reject) => {
+    let bin, args, stdin = true;
+    if (tool === 'codex') {
+      bin = 'codex';
+      args = ['exec', '--json', '--skip-git-repo-check', '--ephemeral', '-c', 'sandbox_mode="read-only"'];
+      if (model) args.push('-m', model);
+      args.push('-');
+    } else if (tool === 'agy') {
+      bin = 'agy';
+      args = ['-p', prompt, '--output-format', 'json', '--mode', 'plan'];
+      if (model) args.push('--model', model);
+      stdin = false;
+    } else {
+      bin = 'claude';
+      args = ['-p', '--output-format', 'json', '--no-session-persistence', '--permission-mode', 'plan', '--tools', ''];
+      if (model) args.push('--model', model);
+    }
+    const child = spawn(bin, args, { cwd, env: childEnv(), stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+    if (child.pid) childPids.add(child.pid);
+    let out = '', err = '';
+    const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+    child.stdout.on('data', (c) => { out += c; });
+    child.stderr.on('data', (c) => { err = (err + c).slice(-4000); });
+    child.on('error', (e) => { clearTimeout(timer); reject(e); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (child.pid) childPids.delete(child.pid);
+      try {
+        if (tool === 'codex') {
+          let text = '';
+          for (const line of out.split('\n')) {
+            try { const e = JSON.parse(line); if (e.type === 'item.completed' && e.item?.type === 'agent_message') text = e.item.text; } catch { /* skip */ }
+          }
+          if (text) return resolve(text);
+        } else {
+          const j = JSON.parse(out.trim().split('\n').filter(Boolean).pop());
+          const text = j.result?.response ?? j.result ?? j.response;
+          if (typeof text === 'string' && text) return resolve(text);
+        }
+      } catch { /* fallthrough */ }
+      reject(new Error(`요약 생성 실패 (code ${code}): ${clip(err || out, 400)}`));
+    });
+    if (stdin) child.stdin.end(prompt);
+  });
+}
