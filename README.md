@@ -69,6 +69,18 @@ Later runs: `npm start` (or `npm run open` to also open the browser).
 | Auto | `--permission-mode auto` | `sandbox_mode=workspace-write` | `--mode accept-edits` | `--agent build` | default |
 | Full access | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` | `--dangerously-skip-permissions` | `--agent build` | `--force` |
 
+## Company setups (Bedrock, Vertex, gateways, internal LLMs, proxies)
+
+Baton runs the CLIs exactly as your terminal would, so whatever your company configured for them keeps working:
+
+- **Environment from your shell** — at startup Baton reads your login shell's environment (`~/.bashrc`, `~/.zshrc`, …) and passes it to every CLI it runs, so `CLAUDE_CODE_USE_BEDROCK`, `AWS_PROFILE`, `ANTHROPIC_BASE_URL`, `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS` etc. work even when Baton runs as a background service. Extra variables can be added in **Settings → Company setup · CLI environment** (secrets are masked).
+- **Claude Code on Amazon Bedrock / Google Vertex / Microsoft Foundry / an LLM gateway / API key** — detected automatically (also via `claude auth status`). The setup screen treats it as ready, the limits screen says there are no subscription limits (token usage is still shown), and the model picker offers aliases plus your configured `ANTHROPIC_MODEL` / `ANTHROPIC_DEFAULT_*_MODEL` instead of first-party ids. Bedrock/Vertex model ids and inference-profile ARNs are displayed readably.
+- **Codex with a custom `model_provider`** (Azure OpenAI, internal gateway) or an API key — detected from `config.toml`; shows whether the provider's `env_key` is set.
+- **Any model id** — every model picker has "Enter a model ID" for gateway / internal model names.
+- **Relocated config** — `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are honored (restart Baton after changing them).
+
+Not covered: org policies that disable a permission mode (e.g. bypass) make those runs fail with the CLI's own error; Baton's own calls to subscription-usage endpoints are skipped for non-subscription setups.
+
 ## Using it from your phone
 
 Baton listens on `127.0.0.1` only. To reach it from your phone, install [Tailscale](https://tailscale.com/download) on the PC and the phone, then press **Share to my devices** on the Get started screen (it runs `tailscale serve --https=8443`, visible only inside your tailnet — never public). Open `https://<your-pc>.<tailnet>.ts.net:8443` on the phone, add it to the home screen, and turn on notifications in Settings (iOS only allows web push for home-screen apps).

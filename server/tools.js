@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { which, runCli, IS_WIN } from './platform.js';
+import { CLAUDE_HOME, CODEX_HOME } from './env.js';
 
 const HOME = os.homedir();
 const XDG_DATA = process.env.XDG_DATA_HOME || path.join(HOME, '.local', 'share');
@@ -23,7 +24,7 @@ export const TOOLS = {
     },
     login: { args: ['auth', 'login'], kind: 'url+code' },
     loggedIn: async (bin) => {
-      if (exists(path.join(HOME, '.claude', '.credentials.json'))) return true;
+      if (exists(path.join(CLAUDE_HOME, '.credentials.json'))) return true;
       const r = await runCli(bin, ['auth', 'status'], { timeout: 15000 });
       return /"loggedIn":\s*true/.test(r.stdout);
     },
@@ -36,7 +37,7 @@ export const TOOLS = {
     install: { npm: '@openai/codex' },
     login: { args: ['login', '--device-auth'], kind: 'device' },
     loggedIn: async (bin) => {
-      if (exists(path.join(HOME, '.codex', 'auth.json'))) return true;
+      if (exists(path.join(CODEX_HOME, 'auth.json'))) return true;
       const r = await runCli(bin, ['login', 'status'], { timeout: 15000 });
       return /logged in/i.test(r.stdout + r.stderr);
     },

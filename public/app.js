@@ -596,7 +596,13 @@ function drawOpts(tool) {
   $$('#opts [data-o]').forEach((b) => (b.onclick = async () => {
     const k = b.dataset.o;
     let v;
-    if (k === 'model') v = await pick(t('모델'), cat.models.map((m) => ({ value: m.id, label: m.label, desc: m.desc })), p.model);
+    if (k === 'model') {
+      const opts = cat.models.map((m) => ({ value: m.id, label: m.label, desc: m.desc }));
+      if (p.model && !cat.models.some((m) => m.id === p.model)) opts.push({ value: p.model, label: p.model, desc: t('직접 입력한 모델') });
+      opts.push({ value: '__custom', label: t('✏️ 모델 ID 직접 입력'), desc: t('사내 게이트웨이·Bedrock 추론 프로필·사내 LLM 모델 이름 등') });
+      v = await pick(t('모델'), opts, p.model);
+      if (v === '__custom') { v = await promptSheet(t('모델 ID'), p.model || '', { placeholder: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' }); if (v === undefined || v === null) return; v = v.trim(); }
+    }
     else if (k === 'effort') {
       const allowed = model?.efforts;
       const list = cat.efforts.filter((e) => !e || !allowed || allowed.includes(e));
@@ -956,6 +962,7 @@ async function viewSettings() {
       <a class="setting" href="#/setup"><div class="l"><b>🚀 ${t('시작하기 · 도구 설치/연동')}</b><span>${t('Claude Code·Codex·Antigravity·OpenCode·Cursor 설치, 로그인, 폰 연결, 자동 시작')}</span></div><span class="muted">›</span></a>
       <div class="setting"><div class="l"><b>Language · 언어</b></div><select data-k="lang" data-reload><option value="en" ${s.lang !== 'ko' ? 'selected' : ''}>English</option><option value="ko" ${s.lang === 'ko' ? 'selected' : ''}>한국어</option></select></div>
     </div></div>
+    <div class="section"><div class="section-h"><h2>🏢 ${t('회사 환경 · CLI 환경 변수')}</h2></div><div class="card" id="envbox"><div class="skeleton" style="height:60px;margin:14px"></div></div></div>
     <div class="section"><div class="section-h"><h2>🔒 ${t('보안')}</h2></div><div class="card" id="secbox"><div class="skeleton" style="height:60px;margin:14px"></div></div></div>
     <div class="section"><div class="section-h"><h2>${t('알림')}</h2></div><div class="card">
       ${!ps.supported || (isIOS && !standalone) ? `<div class="setting"><div class="l"><b>${t('홈 화면에 추가해야 알림을 받을 수 있어요')}</b><span>${t('Safari 공유 버튼 → 「홈 화면에 추가」 → 추가된 Baton 앱에서 이 화면을 다시 열어주세요')}</span></div></div>`
@@ -1004,6 +1011,28 @@ async function viewSettings() {
   };
   $('#reindex').onclick = async () => { await api('/api/refresh', { method: 'POST' }); toast(t('새로 읽었어요')); };
   securitySection(v);
+  envSection(v);
+}
+
+/** Company setups: which backend each CLI uses, env imported from the login shell, extra variables. */
+async function envSection(v) {
+  const box = $('#envbox', v);
+  if (!box) return;
+  const d = await api('/api/env');
+  const pc = d.providers.claude, px = d.providers.codex;
+  box.innerHTML = `
+    <div class="setting"><div class="l"><b>Claude Code</b><span>${esc(pc.label)}${pc.region ? ` · ${esc(pc.region)}` : ''}${pc.baseUrl ? ` · ${esc(pc.baseUrl)}` : ''}${pc.models?.main ? ` · ${esc(pc.models.main)}` : ''}</span></div></div>
+    <div class="setting"><div class="l"><b>Codex</b><span>${esc(px.label)}${px.baseUrl ? ` · ${esc(px.baseUrl)}` : ''}${px.envKey ? ` · ${esc(px.envKey)} ${px.envKeySet ? '✓' : t('(설정 안 됨)')}` : ''}</span></div></div>
+    <div class="setting col"><div class="l"><b>${t('터미널 설정 가져오기')}</b>
+      <span>${d.shellError ? t('로그인 셸을 읽지 못했어요: {e}', { e: esc(d.shellError) }) : d.shell ? t('{shell}의 환경 변수를 Baton이 실행하는 CLI에 그대로 넘겨요 (Bedrock·프록시 설정 등)', { shell: esc(d.shell) }) : t('Windows에서는 사용자 환경 변수를 그대로 써요')}</span></div>
+      ${d.imported.length ? `<div class="envkeys">${d.imported.map((k) => `<code>${esc(k)}</code>`).join(' ')}</div>` : ''}</div>
+    <div class="setting col"><div class="l"><b>${t('추가 환경 변수')}</b><span>${t('KEY=VALUE 한 줄에 하나. 셸에 없는 값만 넣으면 돼요. 비밀 값은 저장 후 __KEEP__로 가려져요.')}</span></div>
+      <textarea id="envtext" rows="5" spellcheck="false" placeholder="CLAUDE_CODE_USE_BEDROCK=1&#10;AWS_PROFILE=company&#10;AWS_REGION=us-east-1&#10;HTTPS_PROXY=http://proxy.company:8080">${esc(d.extraText)}</textarea>
+      <div class="pact"><button class="btn sm primary" id="envsave">${t('저장')}</button><span class="small muted">${t('CLAUDE_CONFIG_DIR·CODEX_HOME 같은 경로는 Baton을 다시 시작해야 적용돼요')}</span></div></div>`;
+  $('#envsave', box).onclick = async () => {
+    try { await api('/api/env', { body: { text: $('#envtext', box).value } }); toast(t('저장했어요')); await loadState(); envSection(v); }
+    catch (e) { toast(e.message, true); }
+  };
 }
 
 async function viewInbox() {
@@ -1026,7 +1055,8 @@ const tokTotal = (u) => (u.input || 0) + (u.cacheWrite || 0) + (u.cacheRead || 0
 function modelName(tool, id) {
   const m = G.state?.catalogs?.[tool]?.models?.find((x) => x.id === id);
   if (m && m.id) return m.short || m.label;
-  const c = String(id).match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?/);
+  const n = String(id).replace(/^.*\//, '').replace(/^(?:us|eu|apac|global|jp|au)\./, '').replace(/^anthropic\./, '').replace(/-v\d+(?::\d+)?$/, '').replace(/@\d{8}$/, '');
+  const c = n.match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?/);
   return c ? `${c[1][0].toUpperCase()}${c[1].slice(1)} ${c[2]}${c[3] ? '.' + c[3] : ''}` : id;
 }
 async function viewUsage(_, params) {
@@ -1114,6 +1144,9 @@ function paceText(windows) {
 
 function limitCard(tool, L) {
   const head = `<div class="lh"><span class="tool-badge ${tool}">${TOOL[tool].name}</span>${L?.plan ? `<span class="plan">${esc(String(L.plan).toUpperCase())}</span>` : ''}</div>`;
+  if (L?.noLimits) {
+    return `<div class="card limit-card">${head}<p class="small" style="margin:8px 0 0;line-height:1.5">${t('{p} 사용 중 — 구독 한도가 없는 방식이에요. 사용량과 비용은 그 계정(회사 클라우드·API) 기준으로 확인하세요. 토큰 사용량은 아래에서 볼 수 있어요.', { p: esc(L.provider || L.plan || '') })}</p></div>`;
+  }
   if (!L || !L.windows?.length) {
     return `<div class="card limit-card">${head}<p class="muted small" style="margin:6px 0 0">${t('한도 정보를 가져오지 못했어요')}${L?.error ? ` · ${esc(L.error)}` : ''}</p></div>`;
   }
@@ -1140,6 +1173,8 @@ async function homeUsageCard() {
       const top = ws.sort((a, b) => (b.usedPercent ?? 0) - (a.usedPercent ?? 0))[0];
       const p = top?.usedPercent ?? null;
       const lvl = p >= 85 ? 'hi' : p >= 60 ? 'mid' : '';
+      if (lim[tid]?.noLimits) return `<div><span class="tool-badge ${tid}">${TOOL[tid].name}</span><b class="small">${esc(lim[tid].provider || '')}</b>
+        <span class="small muted">${t('한도 없음')} · ${t('오늘 {n}', { n: fmtTok(tokTotal(d.tools[tid]?.periods.today || {})) })}</span></div>`;
       return `<div><span class="tool-badge ${tid}">${TOOL[tid].name}</span>
         <b>${p == null ? '–' : `${p}%`}</b>
         <div class="bar ${lvl}"><i style="width:${Math.max(p || 0, 0.5)}%"></i></div>
@@ -1358,7 +1393,7 @@ async function viewSetup() {
   const anyReady = st.tools.some((x) => x.installed && (x.loggedIn || x.optionalLogin));
   const toolCard = (x) => {
     const state = !x.installed ? 'missing' : x.loggedIn ? 'ready' : x.optionalLogin ? 'ready' : 'login';
-    const badge = state === 'ready' ? `<span class="pill ok">${x.loggedIn ? t('사용 준비 완료') : t('설치됨')}</span>`
+    const badge = x.provider && x.installed ? `<span class="pill ${x.loggedIn ? 'ok' : 'warn'}">${esc(x.provider)}</span>` : state === 'ready' ? `<span class="pill ok">${x.loggedIn ? t('사용 준비 완료') : t('설치됨')}</span>`
       : state === 'login' ? `<span class="pill warn">${t('로그인 필요')}</span>` : `<span class="pill">${t('설치 안 됨')}</span>`;
     const btns = [];
     if (!x.installed && x.canInstall) btns.push(`<button class="btn sm primary" data-job="install" data-tool="${x.id}">${t('원클릭 설치')}</button>`);

@@ -11,11 +11,12 @@ import { HOME, DATA_DIR, DAY } from './util.js';
 import { noteClaudeModels } from './models.js';
 import { agyUsage, agyConversationModel, agySkillReads } from './sources/agy.js';
 import { OPENCODE_STORAGE, opencodeUsage } from './sources/opencode.js';
+import { CLAUDE_HOME, CODEX_HOME } from './env.js';
 
 const WINDOW_DAYS = 31;
 const CACHE_FILE = path.join(DATA_DIR, 'usage-cache.json');
-const CLAUDE_DIR = path.join(HOME, '.claude', 'projects');
-const CODEX_DIR = path.join(HOME, '.codex', 'sessions');
+const CLAUDE_DIR = path.join(CLAUDE_HOME, 'projects');
+const CODEX_DIR = path.join(CODEX_HOME, 'sessions');
 const AGY_DIR = path.join(HOME, '.gemini', 'antigravity-cli', 'conversations');
 
 // bucket value: [input, cacheWrite, cacheRead, output]

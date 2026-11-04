@@ -63,6 +63,18 @@ CLI를 설치하면 기존 세션이 바로 Baton에 나타나요. 따로 연동
 
 *베타*: 공개된 형식 기준으로 구현했고 실제 설치 환경에서는 아직 검증 전이에요.
 
+## 회사 환경 (Bedrock·Vertex·게이트웨이·사내 LLM·프록시)
+
+Baton은 터미널에서 실행하는 것과 똑같이 CLI를 실행해서, 회사에서 해둔 설정이 그대로 동작해요.
+
+- **셸 환경 그대로** — 시작할 때 로그인 셸 환경(`~/.bashrc`, `~/.zshrc` 등)을 읽어 모든 CLI에 넘겨요. 백그라운드 서비스로 실행돼도 `CLAUDE_CODE_USE_BEDROCK`, `AWS_PROFILE`, `ANTHROPIC_BASE_URL`, `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS` 같은 설정이 그대로 적용돼요. 추가 변수는 **설정 → 회사 환경 · CLI 환경 변수**에서 넣을 수 있어요 (비밀 값은 가려져요).
+- **Claude Code를 Amazon Bedrock·Google Vertex·Microsoft Foundry·LLM 게이트웨이·API 키로 쓰는 경우** — 자동으로 알아봐요 (`claude auth status`도 확인). 시작하기 화면은 준비 완료로, 한도 화면은 "구독 한도 없음"으로 보여주고(토큰 사용량은 그대로 보여요), 모델 선택은 별칭과 설정된 `ANTHROPIC_MODEL`·`ANTHROPIC_DEFAULT_*_MODEL`을 보여줘요. Bedrock/Vertex 모델 ID와 추론 프로필 ARN도 읽기 쉽게 표시해요.
+- **Codex의 사용자 지정 `model_provider`(Azure OpenAI·사내 게이트웨이)나 API 키** — `config.toml`에서 알아보고, 그 공급자의 `env_key`가 설정됐는지 보여줘요.
+- **어떤 모델 이름이든** — 모든 모델 선택에 "모델 ID 직접 입력"이 있어요.
+- **설정 폴더 위치 변경** — `CLAUDE_CONFIG_DIR`, `CODEX_HOME`을 따라가요 (바꾼 뒤 Baton 재시작).
+
+지원 밖: 회사 정책으로 특정 권한 모드(예: 전체 허용)를 막아두면 그 실행은 CLI 자체 오류로 실패해요.
+
 ## 폰에서 쓰기
 
 Baton은 `127.0.0.1`에서만 열려요. 폰에서 쓰려면 PC와 폰에 [Tailscale](https://tailscale.com/download)을 설치하고 시작하기 화면에서 **내 기기에 공유**를 누르세요. (`tailscale serve --https=8443` — 내 테일넷 안에서만 보이고 인터넷에 공개되지 않아요.) 폰에서 `https://<PC이름>.<tailnet>.ts.net:8443`을 열고 홈 화면에 추가한 뒤 설정에서 알림을 켜면 돼요.

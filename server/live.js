@@ -4,6 +4,7 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { liveClaude } from './sources/claude.js';
+import { CODEX_HOME } from './env.js';
 
 let cached = { at: 0, value: null };
 
@@ -21,7 +22,7 @@ async function procScan() {
     for (const fd of fds) {
       let target;
       try { target = await fsp.readlink(`/proc/${pid}/fd/${fd}`); } catch { continue; }
-      if (target.includes('/.codex/sessions/') && target.endsWith('.jsonl')) codex.set(target, Number(pid));
+      if (target.startsWith(path.join(CODEX_HOME, 'sessions')) && target.endsWith('.jsonl')) codex.set(target, Number(pid));
       else if (target.includes('/antigravity-cli/conversations/') && target.endsWith('.db')) {
         agy.set(path.basename(target, '.db'), Number(pid));
       }

@@ -15,6 +15,7 @@ import { projectRoot } from './projects.js';
 import { shortHome } from './util.js';
 import { isInside } from './platform.js';
 import { tr } from './i18n.js';
+import { CLAUDE_HOME } from './env.js';
 
 const HOME = os.homedir();
 
@@ -57,7 +58,7 @@ const encodeClaude = (dir) => dir.replace(/[^a-zA-Z0-9]/g, '-');
 export const TERMINAL_MOVE = new Set(['claude']);
 
 async function moveClaudeFile(s, target) {
-  const destDir = path.join(HOME, '.claude', 'projects', encodeClaude(target));
+  const destDir = path.join(CLAUDE_HOME, 'projects', encodeClaude(target));
   const dest = path.join(destDir, path.basename(s.file));
   if (path.resolve(dest) === path.resolve(s.file)) return null;
   await fsp.mkdir(destDir, { recursive: true });

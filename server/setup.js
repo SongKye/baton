@@ -11,6 +11,8 @@ import { TOOLS, TOOL_IDS, binFor, installPlan } from './tools.js';
 import { IS_WIN, IS_MAC, IS_WSL, OS_NAME, which, clearWhichCache, runCli, spawnCli, augmentedPath, sh } from './platform.js';
 import { childEnv } from './runner.js';
 import { tr, lang } from './i18n.js';
+import { claudeProvider, codexProvider } from './providers.js';
+import { envInfo } from './env.js';
 
 const HOME = os.homedir();
 const PORT = Number(process.env.BATON_PORT || 7420);
@@ -61,9 +63,13 @@ export async function setupStatus({ fresh = false } = {}) {
     const t = TOOLS[id];
     const bin = binFor(id);
     const plan = installPlan(id);
-    const [ver, logged] = bin ? await Promise.all([version(bin), t.loggedIn(bin).catch(() => false)]) : [null, false];
+    let [ver, logged] = bin ? await Promise.all([version(bin), t.loggedIn(bin).catch(() => false)]) : [null, false];
+    // company setups: Bedrock / Vertex / gateway / API key (Claude) or a custom provider / API key (Codex)
+    let provider = null;
+    if (bin && id === 'claude') { const p = await claudeProvider().catch(() => null); if (p && !p.subscription) { provider = p.label; logged = true; } }
+    if (bin && id === 'codex') { const p = codexProvider(); if (!p.subscription) { provider = p.label; logged = p.configured; } }
     return {
-      id, name: t.name, vendor: t.vendor, docs: t.docs, installed: Boolean(bin), path: bin, version: ver, loggedIn: Boolean(logged),
+      id, name: t.name, vendor: t.vendor, docs: t.docs, installed: Boolean(bin), path: bin, version: ver, loggedIn: Boolean(logged), provider,
       optionalLogin: Boolean(t.optionalLogin), installCmd: plan?.cmd || null, canInstall: Boolean(plan),
       loginKind: t.login?.kind || null, loginCmd: bin ? `${path.basename(bin).replace(/\.(cmd|exe)$/i, '')} ${t.login.args.join(' ')}` : null,
       note: t.note?.[lang()] || t.note?.en,

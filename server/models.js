@@ -10,6 +10,8 @@ import { getKV, setKV } from './store.js';
 import { binFor } from './tools.js';
 import { runCli } from './platform.js';
 import { tr } from './i18n.js';
+import { claudeProviderCached, codexProvider } from './providers.js';
+import { CLAUDE_HOME, CODEX_HOME } from './env.js';
 
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
 
@@ -18,10 +20,23 @@ const CLAUDE_KNOWN = ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5'
 const FAMILIES = ['fable', 'opus', 'sonnet', 'haiku'];
 
 /** "claude-opus-5-5" -> "Opus 5.5"; "claude-sonnet-4-5-20250929" -> "Sonnet 4.5" */
+/** Bedrock / Vertex / ARN spellings -> plain "claude-<family>-<ver>" so they can be prettified. */
+export function normalizeClaudeId(id) {
+  return String(id || '')
+    .replace(/^.*\//, '') // ARN / inference-profile path
+    .replace(/^(?:us|eu|apac|global|jp|au)\./, '') // cross-region inference prefix
+    .replace(/^anthropic\./, '')
+    .replace(/-v\d+(?::\d+)?$/, '') // Bedrock version suffix
+    .replace(/@\d{8}$/, ''); // Vertex date suffix
+}
 export function prettyClaude(id) {
-  const m = String(id || '').match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?$/);
-  if (!m) return id;
-  return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? '.' + m[3] : ''}${m[4] ? ' (1M)' : ''}`;
+  const n = normalizeClaudeId(id);
+  const cap = (f) => `${f[0].toUpperCase()}${f.slice(1)}`;
+  let m = n.match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?$/);
+  if (m) return `${cap(m[1])} ${m[2]}${m[3] ? '.' + m[3] : ''}${m[4] ? ' (1M)' : ''}`;
+  m = n.match(/^claude-(\d+)(?:-(\d{1,2}))?-([a-z]+)(?:-\d{8})?$/); // older "claude-3-5-sonnet" naming
+  if (m) return `${cap(m[3])} ${m[1]}${m[2] ? '.' + m[2] : ''}`;
+  return id;
 }
 const ver = (id) => { const m = String(id).match(/-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/); return m ? +m[1] * 100 + +(m[2] || 0) : 0; };
 
@@ -44,7 +59,9 @@ export function noteClaudeModels(ids) {
 }
 
 function claudeCatalog() {
-  const settings = readJson(path.join(HOME, '.claude', 'settings.json')) || {};
+  const prov = claudeProviderCached();
+  if (prov && !prov.subscription) return claudeCompanyCatalog(prov);
+  const settings = readJson(path.join(CLAUDE_HOME, 'settings.json')) || {};
   const obs = getKV('observed_default_claude', null);
   const cfgModel = settings.model || null;
   const defModel = obs?.model || (cfgModel ? resolveClaudeAlias(cfgModel) : null);
@@ -67,15 +84,29 @@ function claudeCatalog() {
   };
 }
 
+/** Bedrock / Vertex / Foundry / gateway: first-party ids may not exist there — use aliases and configured ids. */
+function claudeCompanyCatalog(prov) {
+  const m = prov.models || {};
+  const obs = getKV('observed_default_claude', null);
+  const def = m.main || obs?.model || null;
+  const models = [{ id: '', label: tr('기본값 · {model}', { model: def ? prettyClaude(def) : prov.label }), short: def ? prettyClaude(def) : tr('기본'), desc: `${prov.label}${prov.region ? ` · ${prov.region}` : ''}${def ? ` · ${def}` : ''}` }];
+  for (const f of ['opus', 'sonnet', 'haiku']) {
+    models.push({ id: f, label: `${f[0].toUpperCase()}${f.slice(1)}`, short: m[f] ? prettyClaude(m[f]) : `${f[0].toUpperCase()}${f.slice(1)}`, desc: m[f] ? m[f] : tr('{provider}에서 Claude Code가 고르는 {family} 모델', { provider: prov.label, family: f }) });
+  }
+  const seen = new Set(models.map((x) => x.id));
+  for (const id of [m.main, m.opus, m.sonnet, m.haiku].filter(Boolean)) if (!seen.has(id)) { seen.add(id); models.push({ id, label: prettyClaude(id), short: prettyClaude(id), desc: id }); }
+  return { models, efforts: ['', 'low', 'medium', 'high', 'xhigh', 'max'], defaults: { model: def, effort: obs?.effort || null }, provider: prov.label, freeform: true };
+}
+
 // ---------------------------------------------------------------- codex
 function codexCatalog() {
   let cfgModel = null; let cfgEffort = null;
   try {
-    const cfg = fs.readFileSync(path.join(HOME, '.codex', 'config.toml'), 'utf8').split(/^\[/m)[0]; // top-level keys only
+    const cfg = fs.readFileSync(path.join(CODEX_HOME, 'config.toml'), 'utf8').split(/^\[/m)[0]; // top-level keys only
     cfgModel = cfg.match(/^model\s*=\s*"([^"]+)"/m)?.[1] || null;
     cfgEffort = cfg.match(/^model_reasoning_effort\s*=\s*"([^"]+)"/m)?.[1] || null;
   } catch { /* ignore */ }
-  const j = readJson(path.join(HOME, '.codex', 'models_cache.json')) || {};
+  const j = readJson(path.join(CODEX_HOME, 'models_cache.json')) || {};
   const list = (j.models || []).filter((m) => m.slug && !/auto-review/.test(m.slug)).sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
   const name = (slug) => list.find((m) => m.slug === slug)?.display_name || slug;
   const obs = getKV('observed_default_codex', null);

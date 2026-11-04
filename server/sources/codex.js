@@ -5,8 +5,9 @@ import { HOME, eachJsonl, headJsonl, tailJsonl, cleanPrompt, clip, oneLine, stat
 import { summarizeTool, toolOutputText } from './common.js';
 import { getKV } from '../store.js';
 import { tr } from '../i18n.js';
+import { CODEX_HOME } from '../env.js';
 
-const ROOT = path.join(HOME, '.codex');
+const ROOT = CODEX_HOME;
 const SESSIONS = path.join(ROOT, 'sessions');
 const INDEX = path.join(ROOT, 'session_index.jsonl');
 const cache = new Map();

@@ -1,4 +1,5 @@
 // Baton — HTTP server (JSON API + SSE + static PWA).
+import { envInfo } from './env.js'; // must stay first: imports the login shell's environment
 import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -22,6 +23,7 @@ import { isLocal, checkDevice, login, logout, changePassword, listDevices, revok
 import { toolsMeta, binFor, TOOL_IDS } from './tools.js';
 import { OS_NAME, openBrowser } from './platform.js';
 import { tr, lang } from './i18n.js';
+import { providersSummary, resetProviderCache } from './providers.js';
 import crypto from 'node:crypto';
 import { ensureBrief, briefPending } from './brief.js';
 import { dozingProjects, sendNudge, startNudgeScheduler } from './nudge.js';
@@ -113,6 +115,40 @@ route('POST', '/api/security/password', async (req) => {
 });
 route('POST', '/api/security/devices/:id/revoke', async (req, url, { id }) => { revokeDevice(id); return { ok: true }; });
 route('POST', '/api/security/revoke-all', async (req) => { revokeAll(req); return { ok: true }; });
+
+// ---------- CLI environment (company setups: Bedrock, gateways, proxies…) ----------
+const SECRET_KEY = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH/i;
+const ENV_HINT = /^(CLAUDE_|ANTHROPIC_|AWS_|CLOUD_ML|GOOGLE_|VERTEX|AZURE_|OPENAI_|CODEX_|GEMINI_|OPENCODE|CURSOR_|HTTPS?_PROXY|NO_PROXY|NODE_EXTRA_CA_CERTS|SSL_CERT|REQUESTS_CA)/i;
+route('GET', '/api/env', async () => {
+  const extra = store.getKV('extra_env', {}) || {};
+  return {
+    shell: envInfo.shell, shellError: envInfo.error,
+    imported: envInfo.imported.filter((k) => ENV_HINT.test(k)).sort(),
+    extraText: Object.entries(extra).map(([k, v]) => `${k}=${SECRET_KEY.test(k) ? '__KEEP__' : v}`).join('\n'),
+    providers: await providersSummary(),
+  };
+});
+route('POST', '/api/env', async (req) => {
+  const b = await body(req);
+  const prev = store.getKV('extra_env', {}) || {};
+  const next = {};
+  for (const raw of String(b.text || '').split(/\r?\n/)) {
+    const line = raw.trim().replace(/^export\s+/, '');
+    if (!line || line.startsWith('#')) continue;
+    const i = line.indexOf('=');
+    if (i <= 0) return [400, { error: tr('이 줄을 읽을 수 없어요: {line}', { line: clip(line, 60) }) }];
+    const k = line.slice(0, i).trim();
+    let v = line.slice(i + 1).trim().replace(/^(["'])(.*)\1$/, '$2');
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) return [400, { error: tr('변수 이름이 올바르지 않아요: {k}', { k }) }];
+    if (v === '__KEEP__') v = prev[k] ?? '';
+    next[k] = v;
+  }
+  for (const k of Object.keys(prev)) if (!(k in next)) delete process.env[k];
+  for (const [k, v] of Object.entries(next)) process.env[k] = v;
+  store.setKV('extra_env', next);
+  resetProviderCache();
+  return { ok: true, keys: Object.keys(next), providers: await providersSummary() };
+});
 
 // ---------- setup / onboarding ----------
 route('GET', '/api/setup', async (req, url) => setupStatus({ fresh: url.searchParams.get('fresh') === '1' }));
@@ -532,6 +568,8 @@ server.listen(PORT, HOST, async () => {
   const t = Date.now();
   const snap = await getSnapshot(0);
   console.log(`[baton] indexed ${snap.sessions.length} sessions in ${Date.now() - t}ms`);
+  providersSummary().catch(() => {}); // warm the provider cache (model list, limits)
+  if (envInfo.imported.length || envInfo.extra.length) console.log(`[baton] env: ${envInfo.imported.length} vars from ${envInfo.shell || 'shell'}, ${envInfo.extra.length} from settings`);
   startNudgeScheduler();
   startWatcher();
   startTrashPurge();

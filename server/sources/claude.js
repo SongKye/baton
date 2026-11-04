@@ -5,9 +5,10 @@ import { getKV } from '../store.js';
 import { HOME, eachJsonl, headJsonl, tailJsonl, cleanPrompt, clip, oneLine, pidAlive, statSafe } from '../util.js';
 import { summarizeTool, toolOutputText } from './common.js';
 import { tr } from '../i18n.js';
+import { CLAUDE_HOME } from '../env.js';
 
-const PROJECTS = path.join(HOME, '.claude', 'projects');
-const LIVE_DIR = path.join(HOME, '.claude', 'sessions');
+const PROJECTS = path.join(CLAUDE_HOME, 'projects');
+const LIVE_DIR = path.join(CLAUDE_HOME, 'sessions');
 const cache = new Map(); // file -> { mtimeMs, size, summary }
 const batonIds = () => new Set(getKV('baton_claude_ids', []) || []);
 
