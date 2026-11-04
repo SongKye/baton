@@ -229,7 +229,7 @@ function sessionRow(s, { showProject = true } = {}) {
       ${preview ? `<div class="p">${esc(preview)}</div>` : ''}
     </div></a>`;
 }
-function toolDots(tools) { return `<span class="tooldots">${Object.keys(tools || {}).map((t) => `<i class="${t}"></i>`).join('')}</span>`; }
+function toolDots(tools) { return `<span class="tooldots">${Object.keys(tools || {}).map((k) => `<i class="${k}"></i>`).join('')}</span>`; }
 function projectRow(p) {
   const line = p.brief?.oneLiner || p.lastSession?.title || '';
   return `<a class="card prow" href="#/p/${encodeURIComponent(p.id)}">
@@ -474,8 +474,8 @@ async function viewSessions() {
   };
   G.cleanup = () => document.body.classList.remove('selecting');
   const reload = async () => { store.set('sfilter', f); drawChips(); offset = 0; await fetchPage(); draw(); };
-  let t;
-  $('#sq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { q = e.target.value.trim(); sessionStorage.setItem('sq', q); reload(); }, 220); };
+  let searchTimer;
+  $('#sq').oninput = (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { q = e.target.value.trim(); sessionStorage.setItem('sq', q); reload(); }, 220); };
   await reload();
 }
 
