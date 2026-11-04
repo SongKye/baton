@@ -13,6 +13,8 @@ See every session with its title, continue any of them from your desktop or phon
 - **Skills** — every skill/command each CLI can see, where it lives, and when an agent actually used it
 - **Clean up** — trash test / automated / "hi" sessions in bulk (restorable for 30 days)
 - **Notifications** — push to your phone when a reply finishes, even for sessions running in your terminal
+- **Hand off between CLIs** — when one tool runs low on tokens, another picks up the same session from a handoff note (and can hand it back), so you can split work across subscriptions
+- **Device trust + password** — this PC is always allowed; any other device enters a password once (default `0000`, change it in Settings → Security) and is remembered for 30 days
 - **English / 한국어**, light / dark, mobile and desktop layouts
 
 ## Quick start

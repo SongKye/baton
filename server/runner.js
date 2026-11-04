@@ -345,9 +345,11 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
     else if (!ok && !error) error = clip(run.stderr.trim().split('\n').slice(-6).join('\n'), 1200) || tr('종료 코드 {code}', { code: code ?? signal });
     run.status = ok ? 'done' : 'error';
     run.error = error;
+    // ran into the CLI's usage/rate limit? the UI offers to hand the session to another CLI
+    run.limited = !ok && /rate.?limit|usage limit|limit (?:reached|exceeded)|quota|exceeded your|out of (?:credits|tokens)|\b429\b|too many requests|hit your limit|resets? (?:at|in)/i.test(`${error || ''} ${run.stderr.slice(-2000)}`);
     const denied = [...new Set(res.denied || [])];
     run.denied = denied;
-    run.emit({ t: 'done', ok, error, denied, result: res.result ? clip(res.result, 4000) : null, cost: res.cost ?? null, usage: res.usage ?? null, durationMs: run.endedAt - run.startedAt });
+    run.emit({ t: 'done', ok, error, denied, limited: run.limited, result: res.result ? clip(res.result, 4000) : null, cost: res.cost ?? null, usage: res.usage ?? null, durationMs: run.endedAt - run.startedAt });
     if (run.sessionId) activeByKey.delete(`${tool}:${run.sessionId}`);
     bus.emit('run_end', run);
     setTimeout(() => { run.listeners.clear(); runs.delete(run.id); }, 45 * 60 * 1000).unref();

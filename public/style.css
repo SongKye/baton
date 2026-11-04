@@ -598,3 +598,31 @@ code.copy { display: inline-block; font-size: 12.5px; background: var(--code-bg)
 @media (min-width: 1280px) {
   #view .section > .port-card { display: inline-block; width: calc(50% - 6px); vertical-align: top; margin-right: 8px; }
 }
+
+/* ---------- login / security ---------- */
+body.auth-mode .tabbar, body.auth-mode .fab, body.auth-mode .runpill { display: none; }
+body.auth-mode { padding-left: 0; }
+.login { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; }
+.login-card { width: 100%; max-width: 360px; text-align: center; }
+.login-card .logo { font-size: 44px; }
+.login-card h1 { margin: 4px 0 6px; font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+.login-card p { line-height: 1.5; }
+.login-card form { display: grid; gap: 10px; margin: 18px 0 8px; }
+.login-card input { height: 56px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); text-align: center; font-size: 24px; letter-spacing: .4em; outline: none; }
+.login-card input:focus { border-color: var(--accent); }
+.login-card .btn { height: 50px; }
+.login-card .err { color: var(--danger); min-height: 1.2em; }
+.warn-banner { margin: 12px 14px 0; background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--text); }
+.setting.col { flex-direction: column; align-items: stretch; }
+.devices { display: flex; flex-direction: column; gap: 8px; }
+.dev { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface-2); border-radius: 12px; }
+.dev .l { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dev .l b { font-size: 14px; font-weight: 650; }
+.dev .l span { font-size: 12px; color: var(--text-3); }
+.pwform { display: grid; gap: 8px; padding: 4px 8px 8px; }
+.pwform input { height: 46px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); padding: 0 12px; font-size: 16px; }
+.banner.link { color: var(--text); text-decoration: none; background: var(--accent-soft); }
+#hobanners { display: flex; flex-direction: column; gap: 6px; }
+#hobanners:empty { display: none; }
+.handoff-mark { align-self: center; font-size: 12.5px; color: var(--text-3); background: var(--surface-2); padding: 4px 10px; border-radius: 999px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.handoff-mark code { font-size: 11.5px; }

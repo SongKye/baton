@@ -16,6 +16,8 @@ import { startWatcher } from './watch.js';
 import { listPorts, shareToPhone, unshare, stopPort } from './ports.js';
 import { skillsReport, skillDetail } from './skills.js';
 import { setupStatus, startJob, getJob, jobInput, stopJob, publicJob } from './setup.js';
+import { handoff, linksOf, buildHandoffNote } from './handoff.js';
+import { isLocal, checkDevice, login, logout, changePassword, listDevices, revokeDevice, revokeAll, usingDefaultPassword } from './auth.js';
 import { toolsMeta, binFor, TOOL_IDS } from './tools.js';
 import { OS_NAME, openBrowser } from './platform.js';
 import { tr, lang } from './i18n.js';
@@ -49,11 +51,12 @@ async function body(req) {
   if (!chunks.length) return {};
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
+// Tailscale identity check (when present): only the allowed tailnet logins get through.
+// Everything not coming directly from this PC must then pass the device/password gate (server/auth.js).
 function authorized(req) {
   const login = String(req.headers['tailscale-user-login'] || '').toLowerCase();
-  const proxied = Boolean(req.headers['x-forwarded-for']);
   if (login) return !ALLOWED.length || ALLOWED.includes(login);
-  return !proxied; // direct local access only
+  return true;
 }
 function sessionView(s) {
   return {
@@ -90,6 +93,24 @@ route('GET', '/api/state', async () => ({
   defaultCwd: fs.existsSync(path.join(HOME, 'workspace')) ? '~/workspace' : '~',
   os: OS_NAME,
 }));
+
+// ---------- auth / security ----------
+route('GET', '/api/auth/status', async (req) => {
+  const local = isLocal(req);
+  return { authed: local || checkDevice(req).ok, local, lang: store.getSettings().lang };
+});
+route('POST', '/api/auth/login', async (req) => {
+  const r = login(req, (await body(req)).password);
+  return r.ok ? [200, { ok: true }, { 'set-cookie': r.setCookie }] : [r.retryInSec ? 429 : 401, { error: r.error, retryInSec: r.retryInSec || 0 }];
+});
+route('POST', '/api/auth/logout', async (req) => [200, { ok: true }, { 'set-cookie': logout(req) }]);
+route('GET', '/api/security', async (req) => ({ devices: listDevices(req), defaultPassword: usingDefaultPassword(), trustDays: store.getSettings().trustDays, local: isLocal(req) }));
+route('POST', '/api/security/password', async (req) => {
+  const b = await body(req);
+  try { changePassword(b.current, b.next); return { ok: true }; } catch (e) { return [400, { error: e.message }]; }
+});
+route('POST', '/api/security/devices/:id/revoke', async (req, url, { id }) => { revokeDevice(id); return { ok: true }; });
+route('POST', '/api/security/revoke-all', async (req) => { revokeAll(req); return { ok: true }; });
 
 // ---------- setup / onboarding ----------
 route('GET', '/api/setup', async (req, url) => setupStatus({ fresh: url.searchParams.get('fresh') === '1' }));
@@ -144,7 +165,11 @@ route('GET', '/api/sessions/:tool/:id', async (req, url, { tool, id }) => {
   const view = list.find((x) => x.key === s.key) || s;
   if (url.searchParams.get('seen') !== '0') store.patchSessionMeta(s.key, { last_seen: Math.max(Date.now(), s.updated) });
   const run = activeRunFor(s.key);
-  return { session: sessionView(view), ...page, messages: page.messages.map(slimMessage), run: run ? publicRun(run) : null };
+  const byKey = new Map(list.map((x) => [x.key, x]));
+  const lk = linksOf(s.key);
+  const describe = (l) => { const x = byKey.get(l.key); const [tool, ...rest] = l.key.split(':'); return { key: l.key, tool, id: rest.join(':'), title: x?.title || null, created: l.created }; };
+  const links = { from: lk.from.map(describe), to: lk.to.map(describe) };
+  return { session: sessionView(view), ...page, messages: page.messages.map(slimMessage), run: run ? publicRun(run) : null, links };
 });
 
 route('POST', '/api/sessions/:tool/:id/meta', async (req, url, { tool, id }) => {
@@ -288,6 +313,23 @@ route('POST', '/api/nudge/now', async () => ({ nudge: await sendNudge({ ignoreCo
 
 route('GET', '/api/usage', async () => usageReport());
 
+// ---------- handoff between CLIs ----------
+route('POST', '/api/handoff', async (req) => {
+  const b = await body(req);
+  try {
+    const { run, note } = await handoff({
+      fromTool: b.fromTool, fromId: b.fromId, toTool: b.toTool, toSessionId: b.toSessionId || null,
+      prompt: String(b.prompt || ''), model: b.model || null, effort: b.effort || null, perm: b.perm || store.getSettings().defaultPerm,
+    });
+    return { run: publicRun(run), note };
+  } catch (e) { return [e.code === 'BUSY' ? 409 : 400, { error: e.message }]; }
+});
+route('GET', '/api/handoff/preview/:tool/:id', async (req, url, { tool, id }) => {
+  const s = await findSession(tool, decodeURIComponent(id));
+  if (!s) return [404, { error: tr('세션을 찾을 수 없어요') }];
+  return { note: await buildHandoffNote(s, await readMessages(s)) };
+});
+
 // ---------- cleanup / trash ----------
 route('GET', '/api/cleanup', async () => {
   const all = await decoratedSessions({ includeAutomated: true, includeHidden: true });
@@ -426,6 +468,12 @@ const server = http.createServer(async (req, res) => {
   if (!authorized(req)) { res.writeHead(403, { 'content-type': 'text/plain' }); res.end('forbidden'); return; }
   if (req.headers['tailscale-user-login'] && req.headers.host) setPublicOrigin(`https://${req.headers['x-forwarded-host'] || req.headers.host}`);
   const url = new URL(req.url, 'http://x');
+  // device / password gate for everything under /api except the auth endpoints themselves
+  if (url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/') && !isLocal(req)) {
+    const d = checkDevice(req);
+    if (!d.ok) return send(res, 401, { error: tr('비밀번호를 입력해주세요'), code: 'AUTH' });
+    if (d.setCookie) res.setHeader('set-cookie', d.setCookie);
+  }
   try {
     const m = url.pathname.match(/^\/api\/runs\/([^/]+)\/stream$/);
     if (m && req.method === 'GET') return streamRun(req, res, m[1], Number(url.searchParams.get('from') || 0));
@@ -437,7 +485,7 @@ const server = http.createServer(async (req, res) => {
         const mm = url.pathname.match(r.re);
         if (!mm) continue;
         const out = await r.fn(req, url, mm.groups || {});
-        if (Array.isArray(out)) return send(res, out[0], out[1]);
+        if (Array.isArray(out)) { if (out[2]) for (const [k, v] of Object.entries(out[2])) res.setHeader(k, v); return send(res, out[0], out[1]); }
         return send(res, 200, out);
       }
       return send(res, 404, { error: 'not found' });
