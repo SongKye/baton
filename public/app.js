@@ -1562,14 +1562,30 @@ async function handoffSheet(session, links = { from: [], to: [] }, { reason = ''
   if (!pickV) return;
   const [kind, toTool, ...rest] = pickV.split(':');
   const toSessionId = kind === 'back' ? rest.join(':') : null;
+  // how to carry the context over: the source agent summarizes itself (like /compact) or Baton extracts it
+  let mode = 'extract';
+  if (['claude', 'codex'].includes(session.tool)) {
+    const srcU = toolUsage(lim, session.tool);
+    const exhausted = Boolean(reason) || (srcU && srcU.usedPercent >= 98);
+    const opts = [
+      { value: 'summary', label: t('{name}가 직접 요약 (compact처럼)', { name: TOOL[session.tool].name }) + (exhausted ? '' : ` · ${t('추천')}`), desc: t('대화 전체를 아는 원래 CLI가 결정·시도·현재 상태를 정리해요. 가장 정확하지만 원래 CLI 토큰을 한 번 써요 (30~90초). 실패하면 자동 정리로 넘어가요') },
+      { value: 'extract', label: t('기록에서 자동 정리 (토큰 0)') + (exhausted ? ` · ${t('추천')}` : ''), desc: t('이미 한도에 걸렸을 때. 세션 기록·할 일 목록·파일·git에서 Baton이 뽑아요') },
+    ];
+    if (exhausted) opts.reverse();
+    const m = await pick(t('맥락을 어떻게 넘길까요?'), opts);
+    if (!m) return;
+    mode = m;
+  }
   const msg = await promptSheet(t('{name}에게 보낼 메시지', { name: TOOL[toTool].name }), t('이어서 진행해줘'), { multiline: true, okLabel: t('넘기기') });
   if (msg === undefined || msg === null) return;
   const prefs = composerPrefs(toTool);
   let r;
+  if (mode === 'summary') toast(t('{name}가 지금까지를 정리하는 중… (최대 2분)', { name: TOOL[session.tool].name }));
   try {
-    r = await api('/api/handoff', { body: { fromTool: session.tool, fromId: session.id, toTool, toSessionId, prompt: msg, model: prefs.model, effort: prefs.effort, perm: prefs.perm } });
+    r = await api('/api/handoff', { body: { fromTool: session.tool, fromId: session.id, toTool, toSessionId, prompt: msg, model: prefs.model, effort: prefs.effort, perm: prefs.perm, mode } });
   } catch (e) { toast(e.message, true); return; }
-  toast(t('{name}로 넘겼어요 · 정리 노트: {note}', { name: TOOL[toTool].name, note: r.note }));
+  if (r.summaryFailed) toast(t('원래 CLI가 요약하지 못해서 기록에서 자동 정리했어요'), true);
+  else toast(t('{name}로 넘겼어요 · 정리 노트: {note}', { name: TOOL[toTool].name, note: r.note }));
   if (toSessionId) location.hash = `#/s/${toTool}/${encodeURIComponent(toSessionId)}`;
   else location.hash = `#/new?tool=${toTool}&attach=${r.run.id}&from=${encodeURIComponent(`${session.tool}:${session.id}`)}&label=${encodeURIComponent(msg)}`;
 }

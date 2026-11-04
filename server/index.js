@@ -317,11 +317,13 @@ route('GET', '/api/usage', async () => usageReport());
 route('POST', '/api/handoff', async (req) => {
   const b = await body(req);
   try {
-    const { run, note } = await handoff({
+    const r2 = await handoff({
       fromTool: b.fromTool, fromId: b.fromId, toTool: b.toTool, toSessionId: b.toSessionId || null,
       prompt: String(b.prompt || ''), model: b.model || null, effort: b.effort || null, perm: b.perm || store.getSettings().defaultPerm,
+      mode: b.mode === 'summary' ? 'summary' : 'extract',
     });
-    return { run: publicRun(run), note };
+    const { run, note } = r2;
+    return { run: publicRun(run), note, summarized: r2.summarized, summaryFailed: r2.summaryFailed };
   } catch (e) { return [e.code === 'BUSY' ? 409 : 400, { error: e.message }]; }
 });
 route('GET', '/api/handoff/preview/:tool/:id', async (req, url, { tool, id }) => {
