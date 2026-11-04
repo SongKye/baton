@@ -1,14 +1,17 @@
 {
   "name": "baton",
   "version": "0.1.0",
-  "description": "Vibe-coding companion dashboard: all Claude / Codex / Antigravity sessions in one mobile PWA",
+  "description": "One dashboard for your AI coding sessions — Claude Code, Codex, Antigravity, OpenCode and Cursor. Resume any session from desktop or phone.",
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "node --no-warnings server/index.js"
+    "start": "node --no-warnings server/index.js",
+    "open": "node --no-warnings server/index.js --open",
+    "setup": "bash scripts/setup.sh",
+    "i18n:check": "node scripts/i18n-check.mjs"
   },
   "engines": {
-    "node": ">=22.5"
+    "node": ">=22.13"
   },
   "dependencies": {
     "dompurify": "^3.2.6",

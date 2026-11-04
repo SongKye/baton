@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Baton 설치: systemd 사용자 서비스 등록 + Tailscale(테일넷 전용) HTTPS 8443 노출
+# Advanced (Linux): run Baton as a systemd user service AND expose it on your tailnet at https://<host>:8443,
+# allowing only your own Tailscale login. The dashboard's "Get started" screen does the same in two clicks.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DIR="$(pwd)"
