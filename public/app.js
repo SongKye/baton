@@ -501,6 +501,7 @@ async function sessionMenuFromHref(href) {
 async function sessionMenu(s, after, { onTrashed } = {}) {
   const act = await pick(s.title, [
     { value: 'notify', label: s.notify ? `${t('🔔 끝나면 알림')} · ${s.notify === 2 ? t('매번') : t('한 번')}` : t('🔔 끝나면 폰으로 알림'), desc: t('PC 터미널에서 돌리는 중이어도 알려줘요') },
+    { value: 'newhere', label: t('➕ 이 프로젝트에서 새 세션'), desc: t('같은 폴더에서 원하는 CLI로 새 작업을 시작해요 (맥락은 넘기지 않아요)') },
     { value: 'handoff', label: t('🔀 다른 CLI로 이어가기'), desc: t('토큰이 부족할 때 다른 도구가 이 세션을 이어받아요') },
     { value: 'pin', label: s.pinned ? t('고정 해제') : t('📌 고정') },
     { value: 'rename', label: t('이름 바꾸기') },
@@ -514,6 +515,7 @@ async function sessionMenu(s, after, { onTrashed } = {}) {
   else if (act === 'rename') { const n = await promptSheet(t('세션 이름 (Baton에서만 보여요)'), s.title); if (n === undefined) return; await meta({ title: n || null }); }
   else if (act === 'project') { if (s.project) location.hash = `#/p/${encodeURIComponent(s.project)}`; return; }
   else if (act === 'notify') { await notifyMenu(s); }
+  else if (act === 'newhere') { await newSessionHere(s); return; }
   else if (act === 'handoff') { const d = await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}?limit=1&seen=0`).catch(() => ({})); await handoffSheet(s, d.links); return; }
   else if (act === 'trash') { if (await trashOne(s)) { if (onTrashed) onTrashed(); else after?.(); } return; }
   else return;
@@ -789,6 +791,7 @@ async function viewChat([tool, id]) {
       const hb = $('#hobanners'); if (!hb) return;
       hb.innerHTML = handoffBanners(session, links, lim);
       $$('[data-handoff]', hb).forEach((b) => (b.onclick = () => handoffSheet(session, links)));
+      $$('[data-newhere]', hb).forEach((b) => (b.onclick = () => newSessionHere(session)));
     });
     if (!d.messages.length) msgsEl.insertAdjacentHTML('beforeend', `<div class="empty">${t('표시할 대화가 없어요')}</div>`);
     const older = $('#older');
@@ -1590,6 +1593,22 @@ async function handoffSheet(session, links = { from: [], to: [] }, { reason = ''
   else location.hash = `#/new?tool=${toTool}&attach=${r.run.id}&from=${encodeURIComponent(`${session.tool}:${session.id}`)}&label=${encodeURIComponent(msg)}`;
 }
 
+/** New session in the same project folder with any installed CLI (no context carried over). */
+async function newSessionHere(session) {
+  const lim = await api('/api/limits').catch(() => ({}));
+  const scored = INSTALLED().map((id) => ({ id, u: toolUsage(lim, id) }));
+  const best = [...scored].filter((x) => x.u).sort((a, b) => a.u.usedPercent - b.u.usedPercent)[0]?.id;
+  const opts = scored.map(({ id, u }) => ({
+    value: id,
+    label: `${TOOL[id].name}${id === session.tool ? ` · ${t('지금 CLI')}` : ''}${id === best && id !== session.tool ? ` · ${t('여유 많음')}` : ''}`,
+    desc: u ? t('{label} {p}% 사용', { label: u.weekly ? t('주간') : t('5시간'), p: u.usedPercent }) : t('한도 정보 없음'),
+  }));
+  const tool = await pick(t('어떤 CLI로 새 세션을 열까요?'), opts);
+  if (!tool) return;
+  const cwd = session.cwd || session.project || '~';
+  location.hash = `#/new?cwd=${encodeURIComponent(cwd)}&tool=${tool}`;
+}
+
 /** Banners in a chat: where this session came from / continued to, and a nudge when its CLI is near the limit. */
 function handoffBanners(session, links, lim) {
   const out = [];
@@ -1598,7 +1617,7 @@ function handoffBanners(session, links, lim) {
   const u = toolUsage(lim, session.tool);
   if (u && u.usedPercent >= 80 && INSTALLED().some((id) => id !== session.tool)) {
     out.push(`<div class="banner warn">⚡ ${t('{name} {label} 한도 {p}% 사용', { name: TOOL[session.tool].name, label: u.weekly ? t('주간') : t('5시간'), p: u.usedPercent })}
-      <button class="btn sm" data-handoff>${t('다른 CLI로 이어가기')}</button></div>`);
+      <button class="btn sm" data-newhere>${t('새 세션')}</button><button class="btn sm" data-handoff>${t('이어가기')}</button></div>`);
   }
   return out.join('');
 }
