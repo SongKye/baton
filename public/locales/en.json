@@ -544,5 +544,11 @@
  "이미 한도에 걸렸을 때. 세션 기록·할 일 목록·파일·git에서 Baton이 뽑아요": "For when it's already at its limit. Baton extracts from the transcript, todo list, files and git",
  "맥락을 어떻게 넘길까요?": "How should the context be carried over?",
  "{name}가 지금까지를 정리하는 중… (최대 2분)": "{name} is summarizing the session… (up to 2 min)",
- "원래 CLI가 요약하지 못해서 기록에서 자동 정리했어요": "The original CLI couldn't summarize, so the record was extracted instead"
+ "원래 CLI가 요약하지 못해서 기록에서 자동 정리했어요": "The original CLI couldn't summarize, so the record was extracted instead",
+ "➕ 이 프로젝트에서 새 세션": "➕ New session in this project",
+ "같은 폴더에서 원하는 CLI로 새 작업을 시작해요 (맥락은 넘기지 않아요)": "Start a new task in the same folder with any CLI (no context carried over)",
+ "이어가기": "Hand off",
+ "지금 CLI": "current",
+ "여유 많음": "most headroom",
+ "어떤 CLI로 새 세션을 열까요?": "Open a new session with which CLI?"
 }
