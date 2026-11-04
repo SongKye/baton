@@ -17,6 +17,7 @@ import { listPorts, shareToPhone, unshare, stopPort } from './ports.js';
 import { skillsReport, skillDetail } from './skills.js';
 import { setupStatus, startJob, getJob, jobInput, stopJob, publicJob } from './setup.js';
 import { handoff, linksOf, buildHandoffNote } from './handoff.js';
+import { moveSession, folderSuggestions, consumeMoveNote } from './move.js';
 import { isLocal, checkDevice, login, logout, changePassword, listDevices, revokeDevice, revokeAll, usingDefaultPassword } from './auth.js';
 import { toolsMeta, binFor, TOOL_IDS } from './tools.js';
 import { OS_NAME, openBrowser } from './platform.js';
@@ -62,6 +63,7 @@ function sessionView(s) {
   return {
     key: s.key, tool: s.tool, id: s.id, title: s.title, cwd: shortHome(s.cwd), project: s.project, created: s.created, updated: s.updated,
     lastPrompt: s.lastPrompt, lastReply: s.lastReply, firstPrompt: s.firstPrompt, model: s.model, automated: s.automated,
+    origCwd: s.moved ? shortHome(s.origCwd) : null, moved: Boolean(s.moved),
     pinned: s.pinned, hidden: s.hidden, terminal: s.terminal, running: s.running, live: s.live, unseen: s.unseen, agentName: s.agentName, notify: s.notify || 0,
   };
 }
@@ -223,7 +225,8 @@ route('POST', '/api/run', async (req) => {
   let images = [];
   try { images = await saveImages(b.tool, cwd, b.images); } catch (e) { return [400, { error: e.message }]; }
   try {
-    const run = startRun({ tool: b.tool, sessionId: b.sessionId || null, cwd, prompt: String(b.prompt || ''), model: b.model || null, effort: b.effort || null, perm: b.perm || store.getSettings().defaultPerm, title, images });
+    const prompt0 = String(b.prompt || '');
+    const run = startRun({ tool: b.tool, sessionId: b.sessionId || null, cwd, prompt: b.sessionId ? consumeMoveNote(`${b.tool}:${b.sessionId}`, prompt0) : prompt0, model: b.model || null, effort: b.effort || null, perm: b.perm || store.getSettings().defaultPerm, title, images });
     return { run: publicRun(run) };
   } catch (e) {
     return [e.code === 'BUSY' ? 409 : 400, { error: e.message, runId: e.runId }];
@@ -312,6 +315,20 @@ route('POST', '/api/push/test', async () => ({ sent: await notify({ kind: 'test'
 route('POST', '/api/nudge/now', async () => ({ nudge: await sendNudge({ ignoreCooldown: true }) }));
 
 route('GET', '/api/usage', async () => usageReport());
+
+// ---------- move a session to another working folder ----------
+route('GET', '/api/sessions/:tool/:id/folders', async (req, url, { tool, id }) => {
+  const s = await findSession(tool, decodeURIComponent(id));
+  if (!s) return [404, { error: tr('세션을 찾을 수 없어요') }];
+  return { current: shortHome(s.cwd), original: shortHome(s.origCwd || s.cwd), moved: Boolean(s.moved), suggestions: await folderSuggestions(s) };
+});
+route('POST', '/api/sessions/:tool/:id/move', async (req, url, { tool, id }) => {
+  const b = await body(req);
+  const sid = decodeURIComponent(id);
+  const d = (await decoratedSessions({ includeAutomated: true, includeHidden: true })).find((x) => x.key === `${tool}:${sid}`);
+  try { return await moveSession({ tool, id: sid, cwd: b.cwd, moveFiles: Boolean(b.moveFiles), live: Boolean(d?.live || d?.running) }); }
+  catch (e) { return [400, { error: e.message }]; }
+});
 
 // ---------- handoff between CLIs ----------
 route('POST', '/api/handoff', async (req) => {

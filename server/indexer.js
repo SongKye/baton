@@ -7,7 +7,7 @@ import { listOpencode, readOpencode } from './sources/opencode.js';
 import { listCursor, readCursor, noteCursorDirs } from './sources/cursor.js';
 import { liveSessions } from './live.js';
 import { projectRoot, groupProjects } from './projects.js';
-import { allSessionMeta, allProjectMeta, allBriefs, getSettings } from './store.js';
+import { allSessionMeta, allProjectMeta, allBriefs, getSettings, cwdOverrides } from './store.js';
 import { activeRunFor, childPids } from './runner.js';
 import { trashedKeys } from './trash.js';
 
@@ -23,7 +23,12 @@ async function rebuild() {
   ]);
   noteCursorDirs([...cl, ...cx, ...ag, ...oc].map((s) => s.cwd));
   const cu = await listCursor().catch((e) => { console.warn('[cursor]', e.message); return []; });
-  const sessions = [...cl, ...cx, ...ag, ...oc, ...cu].map((s) => ({ ...s, key: `${s.tool}:${s.id}`, project: projectRoot(s.cwd) }));
+  const moved = cwdOverrides(); // sessions the user moved to another folder in Baton
+  const sessions = [...cl, ...cx, ...ag, ...oc, ...cu].map((s) => {
+    const key = `${s.tool}:${s.id}`;
+    const cwd = moved.get(key) || s.cwd;
+    return { ...s, key, cwd, origCwd: s.cwd, moved: moved.has(key), project: projectRoot(cwd) };
+  });
   const byKey = new Map(sessions.map((s) => [s.key, s]));
   const byFile = new Map(sessions.map((s) => [s.file, s]));
   snapshot = { at: Date.now(), sessions, byKey, byFile };
