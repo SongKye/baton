@@ -24,6 +24,7 @@ import { toolsMeta, binFor, TOOL_IDS } from './tools.js';
 import { OS_NAME, openBrowser } from './platform.js';
 import { tr, lang } from './i18n.js';
 import { providersSummary, resetProviderCache } from './providers.js';
+import { connect, testConnection } from './connect.js';
 import crypto from 'node:crypto';
 import { ensureBrief, briefPending } from './brief.js';
 import { dozingProjects, sendNudge, startNudgeScheduler } from './nudge.js';
@@ -148,6 +149,17 @@ route('POST', '/api/env', async (req) => {
   store.setKV('extra_env', next);
   resetProviderCache();
   return { ok: true, keys: Object.keys(next), providers: await providersSummary() };
+});
+
+// ---------- connect without a subscription (API keys, Bedrock, Vertex, gateways, own servers) ----------
+route('POST', '/api/setup/connect', async (req) => {
+  const b = await body(req);
+  try { return { ok: true, ...(await connect(String(b.tool), String(b.kind), b.fields || {})), providers: await providersSummary() }; }
+  catch (e) { return [400, { error: e.message }]; }
+});
+route('POST', '/api/setup/test', async (req) => {
+  const b = await body(req);
+  try { return await testConnection(String(b.tool)); } catch (e) { return [400, { error: e.message }]; }
 });
 
 // ---------- setup / onboarding ----------
