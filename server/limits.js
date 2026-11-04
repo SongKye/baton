@@ -10,6 +10,7 @@ import { execFile } from 'node:child_process';
 import { HOME } from './util.js';
 import { getKV, setKV } from './store.js';
 import { childEnv } from './runner.js';
+import { tr } from './i18n.js';
 
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
 const UA = 'baton/1.0';
@@ -28,19 +29,19 @@ const pct = (x) => (x == null ? null : Math.max(0, Math.min(100, Math.round(x)))
 const iso = (s) => (s ? Date.parse(s) || null : null);
 
 // ---------------------------------------------------------------- claude
-const CLAUDE_EXTRA = { seven_day_opus: '주간 · Opus', seven_day_sonnet: '주간 · Sonnet', seven_day_oauth_apps: '주간 · 외부 앱' };
+const CLAUDE_EXTRA = () => ({ seven_day_opus: tr('주간 · Opus'), seven_day_sonnet: tr('주간 · Sonnet'), seven_day_oauth_apps: tr('주간 · 외부 앱') });
 async function claudeLimits() {
   const cred = readJson(path.join(HOME, '.claude', '.credentials.json'))?.claudeAiOauth;
-  if (!cred?.accessToken) throw Object.assign(new Error('Claude Code 로그인 정보가 없어요'), { code: 'NOAUTH' });
-  if (cred.expiresAt && cred.expiresAt < Date.now()) throw Object.assign(new Error('토큰 만료 — Claude Code를 한 번 쓰면 갱신돼요'), { code: 'EXPIRED' });
+  if (!cred?.accessToken) throw Object.assign(new Error(tr('Claude Code 로그인 정보가 없어요')), { code: 'NOAUTH' });
+  if (cred.expiresAt && cred.expiresAt < Date.now()) throw Object.assign(new Error(tr('토큰 만료 — Claude Code를 한 번 쓰면 갱신돼요')), { code: 'EXPIRED' });
   const j = await getJson('https://api.anthropic.com/api/oauth/usage', {
     headers: { Authorization: `Bearer ${cred.accessToken}`, 'anthropic-beta': 'oauth-2025-04-20', 'Content-Type': 'application/json', 'User-Agent': UA },
   });
   const windows = [];
-  if (j.five_hour) windows.push({ id: 'session', label: '현재 세션', sub: '5시간', usedPercent: pct(j.five_hour.utilization), resetsAt: iso(j.five_hour.resets_at) });
-  if (j.seven_day) windows.push({ id: 'weekly', label: '주간 · 모든 모델', sub: '7일', usedPercent: pct(j.seven_day.utilization), resetsAt: iso(j.seven_day.resets_at), weekly: true });
-  for (const [k, label] of Object.entries(CLAUDE_EXTRA)) {
-    if (j[k]?.utilization != null) windows.push({ id: k, label, sub: '7일', usedPercent: pct(j[k].utilization), resetsAt: iso(j[k].resets_at), weekly: true });
+  if (j.five_hour) windows.push({ id: 'session', label: tr('현재 세션'), sub: tr('5시간'), usedPercent: pct(j.five_hour.utilization), resetsAt: iso(j.five_hour.resets_at) });
+  if (j.seven_day) windows.push({ id: 'weekly', label: tr('주간 · 모든 모델'), sub: tr('7일'), usedPercent: pct(j.seven_day.utilization), resetsAt: iso(j.seven_day.resets_at), weekly: true });
+  for (const [k, label] of Object.entries(CLAUDE_EXTRA())) {
+    if (j[k]?.utilization != null) windows.push({ id: k, label, sub: tr('7일'), usedPercent: pct(j[k].utilization), resetsAt: iso(j[k].resets_at), weekly: true });
   }
   const ex = j.extra_usage;
   const extra = ex?.is_enabled ? { usedPercent: pct(ex.utilization), used: ex.used_credits, limit: ex.monthly_limit, currency: ex.currency } : null;
@@ -51,15 +52,15 @@ async function claudeLimits() {
 async function codexLimits() {
   const auth = readJson(path.join(HOME, '.codex', 'auth.json'));
   const t = auth?.tokens;
-  if (!t?.access_token) throw Object.assign(new Error('Codex 로그인 정보가 없어요'), { code: 'NOAUTH' });
+  if (!t?.access_token) throw Object.assign(new Error(tr('Codex 로그인 정보가 없어요')), { code: 'NOAUTH' });
   const j = await getJson('https://chatgpt.com/backend-api/wham/usage', {
     headers: { Authorization: `Bearer ${t.access_token}`, 'ChatGPT-Account-Id': t.account_id || '', 'User-Agent': UA },
   });
   const rl = j.rate_limit || {};
   const w = (x, id, label, sub, weekly) => (x ? { id, label, sub, usedPercent: pct(x.used_percent), resetsAt: x.reset_at ? x.reset_at * 1000 : null, weekly } : null);
   const windows = [
-    w(rl.primary_window, 'session', '5시간 한도', '5시간', false),
-    w(rl.secondary_window, 'weekly', '주간 한도', '7일', true),
+    w(rl.primary_window, 'session', tr('5시간 한도'), tr('5시간'), false),
+    w(rl.secondary_window, 'weekly', tr('주간 한도'), tr('7일'), true),
   ].filter(Boolean);
   for (const [k, v] of Object.entries(j.additional_rate_limits || {})) {
     const p = v?.rate_limit || v;
@@ -71,22 +72,22 @@ async function codexLimits() {
 // ---------------------------------------------------------------- agy
 // `agy -p=/usage --output-format json` runs the built-in /usage slash command (no model call)
 // and returns {command:{data:{groups:[{name, buckets:[{window, remaining_fraction, reset_time}]}]}}}.
-const GROUP_KO = { 'Gemini Models': 'Gemini 모델', 'Claude and GPT models': 'Claude·GPT 모델' };
+const GROUP_KO = () => ({ 'Gemini Models': tr('Gemini 모델'), 'Claude and GPT models': tr('Claude·GPT 모델') });
 function agyLimits() {
   return new Promise((resolve, reject) => {
     execFile('agy', ['-p=/usage', '--output-format', 'json'], { timeout: 60000, cwd: HOME, env: childEnv(), maxBuffer: 4 << 20 }, (err, stdout) => {
       let j = null;
       try { j = JSON.parse(stdout.trim().split('\n').filter((l) => l.startsWith('{')).pop()); } catch { /* fallthrough */ }
       const groups = j?.command?.data?.groups;
-      if (!groups) return reject(Object.assign(new Error(j?.error || err?.message || '한도 정보를 받지 못했어요'), { code: 'AGY' }));
+      if (!groups) return reject(Object.assign(new Error(j?.error || err?.message || tr('한도 정보를 받지 못했어요')), { code: 'AGY' }));
       const windows = [];
       for (const g of groups) {
         for (const b of g.buckets || []) {
           const weekly = b.window === 'weekly';
           windows.push({
             id: b.id || `${g.name}:${b.window}`,
-            label: `${weekly ? '주간' : '5시간'} · ${GROUP_KO[g.name] || g.name}`,
-            sub: g.description ? g.description.replace(/^Models within this group:\s*/, '') : (weekly ? '7일' : '5시간'),
+            label: `${weekly ? tr('주간') : tr('5시간')} · ${GROUP_KO()[g.name] || g.name}`,
+            sub: g.description ? g.description.replace(/^Models within this group:\s*/, '') : (weekly ? tr('7일') : tr('5시간')),
             usedPercent: pct((1 - (b.remaining_fraction ?? 1)) * 100), resetsAt: iso(b.reset_time), weekly,
           });
         }

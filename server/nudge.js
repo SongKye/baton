@@ -4,6 +4,7 @@ import { ensureBrief } from './brief.js';
 import { notify } from './push.js';
 import { getSettings, getKV, setKV, patchProjectMeta } from './store.js';
 import { DAY, HOME } from './util.js';
+import { tr } from './i18n.js';
 
 /** Projects that are dozing (idle >= staleDays) but not abandoned/finished/snoozed. Sorted by priority. */
 export function dozingProjects(projects, settings = getSettings()) {
@@ -32,10 +33,10 @@ export async function sendNudge({ ignoreCooldown = false } = {}) {
   let brief = null;
   try { brief = await ensureBrief(p); } catch (e) { console.warn('[nudge] brief failed', e.message); }
   const next = brief?.next?.[0]?.title;
-  const title = `💤 ${p.name} · ${p.idleDays}일째 쉬는 중`;
+  const title = `💤 ${p.name} · ${tr('{n}일째 쉬는 중', { n: p.idleDays })}`;
   const body = next
-    ? `다음 할 일: ${next}\n이어서 해볼까요, 아니면 보류할까요?`
-    : `${brief?.oneLiner || p.lastSession?.title || ''}\n이 프로젝트, 진행 예정이 있나요?`;
+    ? `${tr('다음 할 일:')} ${next}\n${tr('이어서 해볼까요, 아니면 보류할까요?')}`
+    : `${brief?.oneLiner || p.lastSession?.title || ''}\n${tr('이 프로젝트, 진행 예정이 있나요?')}`;
   await notify({ kind: 'nudge', title, body, url: `/#/p/${encodeURIComponent(p.id)}`, tag: `nudge-${p.id}` });
   patchProjectMeta(p.id, { last_nudged: Date.now() });
   return { project: p.id, title, body };

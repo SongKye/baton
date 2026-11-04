@@ -9,6 +9,7 @@ import path from 'node:path';
 import { HOME, clip, oneLine, statSafe, cleanPrompt, eachJsonl } from '../util.js';
 import { summarizeTool } from './common.js';
 import { getKV } from '../store.js';
+import { tr } from '../i18n.js';
 
 const ROOT = path.join(HOME, '.gemini', 'antigravity-cli');
 const SUMMARY_DB = path.join(ROOT, 'conversation_summaries.db');
@@ -68,7 +69,7 @@ export async function listAgy() {
       rows.push({
         tool: 'agy',
         id: r.conversation_id,
-        title: r.title || clip(oneLine(preview), 80) || (r.agent_name ? `${r.agent_name} 서브에이전트` : '(제목 없음)'),
+        title: r.title || clip(oneLine(preview), 80) || (r.agent_name ? `${r.agent_name} ${tr('서브에이전트')}` : tr('(제목 없음)')),
         cwd,
         created: parseTime(r.last_user_input_time) || parseTime(r.last_modified_time),
         busy: Boolean(r.not_fully_idle) || (r.status && !/IDLE/.test(r.status)),

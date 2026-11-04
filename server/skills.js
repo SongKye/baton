@@ -6,6 +6,7 @@ import path from 'node:path';
 import { HOME, shortHome } from './util.js';
 import { projectsList } from './indexer.js';
 import { skillUses } from './usage.js';
+import { tr } from './i18n.js';
 
 const exists = (p) => { try { return fs.statSync(p); } catch { return null; } };
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
@@ -69,38 +70,38 @@ async function discover() {
   const G = path.join(HOME, '.gemini', 'antigravity-cli');
   const all = [];
   // ---- Claude Code
-  all.push(...(await skillsIn(path.join(C, 'skills'), { tool: 'claude', scope: 'global', scopeLabel: '내 전역 스킬' })).filter((s) => !s.dir.includes('/synced/')));
+  all.push(...(await skillsIn(path.join(C, 'skills'), { tool: 'claude', scope: 'global', scopeLabel: tr('내 전역 스킬') })).filter((s) => !s.dir.includes('/synced/')));
   const synced = path.join(C, 'skills', 'synced');
   for (const b of await fsp.readdir(synced).catch(() => [])) {
-    for (const s of await skillsIn(path.join(synced, b), { tool: 'claude', scope: 'synced', scopeLabel: 'claude.ai 동기화' })) all.push({ ...s, alias: `anthropic-skills:${s.name}` });
+    for (const s of await skillsIn(path.join(synced, b), { tool: 'claude', scope: 'synced', scopeLabel: tr('claude.ai 동기화') })) all.push({ ...s, alias: `anthropic-skills:${s.name}` });
   }
-  all.push(...await commandsIn(path.join(C, 'commands'), { tool: 'claude', scope: 'global', scopeLabel: '내 전역 명령어' }));
+  all.push(...await commandsIn(path.join(C, 'commands'), { tool: 'claude', scope: 'global', scopeLabel: tr('내 전역 명령어') }));
   const installed = readJson(path.join(C, 'plugins', 'installed_plugins.json'))?.plugins || {};
   for (const [pid, entries] of Object.entries(installed)) {
     for (const ent of [].concat(entries)) {
       if (!ent?.installPath) continue;
       const plugin = pid.split('@')[0];
-      for (const s of await skillsIn(path.join(ent.installPath, 'skills'), { tool: 'claude', scope: 'plugin', scopeLabel: `플러그인 · ${plugin}` })) all.push({ ...s, alias: `${plugin}:${s.name}` });
+      for (const s of await skillsIn(path.join(ent.installPath, 'skills'), { tool: 'claude', scope: 'plugin', scopeLabel: tr('플러그인 · {name}', { name: plugin }) })) all.push({ ...s, alias: `${plugin}:${s.name}` });
     }
   }
   // ---- Codex
-  all.push(...await skillsIn(path.join(X, 'skills', '.system'), { tool: 'codex', scope: 'builtin', scopeLabel: 'Codex 기본 내장' }));
-  all.push(...(await skillsIn(path.join(X, 'skills'), { tool: 'codex', scope: 'global', scopeLabel: '내 전역 스킬' })));
-  all.push(...await skillsIn(path.join(HOME, '.agents', 'skills'), { tool: 'codex', scope: 'global', scopeLabel: '내 전역 스킬 (~/.agents)' }));
-  for (const s of await skillsIn(path.join(X, 'plugins', 'cache'), { tool: 'codex', scope: 'plugin', scopeLabel: '플러그인' }, { depth: 5 })) {
+  all.push(...await skillsIn(path.join(X, 'skills', '.system'), { tool: 'codex', scope: 'builtin', scopeLabel: tr('Codex 기본 내장') }));
+  all.push(...(await skillsIn(path.join(X, 'skills'), { tool: 'codex', scope: 'global', scopeLabel: tr('내 전역 스킬') })));
+  all.push(...await skillsIn(path.join(HOME, '.agents', 'skills'), { tool: 'codex', scope: 'global', scopeLabel: tr('내 전역 스킬 (~/.agents)') }));
+  for (const s of await skillsIn(path.join(X, 'plugins', 'cache'), { tool: 'codex', scope: 'plugin', scopeLabel: tr('플러그인') }, { depth: 5 })) {
     const m = s.dir.match(/plugins\/cache\/[^/]+\/([^/]+)\//);
-    all.push({ ...s, scopeLabel: `플러그인 · ${m ? m[1] : '?'}` });
+    all.push({ ...s, scopeLabel: tr('플러그인 · {name}', { name: m ? m[1] : '?' }) });
   }
   // ---- Antigravity
-  all.push(...await skillsIn(path.join(G, 'builtin', 'skills'), { tool: 'agy', scope: 'builtin', scopeLabel: 'Antigravity 기본 내장' }));
-  all.push(...await skillsIn(path.join(G, 'skills'), { tool: 'agy', scope: 'global', scopeLabel: '내 전역 스킬' }));
-  all.push(...await skillsIn(path.join(HOME, '.gemini', 'skills'), { tool: 'agy', scope: 'global', scopeLabel: '내 전역 스킬 (~/.gemini)' }));
+  all.push(...await skillsIn(path.join(G, 'builtin', 'skills'), { tool: 'agy', scope: 'builtin', scopeLabel: tr('Antigravity 기본 내장') }));
+  all.push(...await skillsIn(path.join(G, 'skills'), { tool: 'agy', scope: 'global', scopeLabel: tr('내 전역 스킬') }));
+  all.push(...await skillsIn(path.join(HOME, '.gemini', 'skills'), { tool: 'agy', scope: 'global', scopeLabel: tr('내 전역 스킬 (~/.gemini)') }));
   // ---- per project (every project Baton knows about)
   const projects = await projectsList();
   const roots = [...new Set(projects.map((p) => p.id).filter((r) => r && r !== HOME))];
   for (const root of roots) {
     const name = projects.find((p) => p.id === root)?.name || path.basename(root);
-    const base = { scope: 'project', scopeLabel: `프로젝트 · ${name}`, project: root };
+    const base = { scope: 'project', scopeLabel: tr('프로젝트 · {name}', { name }), project: root };
     all.push(...await skillsIn(path.join(root, '.claude', 'skills'), { ...base, tool: 'claude' }));
     all.push(...await commandsIn(path.join(root, '.claude', 'commands'), { ...base, tool: 'claude' }));
     all.push(...await skillsIn(path.join(root, '.agents', 'skills'), { ...base, tool: 'codex' }));
@@ -134,7 +135,7 @@ export async function skillsReport() {
     if (!s && u.cmd) continue; // built-in slash commands (/model, /clear …) are not skills
     if (!s) {
       const k = `${u.tool}:${u.name}`;
-      s = unknown.get(k) || { tool: u.tool, name: u.name, description: '', path: u.path || null, scope: 'unlisted', scopeLabel: u.tool === 'claude' ? 'Claude Code 내장' : '목록에 없는 스킬', kind: 'skill', id: Buffer.from(`unlisted:${k}`).toString('base64url'), uses: 0, lastUsed: null, sessions: [] };
+      s = unknown.get(k) || { tool: u.tool, name: u.name, description: '', path: u.path || null, scope: 'unlisted', scopeLabel: u.tool === 'claude' ? tr('Claude Code 내장') : tr('목록에 없는 스킬'), kind: 'skill', id: Buffer.from(`unlisted:${k}`).toString('base64url'), uses: 0, lastUsed: null, sessions: [] };
       unknown.set(k, s);
     }
     s.uses++;

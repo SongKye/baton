@@ -51,15 +51,15 @@ function claudeCatalog() {
   const defEffort = obs?.effort || settings.effortLevel || null;
   const ids = claudeKnownIds().sort((a, b) => (FAMILIES.indexOf(a.split('-')[1]) - FAMILIES.indexOf(b.split('-')[1])) || ver(b) - ver(a));
   const models = [{
-    id: '', label: `기본값 · ${defModel ? prettyClaude(defModel) : '알 수 없음'}`, short: defModel ? prettyClaude(defModel) : '기본',
-    desc: cfgModel ? `~/.claude/settings.json의 "${cfgModel}"${obs ? ' · 실제 실행에서 확인됨' : ''}` : 'Claude Code 계정 기본값',
+    id: '', label: tr('기본값 · {model}', { model: defModel ? prettyClaude(defModel) : tr('알 수 없음') }), short: defModel ? prettyClaude(defModel) : tr('기본'),
+    desc: cfgModel ? tr('~/.claude/settings.json의 "{v}"', { v: cfgModel }) + (obs ? ` · ${tr('실제 실행에서 확인됨')}` : '') : tr('Claude Code 계정 기본값'),
   }];
   for (const f of FAMILIES) {
     const r = resolveClaudeAlias(f);
     if (r === f) continue;
-    models.push({ id: f, label: `${f[0].toUpperCase()}${f.slice(1)} 최신`, short: prettyClaude(r), desc: `지금은 ${prettyClaude(r)} (${r}) · 새 버전이 나오면 자동으로 바뀌어요` });
+    models.push({ id: f, label: tr('{family} 최신', { family: `${f[0].toUpperCase()}${f.slice(1)}` }), short: prettyClaude(r), desc: tr('지금은 {name} ({id}) · 새 버전이 나오면 자동으로 바뀌어요', { name: prettyClaude(r), id: r }) });
   }
-  for (const id of ids) models.push({ id, label: prettyClaude(id), short: prettyClaude(id), desc: `${id} · 버전 고정` });
+  for (const id of ids) models.push({ id, label: prettyClaude(id), short: prettyClaude(id), desc: `${id} · ${tr('버전 고정')}` });
   return {
     models,
     efforts: ['', 'low', 'medium', 'high', 'xhigh', 'max'],
@@ -82,8 +82,8 @@ function codexCatalog() {
   const defModel = cfgModel || obs?.model || list[0]?.slug || null;
   const effortFor = (slug) => cfgEffort || list.find((m) => m.slug === slug)?.default_reasoning_level || null;
   const models = [{
-    id: '', label: `기본값 · ${defModel ? name(defModel) : '알 수 없음'}`, short: defModel ? name(defModel) : '기본',
-    desc: cfgModel ? `~/.codex/config.toml의 model = "${cfgModel}"` : 'Codex 계정 기본값', defaultEffort: effortFor(defModel),
+    id: '', label: tr('기본값 · {model}', { model: defModel ? name(defModel) : tr('알 수 없음') }), short: defModel ? name(defModel) : tr('기본'),
+    desc: cfgModel ? tr('~/.codex/config.toml의 model = "{v}"', { v: cfgModel }) : tr('Codex 계정 기본값'), defaultEffort: effortFor(defModel),
   }];
   const efforts = new Set(['']);
   for (const m of list) {
@@ -120,8 +120,8 @@ function agyCatalog() {
   const settings = readJson(path.join(HOME, '.gemini', 'antigravity-cli', 'settings.json')) || {};
   const defModel = obs?.model || null;
   const models = [{
-    id: '', label: `기본값 · ${defModel ? label(defModel) : settings.model || '알 수 없음'}`, short: defModel ? label(defModel) : (settings.model || '기본'),
-    desc: defModel ? '기본값으로 보냈을 때 실제로 쓰인 모델' : '아직 확인 전 · 한 번 보내면 실제 모델을 알려드려요', defaultEffort: agyEffortOf(defModel),
+    id: '', label: tr('기본값 · {model}', { model: defModel ? label(defModel) : settings.model || tr('알 수 없음') }), short: defModel ? label(defModel) : (settings.model || tr('기본')),
+    desc: defModel ? tr('기본값으로 보냈을 때 실제로 쓰인 모델') : tr('아직 확인 전 · 한 번 보내면 실제 모델을 알려드려요'), defaultEffort: agyEffortOf(defModel),
   }];
   for (const m of agyCache.models) models.push({ ...m, short: m.label, desc: m.id, defaultEffort: agyEffortOf(m.id) });
   return {

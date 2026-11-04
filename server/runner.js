@@ -96,7 +96,8 @@ function agyCmd({ sessionId, model, effort, perm, prompt, images, cwd }) {
   // agy print mode only accepts text, so images are saved inside the workspace and referenced by path
   if (images?.length) {
     const rel = images.map((im) => `- ${path.relative(cwd, im.path)}`).join('\n');
-    prompt = `${prompt}\n\n[Baton 첨부 이미지 ${images.length}장 — read_file 도구로 열어서 확인하세요]\n${rel}`;
+    // fixed marker (readAgy strips it back out of the transcript) — not translated on purpose
+    prompt = `${prompt}\n\n[Baton 첨부 이미지 ${images.length}장 — read_file 도구로 열어서 확인하세요 / open these image files with read_file]\n${rel}`;
   }
   const args = [`-p=${prompt}`, '--output-format', 'stream-json'];
   if (sessionId) args.push('--conversation', sessionId);
