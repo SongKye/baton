@@ -9,6 +9,7 @@ Claude Code · Codex · Antigravity · OpenCode · Cursor — PC에서도, 폰�
 [![Release](https://img.shields.io/github/v/release/SongKye/baton?include_prereleases)](https://github.com/SongKye/baton/releases)
 ![Node](https://img.shields.io/badge/node-%E2%89%A5%2022.13-339933)
 ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows%20%7C%20WSL-555)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 [English](README.md) · 한국어
 
@@ -130,3 +131,7 @@ Baton은 빌드 과정이 없는 작은 Node.js 서버예요. 대화 내용을 �
 ## 기여
 
 이슈와 PR 환영해요 — [CONTRIBUTING.md](CONTRIBUTING.md)를 참고하세요. 변경 내역은 [CHANGELOG.md](CHANGELOG.md)에 있어요.
+
+## 라이선스
+
+[MIT](LICENSE) — 자유롭게 쓰고 고치고 배포할 수 있어요. 저작권 표시만 남겨주세요.

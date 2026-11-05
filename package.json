@@ -17,5 +17,6 @@
     "dompurify": "^3.2.6",
     "marked": "^15.0.12",
     "web-push": "^3.6.7"
-  }
+  },
+  "license": "MIT"
 }
