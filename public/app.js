@@ -381,7 +381,7 @@ async function snoozeFlow(id, after) {
 }
 
 // ---------------------------------------------------------------- HOME
-async function viewHome() {
+async function viewHome(_, params) {
   const hour = new Date().getHours();
   const greet = hour < 6 ? t('늦은 밤이에요 🌙') : hour < 12 ? t('좋은 아침이에요 ☀️') : hour < 18 ? t('오후도 힘내요 🏃') : t('오늘 하루 수고했어요 🌆');
   const v = shell({ title: 'Baton', sub: greet });
@@ -412,9 +412,61 @@ async function viewHome() {
     parts.push(`<div class="section"><div class="section-h"><h2>${t('최근 프로젝트')}</h2><a class="more" href="#/projects">${t('전체')}</a></div>
       <div class="list">${d.activeProjects.slice(0, 4).map(projectRow).join('')}</div></div>`);
   }
+  const up = G.state?.update;
+  if (up?.newer && store.get('update.dismissed', '') !== up.latest) {
+    parts.unshift(`<div class="section"><div class="banner update-banner"><span>🎉 ${t('Baton v{v}이 나왔어요', { v: esc(up.latest) })} <span class="muted">· ${t('지금 v{c}', { c: esc(up.current) })}</span></span>
+      <button class="btn sm primary" id="upopen">${t('업데이트')}</button><button class="icon-btn" id="upx" aria-label="${t('닫기')}">${ICON.x}</button></div></div>`);
+  }
   v.innerHTML = parts.join('');
   $$('[data-snooze]', v).forEach((b) => (b.onclick = () => snoozeFlow(b.dataset.snooze, () => render())));
+  $('#upopen', v) && ($('#upopen', v).onclick = () => updateSheet());
+  $('#upx', v) && ($('#upx', v).onclick = () => { store.set('update.dismissed', up.latest); $('#upx', v).closest('.section').remove(); });
+  if (params?.get('update')) updateSheet();
   homeUsageCard();
+}
+
+/** "What's new" + update in place (git installs) or download link (zip installs). */
+async function updateSheet({ check = false } = {}) {
+  let d;
+  try { d = await api(check ? '/api/update/check' : '/api/update', check ? { method: 'POST' } : undefined); }
+  catch (e) { toast(e.message, true); return; }
+  if (G.state) G.state.update = { current: d.current, latest: d.latest, newer: d.newer };
+  if (!d.newer) {
+    toast(d.error ? t('새 버전을 확인하지 못했어요 ({e})', { e: d.error }) : t('최신 버전이에요 (v{v})', { v: d.current }), Boolean(d.error));
+    return;
+  }
+  const i = d.install || {};
+  const how = i.canAuto ? `<p class="small muted">${t('버튼을 누르면 새 버전을 받고(git pull) 필요한 패키지를 설치한 뒤 Baton을 다시 켜요. 대화 기록과 설정은 그대로예요.')}</p>`
+    : i.kind === 'git' ? `<p class="small warn-text">${i.dirty ? t('Baton 폴더에 고친 파일이 있어서 자동으로 업데이트하지 않아요.') : t('지금 {b} 브랜치라 자동으로 업데이트하지 않아요.', { b: esc(i.branch || '?') })}</p><p class="small muted">${t('터미널에서 직접 실행하세요:')}</p><code class="copy" data-copy="git pull --ff-only && npm ci --omit=dev">git pull --ff-only && npm ci --omit=dev</code>`
+      : `<p class="small muted">${t('zip으로 설치했어요. 새 zip을 받아 압축을 풀고, 기존 data 폴더를 옮긴 뒤 설치 스크립트를 다시 실행하세요.')}</p>`;
+  await sheet({
+    title: `🎉 Baton v${esc(d.latest)}`,
+    body: `<div class="update-sheet"><p class="small muted">${t('지금 쓰는 버전: v{c}', { c: esc(d.current) })}${d.publishedAt ? ` · ${t('{when} 출시', { when: ago(d.publishedAt) })}` : ''}</p>
+      <div class="card md-card msg-ai update-notes">${d.notes ? md(d.notes) : `<p>${t('바뀐 점은 릴리스 페이지에서 볼 수 있어요')}</p>`}</div>${how}<div class="jobbox" hidden></div></div>`,
+    footer: `<a class="btn ghost" href="${esc(d.url)}" target="_blank" rel="noopener">${t('릴리스 페이지')} ↗</a>${i.canAuto ? `<button class="btn primary" data-up>${t('지금 업데이트')}</button>` : d.zip ? `<a class="btn primary" href="${esc(d.zip)}">${t('zip 받기')}</a>` : ''}`,
+    onMount: (el) => {
+      $$('code.copy', el).forEach((c) => (c.onclick = () => { navigator.clipboard?.writeText(c.dataset.copy); toast(t('복사했어요')); }));
+      const b = $('[data-up]', el);
+      if (!b) return;
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          const { job } = await api('/api/setup/jobs', { body: { action: 'update' } });
+          runJobBox($('.jobbox', el), job, async (ev) => {
+            if (!ev.ok) { b.disabled = false; toast(t('업데이트하지 못했어요. 로그를 확인해주세요'), true); return; }
+            b.textContent = t('다시 켜는 중…');
+            await api('/api/update/restart', { method: 'POST' }).catch(() => {});
+            // wait for the new server, then reload into the new version
+            for (let k = 0; k < 60; k++) {
+              await new Promise((r) => setTimeout(r, 2000));
+              try { const st = await api('/api/state'); if (st.version === d.latest) { location.reload(); return; } } catch { /* restarting */ }
+            }
+            toast(t('다시 켜지지 않았어요. PC에서 Baton을 직접 실행해주세요'), true);
+          });
+        } catch (e) { toast(e.message, true); b.disabled = false; }
+      };
+    },
+  });
 }
 
 // ---------------------------------------------------------------- PROJECTS
@@ -1358,6 +1410,7 @@ async function viewSettings() {
         : `<div class="setting"><div class="l"><b>${t('푸시 알림')}</b><span>${ps.sub ? t('이 기기에서 켜져 있어요') : t('응답 완료·잠자는 프로젝트 알림을 받아요')}</span></div>
             ${ps.sub ? `<button class="btn sm" id="ptest">${t('테스트')}</button><button class="btn sm ghost" id="poff">${t('끄기')}</button>` : `<button class="btn sm primary" id="pon">${t('켜기')}</button>`}</div>`}
       <div class="setting"><div class="l"><b>${t('응답 완료 알림')}</b><span>${t('보고 있지 않은 세션의 응답이 끝나면 알려줘요')}</span></div>${sw('notifyOnRunDone')}</div>
+      <div class="setting"><div class="l"><b>${t('새 버전 알림')}</b><span>${t('Baton 새 버전이 나오면 한 번 알려줘요 (GitHub에서 하루 몇 번 확인)')}</span></div>${sw('updateCheck')}</div>
       ${DESK_MQ.matches ? `<div class="setting"><div class="l"><b>${t('데스크톱 화면 알림')}</b><span>${t('이 PC에서 Baton을 보고 있으면 화면 우측 하단에 알림 카드를 띄워요')}</span></div><label class="switch"><input type="checkbox" id="deskcards-sw" ${deskCardsOn() ? 'checked' : ''}><i></i></label></div>` : ''}
     </div></div>
     <div class="section" data-settings="reminders"><div class="section-h"><h2>${t('잊혀가는 프로젝트 챙기기 💤')}</h2></div><div class="card">
@@ -1378,8 +1431,9 @@ async function viewSettings() {
       <a class="setting" href="#/usage"><div class="l"><b>${t('사용량 · 한도')}</b><span>${t('CLI별 남은 한도와 토큰 사용량')}</span></div><span class="muted">›</span></a>
       <div class="setting"><div class="l"><b>${t('목록 새로고침')}</b><span>${t('세션 파일을 다시 읽어요')}</span></div><button class="btn sm" id="reindex">${ICON.refresh}</button></div>
     </div></div>
-    <p class="small muted" style="text-align:center;margin-top:24px">${t('Baton · 바이브코딩 이어달리기 🏃‍♂️')} · v${esc(G.state?.version || '')}<br>${esc(G.state?.home || '')} · <a href="https://github.com/SongKye/baton/releases" target="_blank" rel="noopener">${t('새 버전 확인')}</a></p>`;
+    <p class="small muted" style="text-align:center;margin-top:24px">${t('Baton · 바이브코딩 이어달리기 🏃‍♂️')} · v${esc(G.state?.version || '')}<br>${esc(G.state?.home || '')} · <a href="#" id="upcheck">${t('새 버전 확인')}</a></p>`;
   organizeSettings(v);
+  $('#upcheck', v) && ($('#upcheck', v).onclick = (e) => { e.preventDefault(); updateSheet({ check: true }); });
   $$('[data-k]', v).forEach((el) => (el.onchange = async () => {
     const k = el.dataset.k;
     const val = el.type === 'checkbox' ? el.checked : el.dataset.num !== undefined ? Number(el.value) : el.value;

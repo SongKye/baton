@@ -838,3 +838,12 @@ details.card.env[open] > summary { border-bottom: 1px solid var(--border); }
 .quick-replies > span { font-size: 12.5px; font-weight: 650; color: var(--text-3); }
 .quick-replies .qr-opts { display: flex; flex-wrap: wrap; gap: 6px; }
 .quick-replies .btn { border: 1.5px solid var(--accent); background: var(--accent-soft); color: var(--text); height: auto; min-height: 36px; padding: 6px 14px; text-align: left; }
+
+/* ---------- new version ---------- */
+.update-banner { background: var(--accent-soft); color: var(--text); font-weight: 650; }
+.update-banner > span { flex: 1; min-width: 0; }
+.update-banner .btn { margin-left: 0; }
+.update-sheet { display: flex; flex-direction: column; gap: 10px; }
+.update-sheet p { margin: 0; }
+.update-notes { max-height: 42vh; overflow: auto; padding: 4px 14px; font-size: 14px; }
+.update-notes h3 { font-size: 15px; }

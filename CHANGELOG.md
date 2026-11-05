@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-06
+
+### Added
+- **Update notices**: Baton checks GitHub Releases a few times a day (falling back to `git ls-remote --tags` for private forks or rate limits) and tells you once per new version — a banner on Home, the inbox and a push notification. **Update now** runs `git pull --ff-only` and `npm ci --omit=dev`, then restarts Baton (systemd / launchd / plain process) and reloads the page. Zip installs and git checkouts with local changes or another branch get instructions instead. Turn it off in Settings → Notifications (*New version alerts*).
+
+### Fixed
+- Project page: the folder path under the title no longer repeats after each edit, and pins, renames, notes and status changes show up right away.
+
 ## [0.2.0] - 2026-11-05
 
 ### Added
@@ -59,6 +67,7 @@ First public preview.
 ### Security
 - Listens on `127.0.0.1` only. Other devices need a password once (default `0000` — change it) and are remembered for 30 days; failed attempts are rate-limited.
 
-[Unreleased]: https://github.com/SongKye/baton/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/SongKye/baton/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/SongKye/baton/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/SongKye/baton/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SongKye/baton/releases/tag/v0.1.0

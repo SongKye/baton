@@ -13,6 +13,7 @@ import { childEnv } from './runner.js';
 import { tr, lang } from './i18n.js';
 import { claudeProvider, codexProvider } from './providers.js';
 import { envInfo } from './env.js';
+import { updateCommand } from './update.js';
 
 const HOME = os.homedir();
 const PORT = Number(process.env.BATON_PORT || 7420);
@@ -190,7 +191,7 @@ async function removeAutostart() {
   await fsp.rm(autostartPath(), { force: true });
 }
 
-/** action: install | login | git | tailscale-share | tailscale-unshare | autostart-on | autostart-off */
+/** action: install | login | git | tailscale-share | tailscale-unshare | autostart-on | autostart-off | update */
 export async function startJob(action, tool) {
   const t = tool ? TOOLS[tool] : null;
   if (tool && !t) throw new Error('unknown tool');
@@ -226,6 +227,13 @@ export async function startJob(action, tool) {
     const job = newJob('Tailscale');
     job.emit({ t: 'line', stream: 'cmd', text: `$ tailscale ${args.join(' ')}` });
     attach(job, spawnCli(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] }));
+    return job;
+  }
+  if (action === 'update') {
+    const cmd = updateCommand();
+    const job = newJob(tr('Baton 업데이트'));
+    job.emit({ t: 'line', stream: 'cmd', text: `$ ${cmd}` });
+    attach(job, shellSpawn(cmd));
     return job;
   }
   if (action === 'autostart-on' || action === 'autostart-off') {
