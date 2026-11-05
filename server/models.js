@@ -151,17 +151,36 @@ function refreshAgy() {
 }
 const agyEffortOf = (id) => String(id || '').match(/-(minimal|low|medium|high|xhigh|max)$/)?.[1] || null;
 
+export function groupAgyModels(entries) {
+  const groups = new Map();
+  for (const entry of entries) {
+    const effort = agyEffortOf(entry.id);
+    const base = effort ? entry.id.slice(0, -effort.length - 1) : entry.id;
+    if (!groups.has(base)) {
+      const label = effort ? entry.label.replace(/\s*\((minimal|low|medium|high|xhigh|max)\)$/i, '') : entry.label;
+      groups.set(base, { id: entry.id, label, short: label, desc: base,
+        defaultEffort: effort, efforts: [], variants: {} });
+    }
+    const group = groups.get(base);
+    if (effort) { group.efforts.push(effort); group.variants[effort] = entry.id; }
+  }
+  const order = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+  return [...groups.values()].map((group) => ({ ...group, efforts: group.efforts.sort((a, b) => order.indexOf(a) - order.indexOf(b)) }));
+}
+
 function agyCatalog() {
   if (Date.now() - agyCache.at > 6 * 3600 * 1000) { agyCache.at = Date.now(); refreshAgy(); }
   const obs = getKV('observed_default_agy', null);
-  const label = (id) => agyCache.models.find((m) => m.id === id)?.label || id;
+  const grouped = groupAgyModels(agyCache.models);
+  const groupFor = (id) => grouped.find((m) => m.id === id || Object.values(m.variants).includes(id));
+  const label = (id) => groupFor(id)?.label || id;
   const settings = readJson(path.join(HOME, '.gemini', 'antigravity-cli', 'settings.json')) || {};
   const defModel = obs?.model || null;
   const models = [{
     id: '', label: tr('기본값 · {model}', { model: defModel ? label(defModel) : settings.model || tr('알 수 없음') }), short: defModel ? label(defModel) : (settings.model || tr('기본')),
-    desc: defModel ? tr('기본값으로 보냈을 때 실제로 쓰인 모델') : tr('아직 확인 전 · 한 번 보내면 실제 모델을 알려드려요'), defaultEffort: agyEffortOf(defModel),
+    desc: defModel ? tr('기본값으로 보냈을 때 실제로 쓰인 모델') : tr('아직 확인 전 · 한 번 보내면 실제 모델을 알려드려요'), defaultEffort: agyEffortOf(defModel), efforts: groupFor(defModel)?.efforts,
   }];
-  for (const m of agyCache.models) models.push({ ...m, short: m.label, desc: m.id, defaultEffort: agyEffortOf(m.id) });
+  models.push(...grouped);
   return {
     models,
     efforts: ['', 'low', 'medium', 'high', 'xhigh', 'max'],

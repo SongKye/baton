@@ -6,6 +6,7 @@
 //   {t:'thinking'}               model is reasoning
 //   {t:'tool', name, summary}    tool call started
 //   {t:'tool_done', error}       tool call finished
+//   {t:'mcp', servers}           MCP servers the CLI loaded for this run ([{name, status}], Claude only)
 //   {t:'done', ok, error, result, cost, usage, durationMs}
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,6 +19,7 @@ import crypto from 'node:crypto';
 import { summarizeTool } from './sources/common.js';
 import { getKV, setKV } from './store.js';
 import { clip } from './util.js';
+import { noteMcpStatus } from './mcp.js';
 
 const runs = new Map();         // runId -> run
 const activeByKey = new Map();  // "<tool>:<sessionId>" -> runId
@@ -60,22 +62,21 @@ function rememberBatonSession(tool, id) {
 
 // ---------- command builders ----------
 function claudeCmd({ sessionId, model, effort, perm, prompt, images }) {
-  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
-  let stdin = prompt;
-  if (images?.length) {
-    // stream-json input lets us pass real image blocks alongside the text
-    args.push('--input-format', 'stream-json');
-    const content = [{ type: 'text', text: prompt }];
-    for (const im of images) content.push({ type: 'image', source: { type: 'base64', media_type: im.mime, data: fs.readFileSync(im.path).toString('base64') } });
-    stdin = JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n';
-  }
+  // stream-json in + `--permission-prompt-tool stdio` = the Agent SDK control protocol. That is what makes
+  // Claude Code offer AskUserQuestion in headless mode: the question arrives as a control_request and the
+  // answer goes back on stdin (stdin stays open until the result, see startRun).
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio'];
+  const content = [{ type: 'text', text: prompt }];
+  for (const im of images || []) content.push({ type: 'image', source: { type: 'base64', media_type: im.mime, data: fs.readFileSync(im.path).toString('base64') } });
+  const stdin = JSON.stringify({ type: 'control_request', request_id: 'baton-init', request: { subtype: 'initialize' } }) + '\n'
+    + JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n';
   if (sessionId) args.push('--resume', sessionId);
   if (model) args.push('--model', model);
   if (effort) args.push('--effort', effort);
   if (perm === 'plan') args.push('--permission-mode', 'plan');
   else if (perm === 'full') args.push('--dangerously-skip-permissions');
   else args.push('--permission-mode', 'auto');
-  return { bin: 'claude', args, stdin };
+  return { bin: 'claude', args, stdin, keepOpen: true };
 }
 
 function codexCmd({ sessionId, model, effort, perm, prompt, images }) {
@@ -140,6 +141,12 @@ function claudeParser(run) {
     if (e.type === 'system' && e.subtype === 'init') {
       if (e.session_id) run.setSession(e.session_id);
       if (e.model) run.model = run.model || e.model;
+      if (Array.isArray(e.mcp_servers)) {
+        // which MCP servers this run actually loaded, and whether each one connected
+        run.mcp = e.mcp_servers.map((x) => ({ name: x.name, status: x.status }));
+        noteMcpStatus('claude', run.cwd, run.mcp);
+        if (run.mcp.length) run.emit({ t: 'mcp', servers: run.mcp });
+      }
     } else if (e.type === 'stream_event') {
       const ev = e.event || {};
       if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') run.emit({ t: 'text', text: ev.delta.text });
@@ -156,12 +163,27 @@ function claudeParser(run) {
       for (const p of e.message?.content || []) {
         if (p.type === 'tool_result') run.emit({ t: 'tool_done', error: Boolean(p.is_error) });
       }
+    } else if (e.type === 'control_request') {
+      const r = e.request || {};
+      if (r.subtype === 'can_use_tool' && r.tool_name === 'AskUserQuestion' && Array.isArray(r.input?.questions)) {
+        // the agent asks the user to choose — show it in the chat and wait for the answer (answerRun)
+        run.pendingAsk = { requestId: e.request_id, input: r.input };
+        run.emit({ t: 'ask', requestId: e.request_id, questions: r.input.questions.map((q) => ({
+          question: String(q.question || ''), header: q.header || '', multiSelect: Boolean(q.multiSelect),
+          options: (q.options || []).map((o) => ({ label: String(o.label || ''), description: o.description || '' })),
+        })) });
+        bus.emit('run_ask', run);
+      } else if (r.subtype === 'can_use_tool') {
+        // same as before the control protocol: anything that needs an approval prompt is declined
+        run.control({ behavior: 'deny', message: 'Baton cannot show approval prompts for this tool. Continue without it, or ask the user to change the permission mode.' }, e.request_id);
+      } else run.control(null, e.request_id, 'unsupported control request');
     } else if (e.type === 'result') {
       if (e.session_id) run.setSession(e.session_id);
       run.result = {
         ok: !e.is_error, result: e.result, cost: e.total_cost_usd, usage: e.usage, error: e.is_error ? (e.result || e.subtype) : null,
         denied: (e.permission_denials || []).map((d) => d.tool_name || d.name || 'tool'),
       };
+      run.closeInput?.();
     }
   };
 }
@@ -316,7 +338,21 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
   });
   run.child = child;
   if (child.pid) childPids.add(child.pid);
-  if (cmd.stdin != null) { child.stdin.on('error', () => {}); child.stdin.end(cmd.stdin); }
+  if (cmd.stdin != null) {
+    child.stdin.on('error', () => {});
+    if (cmd.keepOpen) {
+      child.stdin.write(cmd.stdin);
+      run.closeInput = () => { try { child.stdin.end(); } catch { /* closed */ } };
+    } else child.stdin.end(cmd.stdin);
+  }
+  // reply to a control_request (Claude Code control protocol)
+  run.control = (response, requestId, error) => {
+    if (!child.stdin.writable) return false;
+    const msg = error ? { type: 'control_response', response: { subtype: 'error', request_id: requestId, error } }
+      : { type: 'control_response', response: { subtype: 'success', request_id: requestId, response } };
+    child.stdin.write(JSON.stringify(msg) + '\n');
+    return true;
+  };
 
   let buf = '';
   child.stdout.setEncoding('utf8');
@@ -360,6 +396,19 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
   runs.set(run.id, run);
   if (run.sessionId) activeByKey.set(`${tool}:${run.sessionId}`, run.id);
   return run;
+}
+
+/** The user's answer to an AskUserQuestion: answers = { [question]: "label" | "a, b" | "free text" }; null = skip. */
+export function answerRun(id, requestId, answers) {
+  const run = runs.get(id);
+  const ask = run?.pendingAsk;
+  if (!run || run.status !== 'running' || !ask || ask.requestId !== requestId) return false;
+  run.pendingAsk = null;
+  const ok = answers && Object.keys(answers).length
+    ? run.control({ behavior: 'allow', updatedInput: { ...ask.input, answers } }, requestId)
+    : run.control({ behavior: 'deny', message: 'The user skipped this question. Continue with your best judgment and say what you assumed.' }, requestId);
+  run.emit({ t: 'ask_done', requestId, answers: answers || null });
+  return ok;
 }
 
 export function stopRun(id) {

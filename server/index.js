@@ -8,7 +8,7 @@ import { ROOT, HOME, DAY, clip, shortHome } from './util.js';
 import * as store from './store.js';
 import { decoratedSessions, projectsList, findSession, readMessages, getSnapshot, forceRefresh } from './indexer.js';
 import { gitInfo, projectRoot, projectFingerprint } from './projects.js';
-import { startRun, getRun, stopRun, listRuns, publicRun, activeRunFor, bus } from './runner.js';
+import { startRun, getRun, stopRun, answerRun, listRuns, publicRun, activeRunFor, bus } from './runner.js';
 import { catalogs, fromLine } from './models.js';
 import { schedule, listScheduled, cancelScheduled, nextReset, startScheduler } from './schedule.js';
 import { vapidPublicKey, notify, setPublicOrigin } from './push.js';
@@ -17,15 +17,18 @@ import { trashSession, restoreSession, listTrash, emptyTrash, startTrashPurge, c
 import { startWatcher } from './watch.js';
 import { listPorts, shareToPhone, unshare, stopPort } from './ports.js';
 import { skillsReport, skillDetail } from './skills.js';
+import { mcpReport, mcpDetail, mcpEffective, checkMcp, invalidateMcp } from './mcp.js';
 import { setupStatus, startJob, getJob, jobInput, stopJob, publicJob } from './setup.js';
 import { handoff, linksOf, buildHandoffNote } from './handoff.js';
 import { moveSession, folderSuggestions, consumeMoveNote, startPendingMoves, TERMINAL_MOVE } from './move.js';
-import { isLocal, checkDevice, login, logout, changePassword, listDevices, revokeDevice, revokeAll, usingDefaultPassword } from './auth.js';
+import { isLocal, authorized } from './auth.js';
 import { toolsMeta, binFor, TOOL_IDS } from './tools.js';
 import { OS_NAME, openBrowser } from './platform.js';
 import { tr, lang } from './i18n.js';
 import { providersSummary, resetProviderCache } from './providers.js';
-import { connect, testConnection } from './connect.js';
+import { connect, testConnection, probeModels, findLocalLlms } from './connect.js';
+import { presets as mcpPresets, addMcp, copyMcp, removeMcp } from './mcp-install.js';
+import { qrSvg } from './qr.js';
 import crypto from 'node:crypto';
 import { ensureBrief, briefPending } from './brief.js';
 import { dozingProjects, sendNudge, startNudgeScheduler } from './nudge.js';
@@ -56,13 +59,6 @@ async function body(req) {
   if (!chunks.length) return {};
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
-// Tailscale identity check (when present): only the allowed tailnet logins get through.
-// Everything not coming directly from this PC must then pass the device/password gate (server/auth.js).
-function authorized(req) {
-  const login = String(req.headers['tailscale-user-login'] || '').toLowerCase();
-  if (login) return !ALLOWED.length || ALLOWED.includes(login);
-  return true;
-}
 function sessionView(s) {
   return {
     key: s.key, tool: s.tool, id: s.id, title: s.title, cwd: shortHome(s.cwd), project: s.project, created: s.created, updated: s.updated,
@@ -80,8 +76,12 @@ function resolveCwd(p) {
   if (!p) return null;
   let abs = p.startsWith('~') ? path.join(HOME, p.slice(1)) : p;
   abs = path.resolve(abs);
-  if (!abs.startsWith(HOME)) throw new Error(tr('홈 디렉터리 밖은 열 수 없어요'));
+  if (path.relative(HOME, abs).split(path.sep)[0] === '..' || path.isAbsolute(path.relative(HOME, abs))) throw new Error(tr('홈 디렉터리 밖은 열 수 없어요'));
   return abs;
+}
+
+function defaultCwd() {
+  return store.getSettings().defaultCwd || (fs.statSync(path.join(HOME, 'workspace'), { throwIfNoEntry: false })?.isDirectory() ? '~/workspace' : '~');
 }
 
 const VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return '?'; } })();
@@ -95,31 +95,14 @@ route('GET', '/api/state', async () => ({
   catalogs: catalogs(),
   vapidPublicKey,
   unread: store.unreadCount(),
+  lastEventId: store.lastEventId(),
   runs: listRuns().filter((r) => r.status === 'running'),
   home: shortHome(HOME),
   tools: toolsMeta().map((t) => ({ ...t, installed: Boolean(binFor(t.id)) })),
-  defaultCwd: fs.existsSync(path.join(HOME, 'workspace')) ? '~/workspace' : '~',
+  defaultCwd: defaultCwd(),
   version: VERSION,
   os: OS_NAME,
 }));
-
-// ---------- auth / security ----------
-route('GET', '/api/auth/status', async (req) => {
-  const local = isLocal(req);
-  return { authed: local || checkDevice(req).ok, local, lang: store.getSettings().lang };
-});
-route('POST', '/api/auth/login', async (req) => {
-  const r = login(req, (await body(req)).password);
-  return r.ok ? [200, { ok: true }, { 'set-cookie': r.setCookie }] : [r.retryInSec ? 429 : 401, { error: r.error, retryInSec: r.retryInSec || 0 }];
-});
-route('POST', '/api/auth/logout', async (req) => [200, { ok: true }, { 'set-cookie': logout(req) }]);
-route('GET', '/api/security', async (req) => ({ devices: listDevices(req), defaultPassword: usingDefaultPassword(), trustDays: store.getSettings().trustDays, local: isLocal(req) }));
-route('POST', '/api/security/password', async (req) => {
-  const b = await body(req);
-  try { changePassword(b.current, b.next); return { ok: true }; } catch (e) { return [400, { error: e.message }]; }
-});
-route('POST', '/api/security/devices/:id/revoke', async (req, url, { id }) => { revokeDevice(id); return { ok: true }; });
-route('POST', '/api/security/revoke-all', async (req) => { revokeAll(req); return { ok: true }; });
 
 // ---------- CLI environment (company setups: Bedrock, gateways, proxies…) ----------
 const SECRET_KEY = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH/i;
@@ -167,7 +150,18 @@ route('POST', '/api/setup/test', async (req) => {
 });
 
 // ---------- setup / onboarding ----------
-route('GET', '/api/setup', async (req, url) => setupStatus({ fresh: url.searchParams.get('fresh') === '1' }));
+route('GET', '/api/setup', async (req, url) => ({ ...(await setupStatus({ fresh: url.searchParams.get('fresh') === '1' })), local: isLocal(req) }));
+route('POST', '/api/setup/probe', async (req) => {
+  const b = await body(req);
+  try { return await probeModels(b.baseUrl, b.apiKey); } catch (e) { return [400, { error: e.message }]; }
+});
+route('GET', '/api/setup/local-llms', async () => findLocalLlms());
+// QR code for "scan this with your phone" (SVG built here, no third-party service sees the address)
+route('GET', '/api/qr', async (req, url) => {
+  const text = url.searchParams.get('text') || '';
+  if (!text || text.length > 600) return [400, { error: 'text required' }];
+  return { svg: qrSvg(text) };
+});
 route('POST', '/api/setup/jobs', async (req) => {
   const b = await body(req);
   try { return { job: publicJob(await startJob(String(b.action || ''), b.tool || null)) }; }
@@ -267,7 +261,7 @@ route('POST', '/api/run', async (req) => {
     cwd = s.cwd && fs.existsSync(s.cwd) ? s.cwd : (s.project || HOME);
     title = s.title;
   } else {
-    cwd = resolveCwd(b.cwd || '~/workspace');
+    cwd = resolveCwd(b.cwd || defaultCwd());
     if (!fs.existsSync(cwd)) {
       if (!b.mkdir) return [400, { error: tr('폴더가 없어요: {p}', { p: shortHome(cwd) }), code: 'NO_DIR' }];
       await fsp.mkdir(cwd, { recursive: true });
@@ -287,6 +281,7 @@ route('POST', '/api/run', async (req) => {
 
 route('GET', '/api/runs', async () => ({ runs: listRuns() }));
 route('POST', '/api/runs/:id/stop', async (req, url, { id }) => ({ ok: stopRun(id) }));
+route('POST', '/api/runs/:id/answer', async (req, url, { id }) => { const b = await body(req); return answerRun(id, String(b.requestId || ''), b.answers && typeof b.answers === 'object' ? b.answers : null) ? { ok: true } : [409, { error: tr('이미 답했거나 끝난 질문이에요') }]; });
 
 route('GET', '/api/projects', async () => {
   const projects = await projectsList();
@@ -329,6 +324,27 @@ route('POST', '/api/projects/:pid/brief', async (req, url, { pid }) => {
   }
 });
 
+// Browse directories on the Baton host, restricted to the user's real home tree.
+route('GET', '/api/dirs/browse', async (req, url) => {
+  try {
+    const dir = resolveCwd(url.searchParams.get('path') || defaultCwd());
+    const home = await fsp.realpath(HOME);
+    const inside = (p) => { const rel = path.relative(home, p); return rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel); };
+    if (!inside(await fsp.realpath(dir))) return [403, { error: tr('홈 디렉터리 밖은 열 수 없어요') }];
+    const entries = await fsp.readdir(dir, { withFileTypes: true });
+    const items = (await Promise.all(entries.filter((e) => e.isDirectory() || e.isSymbolicLink()).map(async (e) => {
+      const full = path.join(dir, e.name);
+      try {
+        if (!inside(await fsp.realpath(full)) || !(await fsp.stat(full)).isDirectory()) return null;
+        return { name: e.name, path: shortHome(full), hidden: e.name.startsWith('.') };
+      } catch { return null; }
+    }))).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+    return { path: shortHome(dir), parent: dir === HOME ? null : shortHome(path.dirname(dir)), items };
+  } catch (e) {
+    return [400, { error: tr('폴더를 열 수 없어요. 경로와 접근 권한을 확인해주세요'), code: e.code || 'INVALID_PATH' }];
+  }
+});
+
 route('GET', '/api/dirs', async (req, url) => {
   const q = (url.searchParams.get('q') || '').toLowerCase();
   const projects = await projectsList();
@@ -340,13 +356,15 @@ route('GET', '/api/dirs', async (req, url) => {
     out.push({ path: shortHome(p.id), name: p.name, known: true, lastActivity: p.lastActivity });
     if (out.length >= 30) break;
   }
-  for (const rootRaw of store.getSettings().workspaceRoots) {
-    const root = resolveCwd(rootRaw);
+  for (const rootRaw of new Set([defaultCwd(), ...store.getSettings().workspaceRoots])) {
+    let root;
+    try { root = resolveCwd(rootRaw); } catch { continue; }
     const walk = async (dir, depth) => {
       if (depth > 2 || out.length >= 60) return;
       let ents = [];
       try { ents = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
       for (const e of ents) {
+        if (out.length >= 60) break;
         if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue;
         const full = path.join(dir, e.name);
         if (!seen.has(full) && (!q || full.toLowerCase().includes(q))) { seen.add(full); out.push({ path: shortHome(full), name: e.name, known: false }); }
@@ -359,6 +377,7 @@ route('GET', '/api/dirs', async (req, url) => {
 });
 
 route('GET', '/api/events', async () => ({ items: store.listEvents(60), unread: store.unreadCount() }));
+route('GET', '/api/events/after/:id', async (req, url, { id }) => ({ items: store.eventsAfter(Number(id) || 0) }));
 route('POST', '/api/events/read', async () => { store.markEventsRead(); return { ok: true }; });
 
 route('POST', '/api/push/subscribe', async (req) => { const b = await body(req); if (!b?.endpoint) return [400, { error: 'bad subscription' }]; store.addPushSub(b); return { ok: true }; });
@@ -450,9 +469,48 @@ route('POST', '/api/ports/:port/unshare', async (req, url, { port }) => { await 
 route('POST', '/api/pids/:pid/stop', async (req, url, { pid }) => stopPort(pid));
 route('GET', '/api/skills', async () => skillsReport());
 route('GET', '/api/skills/:id', async (req, url, { id }) => (await skillDetail(id)) || [404, { error: tr('스킬을 찾을 수 없어요') }]);
+route('GET', '/api/mcp', async (req, url) => { if (url.searchParams.get('fresh') === '1') invalidateMcp(); return mcpReport(); });
+route('GET', '/api/mcp/effective', async (req, url) => {
+  const cwd = url.searchParams.get('cwd');
+  if (!cwd) return [400, { error: 'cwd required' }];
+  const tool = url.searchParams.get('tool');
+  return mcpEffective({ cwd: resolveCwd(cwd), tools: tool && TOOL_IDS.includes(tool) ? [tool] : TOOL_IDS.filter((t) => binFor(t)), session: url.searchParams.get('session') || null });
+});
+route('POST', '/api/mcp/check', async (req) => {
+  const b = await body(req);
+  if (!TOOL_IDS.includes(b.tool)) return [400, { error: 'unknown tool' }];
+  const r = await checkMcp(b.tool, b.cwd ? resolveCwd(b.cwd) : null);
+  invalidateMcp();
+  return r;
+});
+route('GET', '/api/mcp/presets', async () => ({ presets: mcpPresets() }));
+route('POST', '/api/mcp/add', async (req) => {
+  try { return await addMcp(await body(req)); } catch (e) { return [400, { error: e.message }]; }
+});
+route('POST', '/api/mcp/copy', async (req) => {
+  const b = await body(req);
+  try { return await copyMcp(String(b.id || ''), b.tools); } catch (e) { return [400, { error: e.message }]; }
+});
+route('POST', '/api/mcp/remove', async (req) => {
+  const b = await body(req);
+  try { return await removeMcp(String(b.id || '')); } catch (e) { return [400, { error: e.message }]; }
+});
+route('GET', '/api/mcp/:id', async (req, url, { id }) => (await mcpDetail(id)) || [404, { error: tr('MCP 서버를 찾을 수 없어요') }]);
 route('GET', '/api/limits', async (req, url) => allLimits({ force: url.searchParams.get('force') === '1' }));
 route('GET', '/api/settings', async () => store.getSettings());
-route('POST', '/api/settings', async (req) => store.updateSettings(await body(req)));
+route('POST', '/api/settings', async (req) => {
+  const patch = await body(req);
+  if (patch.defaultCwd !== undefined && patch.defaultCwd !== '') {
+    try {
+      if (typeof patch.defaultCwd !== 'string') throw new Error();
+      const dir = resolveCwd(patch.defaultCwd);
+      resolveCwd(await fsp.realpath(dir));
+      if (!(await fsp.stat(dir)).isDirectory()) throw new Error();
+      patch.defaultCwd = shortHome(dir);
+    } catch { return [400, { error: tr('폴더를 열 수 없어요. 경로와 접근 권한을 확인해주세요') }]; }
+  }
+  return store.updateSettings(patch);
+});
 route('POST', '/api/refresh', async () => { await forceRefresh(); return { ok: true }; });
 
 // ---------- SSE for runs ----------
@@ -489,6 +547,14 @@ function streamRun(req, res, id, from) {
   const ping = setInterval(() => res.write(': ping\n\n'), 15000);
   req.on('close', () => { clearInterval(ping); run.listeners.delete(listener); });
 }
+
+// ---------- the agent asked a question: ping the phone if nobody is looking ----------
+bus.on('run_ask', (run) => {
+  if (run.listeners.size > 0) return;
+  const q = run.pendingAsk?.input?.questions?.[0]?.question || '';
+  const url = run.sessionId ? `/#/s/${run.tool}/${encodeURIComponent(run.sessionId)}` : '/#/';
+  notify({ kind: 'ask', title: fromLine(run.tool, run.model), body: `❓ ${clip(run.title || run.prompt, 40)}\n${clip(q, 140)}`, url, tag: `ask-${run.sessionId || run.id}` }).catch(() => {});
+});
 
 // ---------- notifications on run completion ----------
 bus.on('run_end', (run) => {
@@ -547,15 +613,13 @@ async function serveStatic(req, res, pathname) {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (!authorized(req)) { res.writeHead(403, { 'content-type': 'text/plain' }); res.end('forbidden'); return; }
+  if (!authorized(req, ALLOWED)) { res.writeHead(403, { 'content-type': 'text/plain' }); res.end('forbidden'); return; }
+  // Retire cookies issued by the removed password/device login.
+  if (/(?:^|;\s*)baton_device=/.test(req.headers.cookie || '')) {
+    res.setHeader('set-cookie', 'baton_device=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax');
+  }
   if (req.headers['tailscale-user-login'] && req.headers.host) setPublicOrigin(`https://${req.headers['x-forwarded-host'] || req.headers.host}`);
   const url = new URL(req.url, 'http://x');
-  // device / password gate for everything under /api except the auth endpoints themselves
-  if (url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/') && !isLocal(req)) {
-    const d = checkDevice(req);
-    if (!d.ok) return send(res, 401, { error: tr('비밀번호를 입력해주세요'), code: 'AUTH' });
-    if (d.setCookie) res.setHeader('set-cookie', d.setCookie);
-  }
   try {
     const m = url.pathname.match(/^\/api\/runs\/([^/]+)\/stream$/);
     if (m && req.method === 'GET') return streamRun(req, res, m[1], Number(url.searchParams.get('from') || 0));

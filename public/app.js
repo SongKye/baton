@@ -73,7 +73,6 @@ async function api(path, opts = {}) {
   const r = await fetch(path, init);
   let j = null;
   try { j = await r.json(); } catch { /* empty */ }
-  if (r.status === 401 && j?.code === 'AUTH' && !G.needLogin) { G.needLogin = true; viewLogin(); }
   if (!r.ok) { const e = new Error(j?.error || t('요청 실패 ({code})', { code: r.status })); e.data = j; e.status = r.status; throw e; }
   return j;
 }
@@ -114,6 +113,74 @@ function pick(title, options, current) {
   const body = options.map((o, i) => `<button class="opt-row ${o.danger ? 'danger' : ''}" data-i="${i}"><div class="l"><b>${esc(o.label)}</b>${o.desc ? `<span>${esc(o.desc)}</span>` : ''}</div>${current !== undefined && o.value === current ? `<span class="check">${ICON.check}</span>` : ''}</button>`).join('');
   return sheet({ title, body, onMount: (el, close) => $$('.opt-row', el).forEach((b) => (b.onclick = () => close(options[+b.dataset.i].value))) });
 }
+function folderPicker(initial, { suggestions = [], allowNew = true } = {}) {
+  return sheet({
+    title: t('작업 폴더 선택'),
+    body: `<p class="small muted">${t('Baton이 실행 중인 컴퓨터의 폴더예요')}</p>
+      <div class="folder-tools"><button class="btn sm" data-home>${t('홈 폴더')}</button><button class="btn sm" data-up>${t('상위 폴더')}</button><button class="btn sm" data-path>${t('경로 입력')}</button></div>
+      <p class="folder-path" data-current></p>
+      <input type="text" data-search placeholder="${t('폴더·프로젝트 이름 검색')}" aria-label="${t('폴더·프로젝트 이름 검색')}">
+      <label class="small"><input type="checkbox" data-hidden> ${t('숨김 폴더 표시')}</label>
+      <div data-folders aria-live="polite"></div>`,
+    footer: `<button class="btn ghost" data-cancel>${t('취소')}</button><button class="btn primary" data-select disabled>${t('이 폴더 선택')}</button>`,
+    onMount: (el, close) => {
+      let current = null, serial = 0, navigation = 0, timer;
+      const list = $('[data-folders]', el), search = $('[data-search]', el), select = $('[data-select]', el);
+      const draw = async () => {
+        const id = ++serial, q = search.value.trim().toLowerCase();
+        if (!current) return;
+        let known = suggestions.filter((x) => !q || `${x.label} ${x.value}`.toLowerCase().includes(q));
+        {
+          try { const r = await api('/api/dirs?q=' + encodeURIComponent(q)); known = [...known, ...r.items.filter((x) => !known.some((k) => k.value === x.path)).map((x) => ({ value: x.path, label: x.name, desc: x.path }))]; }
+          catch { /* Browsing the current directory remains available. */ }
+        }
+        if (id !== serial) return;
+        const folders = current.items.filter((x) => ($('[data-hidden]', el).checked || !x.hidden) && (!q || x.name.toLowerCase().includes(q)));
+        const rows = [...folders.map((x) => ({ value: x.path, label: x.name, desc: x.path })), ...known.filter((x) => !folders.some((f) => f.path === x.value))];
+        list.innerHTML = rows.map((x, i) => `<button class="opt-row" data-folder="${i}"><div class="l"><b>📁 ${esc(x.label)}</b><span>${esc(x.desc || x.value)}</span></div><span>›</span></button>`).join('') || `<p class="small muted">${t('일치하는 폴더가 없어요')}</p>`;
+        $$('[data-folder]', el).forEach((b) => b.onclick = () => open(rows[+b.dataset.folder].value));
+      };
+      const open = async (path) => {
+        const id = ++navigation;
+        ++serial; clearTimeout(timer); current = null;
+        select.disabled = true; search.disabled = true;
+        $('[data-up]', el).disabled = true;
+        list.textContent = t('불러오는 중…');
+        try {
+          const d = await api('/api/dirs/browse?path=' + encodeURIComponent(path));
+          if (id !== navigation) return;
+          current = d; search.value = ''; search.disabled = false;
+          $('[data-current]', el).textContent = d.path;
+          $('[data-up]', el).disabled = !d.parent;
+          select.disabled = false;
+          draw();
+        } catch (e) {
+          if (id !== navigation) return;
+          current = null; search.disabled = false; list.textContent = e.message;
+          $('[data-current]', el).textContent = path;
+          $('[data-up]', el).disabled = true;
+        }
+      };
+      search.oninput = () => { ++serial; clearTimeout(timer); timer = setTimeout(draw, 180); };
+      $('[data-hidden]', el).onchange = draw;
+      $('[data-home]', el).onclick = () => open('~');
+      $('[data-up]', el).onclick = () => current?.parent && open(current.parent);
+      $('[data-cancel]', el).onclick = () => close();
+      select.onclick = () => current && close(current.path);
+      $('[data-path]', el).onclick = async () => {
+        const p = await promptSheet(t('폴더 경로'), current?.path || initial);
+        if (!p?.trim()) return;
+        if (allowNew) {
+          try { await api('/api/dirs/browse?path=' + encodeURIComponent(p.trim())); }
+          catch (e) { if (e.data?.code !== 'ENOENT') { toast(e.message, true); return; } const yes = await pick(t('폴더를 열 수 없어요'), [{ value: true, label: t('이 경로 사용 (새 폴더는 시작할 때 생성)') }, { value: false, label: t('취소') }]); if (yes) close(p.trim()); return; }
+        }
+        open(p.trim());
+      };
+      open(initial || G.state?.defaultCwd || '~');
+    },
+  });
+}
+
 function promptSheet(title, value = '', { multiline = false, placeholder = '', okLabel = '' } = {}) {
   const field = multiline ? `<textarea placeholder="${esc(placeholder)}">${esc(value)}</textarea>` : `<input type="text" value="${esc(value)}" placeholder="${esc(placeholder)}">`;
   return sheet({
@@ -133,9 +200,54 @@ const G = { state: null, runs: [], lastRunIds: new Set(), cleanup: null, skipHas
 async function loadState() {
   try {
     G.state = await api('/api/state');
+    normalizeAgyCatalog(G.state.catalogs?.agy);
     for (const x of G.state.tools || []) if (TOOL[x.id]) TOOL[x.id].installed = x.installed;
     updateRunPill(G.state.runs);
+    deskCardsPoll(G.state.lastEventId);
   } catch (e) { /* offline */ }
+}
+
+// ---------------------------------------------------------------- desktop notification cards (bottom-right)
+const DESK_MQ = matchMedia('(min-width: 900px) and (hover: hover) and (pointer: fine)');
+const deskCardsOn = () => DESK_MQ.matches && localStorage.getItem('baton.deskCards') !== '0';
+// With push on, the service worker shows an OS notification whenever no Baton tab is focused,
+// so cards only cover events that happened while this tab had focus (no duplicates).
+const desk = { floor: null, focusedSince: document.hasFocus() ? 0 : Infinity, pushOn: false, busy: false };
+addEventListener('focus', () => { desk.focusedSince = Date.now(); });
+addEventListener('blur', () => { desk.focusedSince = Infinity; });
+async function deskCardsPoll(lastId) {
+  if (lastId == null) return;
+  if (desk.floor == null || !deskCardsOn()) { desk.floor = lastId; return; }
+  if (lastId <= desk.floor || desk.busy) return;
+  desk.busy = true;
+  try {
+    const { items } = await api(`/api/events/after/${desk.floor}`);
+    for (const ev of items) {
+      desk.floor = Math.max(desk.floor, ev.id);
+      // Already looking at that session, or the OS notification covered it while this tab was in the background.
+      if (ev.url && ev.url !== '/#/' && location.hash && ev.url.endsWith(location.hash)) continue;
+      if (desk.pushOn && ev.ts < desk.focusedSince) continue;
+      if (Date.now() - ev.ts > 10 * 60 * 1000) continue;
+      deskCard(ev);
+    }
+    desk.floor = Math.max(desk.floor, lastId);
+  } catch { /* offline */ } finally { desk.busy = false; }
+}
+function deskCard(ev) {
+  let wrap = $('#deskcards');
+  if (!wrap) { wrap = document.createElement('div'); wrap.id = 'deskcards'; wrap.className = 'deskcards'; document.body.append(wrap); }
+  while (wrap.children.length >= 4) wrap.firstElementChild.remove();
+  const el = document.createElement('a');
+  el.className = `deskcard k-${esc(ev.kind || '')}`;
+  el.href = ev.url || '#/';
+  el.innerHTML = `<img src="/icon-192.png" alt=""><div class="b"><div class="tt">${esc(ev.title || 'Baton')}</div>${ev.body ? `<div class="bd">${esc(ev.body)}</div>` : ''}</div><button class="x" aria-label="${t('닫기')}">${ICON.x}</button>`;
+  const close = () => { el.classList.add('out'); setTimeout(() => el.remove(), 220); };
+  el.querySelector('.x').onclick = (e) => { e.preventDefault(); e.stopPropagation(); close(); };
+  el.addEventListener('click', () => setTimeout(close, 50));
+  let timer = setTimeout(close, 8000);
+  el.onmouseenter = () => clearTimeout(timer);
+  el.onmouseleave = () => { timer = setTimeout(close, 4000); };
+  wrap.append(el);
 }
 
 function updateRunPill(runs) {
@@ -145,7 +257,7 @@ function updateRunPill(runs) {
   for (const id of prev) {
     if (!nowIds.has(id)) {
       const r = G.runs.find((x) => x.id === id);
-      if (r && !(location.hash.includes(encodeURIComponent(r.sessionId || '__')))) toast(`${t('✅ 응답 완료:')} ${r.title || r.prompt || ''}`.slice(0, 60));
+      if (r && !deskCardsOn() && !(location.hash.includes(encodeURIComponent(r.sessionId || '__')))) toast(`${t('✅ 응답 완료:')} ${r.title || r.prompt || ''}`.slice(0, 60));
     }
   }
   G.lastRunIds = nowIds;
@@ -176,13 +288,14 @@ const routes = [
   [/^#\/ports$/, viewPorts, 'tools'],
   [/^#\/skills$/, viewSkills, 'tools'],
   [/^#\/skill\/(.+)$/, viewSkill, 'tools'],
+  [/^#\/mcp$/, viewMcps, 'tools'],
+  [/^#\/mcp\/(.+)$/, viewMcp, 'tools'],
   [/^#\/cleanup$/, viewCleanup, 'tools'],
   [/^#\/trash$/, viewTrash, 'tools'],
   [/^#\/scheduled$/, viewScheduled, 'tools'],
 ];
 
 async function render() {
-  if (G.needLogin) return viewLogin();
   const raw = location.hash || '#/';
   if (G.skipHash && G.skipHash === raw) { G.skipHash = null; return; }
   const [hash, qs] = raw.split('?');
@@ -310,6 +423,7 @@ async function viewProjects(_, params) {
   let filter = params.get('f') || store.get('pfilter', 'active');
   v.innerHTML = '<div class="skeleton" style="height:300px;margin-top:10px"></div>';
   const d = await api('/api/projects');
+  let query = '';
   const dozing = new Set(d.dozing);
   const counts = { active: 0, dozing: dozing.size, paused: 0, done: 0, archived: 0, all: d.items.length };
   for (const p of d.items) counts[p.status] = (counts[p.status] || 0) + 1;
@@ -319,7 +433,9 @@ async function viewProjects(_, params) {
     const labels = { active: t('진행중'), dozing: t('💤 잠자는'), paused: t('보류'), done: t('완료'), archived: t('보관'), all: t('전체') };
     v.innerHTML = `<div class="chips" style="margin-bottom:12px">${Object.keys(labels).map((k) => `<button class="chip ${k === filter ? 'on' : ''}" data-f="${k}">${labels[k]} <span class="n">${counts[k] || 0}</span></button>`).join('')}</div>
       ${filter === 'dozing' ? `<div class="banner" style="margin-bottom:10px">${t('한동안 손대지 않은 프로젝트예요. 이어서 할지, 보류할지 정리해두면 머리가 가벼워져요.')}</div>` : ''}
-      <div class="list">${items.map(projectRow).join('') || `<div class="empty"><b>${t('비어 있어요')}</b></div>`}</div>`;
+      <input class="project-search" type="search" placeholder="${t('프로젝트 이름·경로 검색')}" aria-label="${t('프로젝트 이름·경로 검색')}" value="${esc(query)}">
+      <div class="list" data-project-list>${items.filter((p) => `${p.name} ${p.id}`.toLowerCase().includes(query.toLowerCase())).map(projectRow).join('') || `<div class="empty"><b>${t('비어 있어요')}</b></div>`}</div>`;
+    $('.project-search', v).oninput = (e) => { query = e.target.value; $('[data-project-list]', v).innerHTML = items.filter((p) => `${p.name} ${p.id}`.toLowerCase().includes(query.toLowerCase())).map(projectRow).join('') || `<div class="empty">${t('비어 있어요')}</div>`; };
     $$('[data-f]', v).forEach((b) => (b.onclick = () => { filter = b.dataset.f; draw(); }));
   };
   draw();
@@ -380,7 +496,9 @@ async function viewProject([id]) {
           <a class="btn block primary" href="#/new?cwd=${encodeURIComponent(p.path)}">${t('새 세션')}</a>
         </div>
       </div>
+      <div class="section" id="pmcp"></div>
       ${gitHtml}`;
+    loadProjectMcp($('#pmcp'), p.path);
     $$('[data-st]', v).forEach((btn) => (btn.onclick = async () => {
       await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { status: btn.dataset.st, snoozeDays: 0 } });
       toast(t('「{s}」로 바꿨어요', { s: STATUS[btn.dataset.st] })); load();
@@ -504,6 +622,7 @@ async function sessionMenu(s, after, { onTrashed } = {}) {
     { value: 'notify', label: s.notify ? `${t('🔔 끝나면 알림')} · ${s.notify === 2 ? t('매번') : t('한 번')}` : t('🔔 끝나면 폰으로 알림'), desc: t('PC 터미널에서 돌리는 중이어도 알려줘요') },
     { value: 'schedule', label: t('⏰ 메시지 예약'), desc: t('한도가 풀리면 바로, 또는 정한 시각에 이 세션으로 보내요') },
     { value: 'newhere', label: t('➕ 이 프로젝트에서 새 세션'), desc: t('같은 폴더에서 원하는 CLI로 새 작업을 시작해요 (맥락은 넘기지 않아요)') },
+    { value: 'mcp', label: t('🔌 MCP 서버 보기'), desc: t('이 세션이 불러오는 MCP와 실제로 호출한 도구') },
     { value: 'move', label: t('📁 작업 폴더 옮기기'), desc: s.moved ? t('지금: {p}', { p: s.cwd }) : t('실제 작업하는 프로젝트 폴더로 이 세션을 옮겨요') },
     { value: 'handoff', label: t('🔀 다른 CLI로 이어가기'), desc: t('토큰이 부족할 때 다른 도구가 이 세션을 이어받아요') },
     { value: 'pin', label: s.pinned ? t('고정 해제') : t('📌 고정') },
@@ -520,6 +639,7 @@ async function sessionMenu(s, after, { onTrashed } = {}) {
   else if (act === 'notify') { await notifyMenu(s); }
   else if (act === 'newhere') { await newSessionHere(s); return; }
   else if (act === 'schedule') { if (await scheduleSheet(s)) after?.(); return; }
+  else if (act === 'mcp') { await mcpSessionSheet(s); return; }
   else if (act === 'move') { if (await moveSessionSheet(s)) after?.(); return; }
   else if (act === 'handoff') { const d = await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}?limit=1&seen=0`).catch(() => ({})); await handoffSheet(s, d.links); return; }
   else if (act === 'trash') { if (await trashOne(s)) { if (onTrashed) onTrashed(); else after?.(); } return; }
@@ -539,18 +659,25 @@ function groupMessages(msgs) {
   }
   return out;
 }
+/** mcp__context7__resolve-library-id -> "🔌 context7 · resolve-library-id" (escaped HTML). */
+function toolLabel(name) {
+  const m = /^mcp__(.+?)__(.+)$/.exec(String(name || ''));
+  if (!m) return esc(name);
+  const server = m[1].startsWith('claude_ai_') ? `claude.ai ${m[1].slice(10).replace(/_/g, ' ')}` : m[1];
+  return `🔌 ${esc(server)} <span class="muted">· ${esc(m[2])}</span>`;
+}
 function toolsHtml(items, open = false) {
   const tools = items.filter((x) => x.role === 'tool');
   const thinks = items.filter((x) => x.role === 'thinking');
   if (!tools.length && thinks.length) {
     return thinks.map((th) => `<details class="thinking"><summary>${t('💭 생각 과정')}</summary><div class="tx">${esc(th.text)}</div></details>`).join('');
   }
-  const names = [...new Set(tools.map((x) => x.tool.name))];
+  const names = [...new Set(tools.map((x) => x.tool.name.replace(/^mcp__(.+?)__(.+)$/, (m, a, b) => `${a.replace(/^claude_ai_/, '')}.${b}`)))];
   const errs = tools.filter((x) => x.tool.error).length;
   return `<details class="tools" ${open ? 'open' : ''}><summary><span>${t('🔧 도구 {n}회', { n: tools.length })}</span><span class="names">${esc(names.slice(0, 4).join(', '))}${errs ? ` · ${t('오류 {n}', { n: errs })}` : ''}</span><span class="chev">${ICON.chev}</span></summary>
     ${items.map((it) => it.role === 'thinking'
       ? `<details class="tool-item"><summary><span class="tn">${t('💭 생각')}</span><span class="ts">${esc(it.text.slice(0, 100))}</span></summary><pre>${esc(it.text)}</pre></details>`
-      : `<details class="tool-item ${it.tool.error ? 'err' : ''}"><summary><span class="tn">${esc(it.tool.name)}</span><span class="ts">${esc(it.tool.summary || '')}</span></summary>
+      : `<details class="tool-item ${it.tool.error ? 'err' : ''}"><summary><span class="tn">${toolLabel(it.tool.name)}</span><span class="ts">${esc(it.tool.summary || '')}</span></summary>
         ${it.tool.input ? `<div class="lbl">${t('입력')}</div><pre>${esc(typeof it.tool.input === 'string' ? it.tool.input : JSON.stringify(it.tool.input, null, 2))}</pre>` : ''}
         ${it.tool.output ? `<div class="lbl">${t('결과')}</div><pre>${esc(it.tool.output)}</pre>` : ''}</details>`).join('')}
   </details>`;
@@ -570,6 +697,39 @@ function msgsHtml(msgs) {
   }).join('');
 }
 
+/**
+ * "Question + list of choices" at the end of a reply -> { question, options } for quick-reply buttons.
+ * For CLIs whose question tool doesn't reach Baton (Codex exec, Antigravity -p): they ask in plain text.
+ * Deliberately strict, so a summary list followed by "shall I commit?" does not turn into buttons.
+ */
+function parseChoices(text) {
+  const raw = String(text || '').replace(/\r/g, '');
+  if (/```\s*$/.test(raw.trim())) return null;
+  const lines = raw.split('\n').map((l) => l.trim());
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  const OPT = /^(?:[-*•]|\d{1,2}[.)]|[A-Ha-h][.)]|\([A-Ha-h1-9]\))\s+(.+)$/;
+  const CHOOSE = /골라|고르|선택|어느|어떤|어떻게|중에|중 하나|which|choose|pick|select|prefer|or\b|또는|아니면/i;
+  const strip = (x) => x.replace(/\*\*|__|`/g, '').trim();
+  let end = lines.length, tail = null;
+  if (end && !OPT.test(lines[end - 1])) { tail = lines[end - 1]; end--; while (end && !lines[end - 1]) end--; }
+  const opts = [];
+  let i = end;
+  while (i > 0 && OPT.test(lines[i - 1])) { opts.unshift(lines[i - 1].match(OPT)[1]); i--; }
+  if (opts.length < 2 || opts.length > 6 || opts.some((o) => o.length > 120)) return null;
+  let j = i;
+  while (j > 0 && !lines[j - 1]) j--;
+  const before = j > 0 ? lines[j - 1] : '';
+  const isQ = (x) => /[?？]\**\s*$|[:：]\**\s*$/.test(x);
+  const q = tail ? (isQ(tail) && CHOOSE.test(tail) ? tail : null) : (isQ(before) ? before : null);
+  if (!q || q.length > 240) return null;
+  const options = opts.map((o) => {
+    const x = strip(o);
+    const m = x.match(/^(.{1,50}?)\s+(?:—|–|-|:)\s+.+$/);
+    return { label: (m ? m[1] : x).replace(/^[A-Ha-h1-9][.)]\s+/, '').replace(/[.。]$/, ''), full: x };
+  });
+  return { question: strip(q), options };
+}
+
 function composerPrefs(tool) {
   return store.get(`prefs:${tool}`, { model: '', effort: '', perm: G.state?.settings?.defaultPerm || 'auto' });
 }
@@ -581,10 +741,40 @@ function composerHtml(tool, isNew = false) {
   </div></div></div>`;
 }
 const EFFORT_DESC = { minimal: t('최소 · 가장 빠름'), low: t('낮음 · 빠르고 저렴'), medium: t('보통'), high: t('높음 · 더 깊게 생각'), xhigh: t('매우 높음'), max: t('최대 · 가장 느리고 토큰 많이 씀') };
+// Normalize catalogs from servers started before model/effort grouping was added.
+function normalizeAgyCatalog(cat) {
+  if (!cat?.models) return;
+  const clean = (label) => label?.replace(/\s*\((minimal|low|medium|high|xhigh|max)\)$/i, '');
+  const groups = new Map();
+  const models = [];
+  for (const original of cat.models) {
+    const m = { ...original, label: clean(original.label), short: clean(original.short) };
+    const match = m.id.match(/-(minimal|low|medium|high|xhigh|max)$/);
+    if (!match || m.variants) { models.push(m); continue; }
+    const base = m.id.slice(0, -match[0].length);
+    let group = groups.get(base);
+    if (!group) {
+      group = { ...m, desc: base, defaultEffort: match[1], efforts: [], variants: {} };
+      groups.set(base, group);
+      models.push(group);
+    }
+    group.efforts.push(match[1]);
+    group.variants[match[1]] = m.id;
+  }
+  const order = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+  for (const group of groups.values()) group.efforts.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const defaultGroup = models.find((m) => Object.values(m.variants || {}).includes(cat.defaults?.model));
+  if (defaultGroup) {
+    const defaultOption = models.find((m) => !m.id);
+    if (defaultOption) defaultOption.efforts = defaultGroup.efforts;
+  }
+  cat.models = models;
+}
 function effectiveOpts(tool, p) {
   const cat = G.state?.catalogs?.[tool] || { models: [{ id: '', label: t('기본값') }], efforts: [''], defaults: {} };
-  const model = cat.models.find((m) => m.id === p.model) || (p.model ? { id: p.model, label: p.model, short: p.model } : cat.models[0]);
-  const defEffort = model?.defaultEffort || cat.defaults?.effort || null;
+  const model = cat.models.find((m) => m.id === p.model || Object.values(m.variants || {}).includes(p.model)) || (p.model ? { id: p.model, label: p.model, short: p.model } : cat.models[0]);
+  const variantEffort = Object.entries(model?.variants || {}).find(([, id]) => id === p.model)?.[0];
+  const defEffort = variantEffort || model?.defaultEffort || cat.defaults?.effort || null;
   return { cat, model, defEffort, effort: p.effort || defEffort };
 }
 function drawOpts(tool) {
@@ -601,9 +791,9 @@ function drawOpts(tool) {
     let v;
     if (k === 'model') {
       const opts = cat.models.map((m) => ({ value: m.id, label: m.label, desc: m.desc }));
-      if (p.model && !cat.models.some((m) => m.id === p.model)) opts.push({ value: p.model, label: p.model, desc: t('직접 입력한 모델') });
+      if (p.model && !cat.models.some((m) => m.id === p.model || Object.values(m.variants || {}).includes(p.model))) opts.push({ value: p.model, label: p.model, desc: t('직접 입력한 모델') });
       opts.push({ value: '__custom', label: t('✏️ 모델 ID 직접 입력'), desc: t('사내 게이트웨이·Bedrock 추론 프로필·사내 LLM 모델 이름 등') });
-      v = await pick(t('모델'), opts, p.model);
+      v = await pick(t('모델'), opts, model?.id || p.model);
       if (v === '__custom') { v = await promptSheet(t('모델 ID'), p.model || '', { placeholder: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0' }); if (v === undefined || v === null) return; v = v.trim(); }
     }
     else if (k === 'effort') {
@@ -616,7 +806,13 @@ function drawOpts(tool) {
         : { value: '', label: `${t('기본값 ·')} ${defEffort || t('알 수 없음')}`, desc: src })), p.effort);
     } else v = await pick(t('권한'), Object.entries(PERM).map(([id, x]) => ({ value: id, label: x.label, desc: x.desc })), p.perm);
     if (v === undefined) return;
-    p[k] = v; store.set(`prefs:${tool}`, p); drawOpts(tool);
+    p[k] = v;
+    if (tool === 'agy' && (k === 'model' || k === 'effort')) {
+      const selected = effectiveOpts(tool, p).model;
+      if (selected?.efforts?.length && p.effort && !selected.efforts.includes(p.effort)) p.effort = '';
+      if (p.model && selected?.variants?.[p.effort]) p.model = selected.variants[p.effort];
+    }
+    store.set(`prefs:${tool}`, p); drawOpts(tool);
   }));
 }
 
@@ -641,13 +837,14 @@ function liveRun(container, runId, { onSession, onDone } = {}) {
   el.style.cssText = 'display:flex;flex-direction:column;gap:12px';
   container.append(el);
   const segs = []; // {type:'text', text, el} | {type:'tools', items, el}
-  let lastI = -1, es = null, closed = false, started = Date.now(), thinking = false, rafPending = false;
+  let lastI = -1, es = null, closed = false, started = Date.now(), thinking = false, rafPending = false, waiting = false;
+  const asks = new Map();
   const status = document.createElement('div');
   status.className = 'live-status';
   el.append(status);
   const timer = setInterval(() => drawStatus(), 1000);
   function drawStatus() {
-    status.innerHTML = `<div class="spinner"></div><span>${thinking ? t('생각하는 중') : t('응답 중')}</span><span class="timer">${fmtDur(Date.now() - started)}</span><button class="btn sm ghost stop">${t('중지')}</button>`;
+    status.innerHTML = `<div class="spinner"></div><span>${waiting ? t('답을 기다리는 중') : thinking ? t('생각하는 중') : t('응답 중')}</span><span class="timer">${fmtDur(Date.now() - started)}</span><button class="btn sm ghost stop">${t('중지')}</button>`;
     $('.stop', status).onclick = async () => { await api(`/api/runs/${runId}/stop`, { method: 'POST' }).catch(() => {}); };
   }
   drawStatus();
@@ -681,7 +878,27 @@ function liveRun(container, runId, { onSession, onDone } = {}) {
       s.items.push({ role: 'tool', tool: { name: ev.name, summary: ev.summary } }); mark(s);
     } else if (ev.t === 'tool_done') {
       const s = lastSeg(); if (s?.type === 'tools') { const it = [...s.items].reverse().find((x) => x.tool && x.tool.done == null); if (it) { it.tool.done = true; it.tool.error = ev.error; } }
+    } else if (ev.t === 'mcp') {
+      // only speak up when something is wrong — a healthy MCP list would just be noise
+      const bad = (ev.servers || []).filter((x) => /fail|auth/i.test(x.status || ''));
+      if (bad.length) {
+        const n = document.createElement('div');
+        n.className = 'mcp-note';
+        n.innerHTML = `🔌 ${t('MCP 연결 문제:')} ${bad.map((x) => `<b>${esc(x.name)}</b> (${esc(/auth/i.test(x.status) ? t('인증 필요') : t('연결 실패'))})`).join(', ')}`;
+        el.insertBefore(n, status);
+      }
+    } else if (ev.t === 'ask') {
+      thinking = false;
+      const card = askCard(runId, ev);
+      el.insertBefore(card, status);
+      asks.set(ev.requestId, card);
+      waiting = true; drawStatus();
+      setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+    } else if (ev.t === 'ask_done') {
+      asks.get(ev.requestId)?.answered(ev.answers);
+      waiting = false; drawStatus();
     } else if (ev.t === 'done') {
+      for (const c of asks.values()) c.answered?.(undefined);
       finish(ev);
     }
   };
@@ -711,6 +928,64 @@ function liveRun(container, runId, { onSession, onDone } = {}) {
   const onVis = () => { if (document.visibilityState === 'visible' && !closed && es?.readyState === 2) connect(); };
   document.addEventListener('visibilitychange', onVis);
   return { close: () => { closed = true; clearInterval(timer); es?.close(); document.removeEventListener('visibilitychange', onVis); } };
+}
+
+/** The agent asks the user to choose (Claude Code AskUserQuestion): option buttons, multi-select, free text. */
+function askCard(runId, ev) {
+  const qs = ev.questions || [];
+  const pick = qs.map(() => new Set());
+  const other = qs.map(() => '');
+  const quick = qs.length === 1 && !qs[0].multiSelect; // one single-choice question: a tap answers it
+  const card = document.createElement('div');
+  card.className = 'ask-card';
+  card.innerHTML = `<div class="ask-top">❓ ${t('AI가 물어봐요')}</div>
+    ${qs.map((q, i) => `<div class="ask-q" data-q="${i}">
+      ${q.header ? `<span class="ask-h">${esc(q.header)}</span>` : ''}<div class="ask-text">${esc(q.question)}</div>
+      ${q.multiSelect ? `<div class="small muted">${t('여러 개 골라도 돼요')}</div>` : ''}
+      <div class="ask-opts">${q.options.map((o, j) => `<button class="ask-opt" data-o="${j}"><b>${esc(o.label)}</b>${o.description && o.description.trim().toLowerCase() !== o.label.trim().toLowerCase() ? `<span>${esc(o.description)}</span>` : ''}</button>`).join('')}</div>
+      <input class="ask-other" placeholder="${t('직접 입력…')}" autocomplete="off">
+    </div>`).join('')}
+    <div class="ask-act"><button class="btn sm ghost" data-skip>${t('건너뛰기')}</button><button class="btn sm primary" data-send ${quick ? 'hidden' : 'disabled'}>${t('답하기')}</button></div>`;
+  const answers = () => Object.fromEntries(qs.map((q, i) => {
+    const labels = [...pick[i]].map((j) => q.options[j].label);
+    if (other[i].trim()) labels.push(other[i].trim());
+    return [q.question, labels.join(', ')];
+  }).filter(([, v]) => v));
+  const ready = () => qs.every((q, i) => pick[i].size || other[i].trim());
+  const send = async (ans) => {
+    $$('button, input', card).forEach((x) => { x.disabled = true; });
+    try { await api(`/api/runs/${runId}/answer`, { body: { requestId: ev.requestId, answers: ans } }); }
+    catch (e) { toast(e.message, true); $$('button, input', card).forEach((x) => { x.disabled = false; }); }
+  };
+  $$('.ask-q', card).forEach((qel) => {
+    const i = Number(qel.dataset.q), q = qs[i];
+    $$('.ask-opt', qel).forEach((b) => (b.onclick = () => {
+      const j = Number(b.dataset.o);
+      if (q.multiSelect) { pick[i].has(j) ? pick[i].delete(j) : pick[i].add(j); }
+      else { pick[i] = new Set([j]); other[i] = ''; $('.ask-other', qel).value = ''; }
+      $$('.ask-opt', qel).forEach((x) => x.classList.toggle('on', pick[i].has(Number(x.dataset.o))));
+      if (quick) send(answers());
+      else $('[data-send]', card).disabled = !ready();
+    }));
+    const inp = $('.ask-other', qel);
+    inp.oninput = () => {
+      other[i] = inp.value;
+      if (!q.multiSelect && inp.value.trim()) { pick[i].clear(); $$('.ask-opt', qel).forEach((x) => x.classList.remove('on')); }
+      const btn = $('[data-send]', card); btn.hidden = false; btn.disabled = !ready();
+    };
+    inp.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing && ready()) { e.preventDefault(); send(answers()); } };
+  });
+  $('[data-send]', card).onclick = () => send(answers());
+  $('[data-skip]', card).onclick = () => send(null);
+  card.answered = (ans) => {
+    card.classList.add('done');
+    const rows = ans === undefined ? `<div class="small muted">${t('응답이 끝나서 닫혔어요')}</div>`
+      : !ans ? `<div class="small muted">${t('건너뛰었어요')}</div>`
+        : Object.entries(ans).map(([q, a]) => `<div class="ask-ans"><span>${esc(q)}</span><b>${esc(a)}</b></div>`).join('');
+    card.innerHTML = `<div class="ask-top">✓ ${t('AI의 질문')}</div>${rows}`;
+    card.answered = () => {};
+  };
+  return card;
 }
 
 function chatLayout({ backHref, title, subHtml, tool, extraHead = '', banner = '', isNew = false }) {
@@ -794,7 +1069,8 @@ async function viewChat([tool, id]) {
     const d = await api(`/api/sessions/${tool}/${encodeURIComponent(id)}`);
     session = d.session; start = d.start; links = d.links || links;
     $('#ctitle').textContent = session.title;
-    $('#csub').innerHTML = `<span class="tool-badge ${tool}">${TOOL[tool].name}</span><span>${esc(projectName(session.project || session.cwd))}</span>${session.model ? `<span>· ${esc(session.model)}</span>` : ''}${session.notify ? `<span class="flag bell">${t('🔔 끝나면 알림')}</span>` : ''}`;
+    $('#csub').innerHTML = `<span class="tool-badge ${tool}">${TOOL[tool].name}</span><span>${esc(projectName(session.project || session.cwd))}</span>${session.model ? `<span>· ${esc(session.model)}</span>` : ''}${session.notify ? `<span class="flag bell">${t('🔔 끝나면 알림')}</span>` : ''}<span id="cmcp"></span>`;
+    mcpChip(session);
     $('#back').setAttribute('href', session.project ? `#/p/${encodeURIComponent(session.project)}` : '#/sessions');
     const banner = session.terminal ? `<div class="banner warn" style="margin-bottom:4px">${t('⚠️ 이 세션은 PC 터미널에서도 열려 있어요. 여기서 보내면 기록이 갈라질 수 있으니 PC 쪽이 쉬고 있을 때 보내세요.')}</div>` : '';
     msgsEl.innerHTML = `${start > 0 ? `<button class="btn sm ghost load-older" id="older">${t('이전 대화 더 보기')}</button>` : ''}${banner}<div id="hobanners"></div>${msgsHtml(d.messages)}<div id="schedbanners"></div>`;
@@ -810,6 +1086,19 @@ async function viewChat([tool, id]) {
       $$('[data-newhere]', hb).forEach((b) => (b.onclick = () => newSessionHere(session)));
     });
     if (!d.messages.length) msgsEl.insertAdjacentHTML('beforeend', `<div class="empty">${t('표시할 대화가 없어요')}</div>`);
+    // the reply ended with a question and choices -> tap to answer
+    const lastMsg = d.messages[d.messages.length - 1];
+    const ch = !busy && !live && lastMsg?.role === 'assistant' ? parseChoices(lastMsg.text) : null;
+    const lastAi = [...$$('.msg-ai', msgsEl)].pop();
+    if (ch && lastAi) {
+      lastAi.insertAdjacentHTML('afterend', `<div class="quick-replies"><span>💬 ${t('눌러서 바로 답하기')}</span><div class="qr-opts">${ch.options.map((o, k) => `<button class="btn sm" data-qr-i="${k}" title="${esc(o.full)}">${esc(o.label)}</button>`).join('')}</div></div>`);
+      $$('[data-qr-i]', msgsEl).forEach((b) => (b.onclick = async () => {
+        const box = b.closest('.quick-replies');
+        $$('button', box).forEach((x) => { x.disabled = true; });
+        if (await send(ch.options[Number(b.dataset.qrI)].label, composerPrefs(tool), [])) box.remove();
+        else $$('button', box).forEach((x) => { x.disabled = false; });
+      }));
+    }
     const older = $('#older');
     if (older) older.onclick = async () => {
       const h0 = scroll.scrollHeight;
@@ -872,11 +1161,29 @@ async function viewChat([tool, id]) {
   const prev = G.cleanup; G.cleanup = () => { prev(); document.removeEventListener('visibilitychange', onVis); };
 }
 
+/** Small "🔌 MCP n" chip in the chat header: how many servers this CLI loads here; red when one failed. */
+async function mcpChip(session) {
+  const cwd = session.cwd || session.project;
+  if (!cwd) return;
+  try {
+    const d = await api(`/api/mcp/effective?cwd=${encodeURIComponent(cwd)}&tool=${session.tool}&session=${encodeURIComponent(`${session.tool}:${session.id}`)}`);
+    const x = d.tools[session.tool];
+    const el = $('#cmcp');
+    if (!x || !el) return;
+    const on = x.servers.filter((s) => s.enabled === true);
+    if (!on.length) return;
+    const bad = on.some((s) => s.status && (s.status.status === 'fail' || s.status.status === 'auth'));
+    const used = on.filter((s) => s.sessionUses).length;
+    el.outerHTML = `<button class="flag mcpchip ${bad ? 'bad' : used ? 'used' : ''}" id="cmcp" title="${t('이 세션의 MCP')}">🔌 ${used ? t('MCP {m}/{n}', { m: used, n: on.length }) : t('MCP {n}', { n: on.length })}</button>`;
+    $('#cmcp').onclick = () => mcpSessionSheet(session);
+  } catch { /* optional */ }
+}
+
 async function viewNew(_, params) {
   const cleanVV = setupViewport();
   let tool = params.get('tool') || store.get('newtool', INSTALLED()[0] || 'claude');
   if (!INSTALLED().includes(tool)) tool = INSTALLED()[0] || 'claude';
-  let cwd = params.get('cwd') || store.get('newcwd', G.state?.defaultCwd || '~');
+  let cwd = params.get('cwd') || G.state?.settings?.defaultCwd || store.get('newcwd', G.state?.defaultCwd || '~');
   const render2 = () => {
     chatLayout({ backHref: '#/', title: t('새 세션'), subHtml: `<span>${t('프로젝트 폴더와 도구를 고르고 첫 메시지를 보내세요')}</span>`, tool, isNew: true });
     $('.chat-head').insertAdjacentHTML('afterend', `<div class="newbar">
@@ -890,13 +1197,9 @@ async function viewNew(_, params) {
   };
   const keepDraft = () => { const ta = $('#input'); if (ta?.value) sessionStorage.setItem('draft:new', ta.value); };
   const pickDir = async () => {
-    const d = await api('/api/dirs');
-    const opts = d.items.map((x) => ({ value: x.path, label: x.known ? `${x.name}` : x.path, desc: x.known ? `${x.path} · ${ago(x.lastActivity)}` : t('폴더') }));
-    opts.unshift({ value: '__custom', label: t('✏️ 직접 입력 (새 폴더 만들기 가능)') });
-    const v = await pick(t('어느 폴더에서 작업할까요?'), opts, cwd);
-    if (v === undefined) return;
-    if (v === '__custom') { const p = await promptSheet(t('폴더 경로'), cwd, { placeholder: '~/workspace/my-new-idea' }); if (!p) return; cwd = p.trim(); }
-    else cwd = v;
+    const selected = await folderPicker(cwd);
+    if (!selected) return;
+    cwd = selected;
     store.set('newcwd', cwd); keepDraft(); render2();
   };
   const send = async (text, prefs, imgs) => {
@@ -957,8 +1260,51 @@ async function enablePush() {
   toast(t('알림을 켰어요 🔔'));
 }
 
+// Remember expanded groups during navigation and settings rerenders.
+const settingsExpanded = new Set();
+function organizeSettings(view) {
+  const sections = Object.fromEntries($$('[data-settings]', view).map(el => [el.dataset.settings, el]));
+  const setup = sections.general.querySelector('a');
+  setup.classList.add('settings-setup', 'card');
+  view.prepend(setup);
+  const language = sections.general.querySelector('.setting');
+  const languageSelect = language.querySelector('select');
+  languageSelect.setAttribute('aria-label', 'Language');
+  sections.appearance.append(language);
+  sections.general.remove();
+  const groups = [
+    ['appearance', t('화면 · 언어'), t('색상 테마와 화면 밝기, 표시 언어'), ICON.image, ['appearance']],
+    ['workspace', t('작업 · 세션'), t('기본 폴더, 실행 권한과 세션 관리'), ICON.folder, ['workspace', 'sessions']],
+    ['notifications', t('알림 · 리마인더'), t('응답 알림과 잠자는 프로젝트 챙기기'), ICON.bell, ['notifications', 'reminders']],
+    ['ai', t('AI 브리핑'), t('요약에 사용할 도구와 모델'), ICON.send, ['ai']],
+    ['advanced', t('고급 · 회사 환경'), t('CLI 연결과 환경 변수'), ICON.more, ['advanced']],
+  ];
+  const list = document.createElement('div');
+  list.className = 'settings-groups';
+  setup.after(list);
+  for (const [id, title, description, icon, keys] of groups) {
+    const group = document.createElement('details');
+    group.className = 'settings-group card';
+    group.dataset.group = id;
+    group.open = settingsExpanded.has(id);
+    group.innerHTML = `<summary><span class="settings-group-icon" aria-hidden="true">${icon}</span><span class="settings-group-label"><b>${title}</b><span ${id === 'appearance' ? 'data-theme-summary' : ''}>${description}</span></span><span class="settings-chevron" aria-hidden="true">${ICON.chev}</span></summary><div class="settings-group-content"></div>`;
+    const content = group.querySelector('.settings-group-content');
+    for (const key of keys) {
+      const section = sections[key];
+      if (keys.length === 1) section.querySelector('.section-h')?.remove();
+      content.append(section);
+    }
+    group.addEventListener('toggle', () => {
+      if (group.open) settingsExpanded.add(id);
+      else settingsExpanded.delete(id);
+    });
+    list.append(group);
+  }
+}
+
 async function viewSettings() {
   const v = shell({ title: t('설정'), fab: false });
+  v.classList.add('settings-view');
   const s = await api('/api/settings');
   const ps = await pushStatus().catch(() => ({ supported: false }));
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
@@ -967,19 +1313,51 @@ async function viewSettings() {
   const hours = Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${s.nudgeHour === h ? 'selected' : ''}>${hourLabel(h)}</option>`).join('');
   const briefModels = (G.state?.catalogs?.[s.briefTool]?.models || []).map((m) => `<option value="${esc(m.id)}" ${m.id === s.briefModel ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
   v.innerHTML = `
-    <div class="section"><div class="card">
+    <div class="section" data-settings="general"><div class="card">
       <a class="setting" href="#/setup"><div class="l"><b>🚀 ${t('시작하기 · 도구 설치/연동')}</b><span>${t('Claude Code·Codex·Antigravity·OpenCode·Cursor 설치, 로그인, 폰 연결, 자동 시작')}</span></div><span class="muted">›</span></a>
       <div class="setting"><div class="l"><b>Language · 언어</b></div><select data-k="lang" data-reload><option value="en" ${s.lang !== 'ko' ? 'selected' : ''}>English</option><option value="ko" ${s.lang === 'ko' ? 'selected' : ''}>한국어</option></select></div>
     </div></div>
-    <div class="section"><div class="section-h"><h2>🏢 ${t('회사 환경 · CLI 환경 변수')}</h2></div><div class="card" id="envbox"><div class="skeleton" style="height:60px;margin:14px"></div></div></div>
-    <div class="section"><div class="section-h"><h2>🔒 ${t('보안')}</h2></div><div class="card" id="secbox"><div class="skeleton" style="height:60px;margin:14px"></div></div></div>
-    <div class="section"><div class="section-h"><h2>${t('알림')}</h2></div><div class="card">
+    <div class="section" data-settings="appearance"><div class="section-h"><h2 id="appearance-title">${t('테마')}</h2></div>
+      <div class="card appearance-card"><p class="small muted">${t('이 기기에만 적용돼요. 선택하면 바로 바뀌어요.')}</p>
+        <h3 class="theme-group-title" id="palette-title">${t('색상 테마')}</h3>
+        <div class="palette-options" role="group" aria-labelledby="palette-title">
+          ${[
+            ['default', t('기본'), t('Baton의 원래 색감')],
+            ['forest', 'Forest', t('종이 위의 차분한 숲')],
+            ['nord', 'Nord', t('시원한 북유럽 블루')],
+            ['dracula', 'Dracula', t('보랏빛으로 선명하게')],
+            ['tokyo', 'Tokyo Night', t('도시의 푸른 밤')],
+            ['monokai', 'Monokai', t('올리브와 라임의 대비')],
+            ['rose', 'Rosé Pine', t('부드러운 로즈와 잉크')],
+          ].map(([value, name, description]) => `<label class="palette-option">
+            <input type="radio" name="palette" value="${value}" ${window.BatonTheme.palette() === value ? 'checked' : ''}>
+            <span class="palette-card"><span class="palette-preview" data-palette-preview="${value}" aria-hidden="true"><i></i><span><b></b><em></em><em></em><small></small></span></span>
+              <span class="palette-name">${name}<span class="palette-check" aria-hidden="true">✓</span></span><span class="palette-description">${description}</span>
+            </span>
+          </label>`).join('')}
+        </div>
+        <h3 class="theme-group-title" id="mode-title">${t('화면 밝기')}</h3>
+        <div class="appearance-options" role="group" aria-labelledby="mode-title">
+          ${[['system', t('기기 설정에 맞춤')], ['light', t('라이트')], ['dark', t('다크')]].map(([value, label]) => `<label class="appearance-option">
+            <input type="radio" name="appearance" value="${value}" ${window.BatonTheme.get() === value ? 'checked' : ''}>
+            <span class="appearance-preview ${value}" aria-hidden="true"><i></i><span><b></b><b></b></span></span>
+            <span class="appearance-label">${label}</span>
+          </label>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="section" data-settings="workspace"><div class="section-h"><h2>${t('작업 폴더')}</h2></div><div class="card">
+      <div class="setting"><div class="l"><b>${t('기본 작업 폴더')}</b><span>${esc(s.defaultCwd || G.state?.defaultCwd || '~')}</span><span>${t('Baton 실행 계정의 홈 폴더 기준이에요. workspace가 있으면 자동 선택하며, 폴더를 자동 생성하지 않아요.')}</span></div><button class="btn sm" id="default-folder">${t('변경')}</button></div>
+    </div></div>
+    <div class="section" data-settings="advanced"><div class="section-h"><h2>🏢 ${t('회사 환경 · CLI 환경 변수')}</h2></div><div class="card" id="envbox"><div class="skeleton" style="height:60px;margin:14px"></div></div></div>
+    <div class="section" data-settings="notifications"><div class="section-h"><h2>${t('알림')}</h2></div><div class="card">
       ${!ps.supported || (isIOS && !standalone) ? `<div class="setting"><div class="l"><b>${t('홈 화면에 추가해야 알림을 받을 수 있어요')}</b><span>${t('Safari 공유 버튼 → 「홈 화면에 추가」 → 추가된 Baton 앱에서 이 화면을 다시 열어주세요')}</span></div></div>`
         : `<div class="setting"><div class="l"><b>${t('푸시 알림')}</b><span>${ps.sub ? t('이 기기에서 켜져 있어요') : t('응답 완료·잠자는 프로젝트 알림을 받아요')}</span></div>
             ${ps.sub ? `<button class="btn sm" id="ptest">${t('테스트')}</button><button class="btn sm ghost" id="poff">${t('끄기')}</button>` : `<button class="btn sm primary" id="pon">${t('켜기')}</button>`}</div>`}
       <div class="setting"><div class="l"><b>${t('응답 완료 알림')}</b><span>${t('보고 있지 않은 세션의 응답이 끝나면 알려줘요')}</span></div>${sw('notifyOnRunDone')}</div>
+      ${DESK_MQ.matches ? `<div class="setting"><div class="l"><b>${t('데스크톱 화면 알림')}</b><span>${t('이 PC에서 Baton을 보고 있으면 화면 우측 하단에 알림 카드를 띄워요')}</span></div><label class="switch"><input type="checkbox" id="deskcards-sw" ${deskCardsOn() ? 'checked' : ''}><i></i></label></div>` : ''}
     </div></div>
-    <div class="section"><div class="section-h"><h2>${t('잊혀가는 프로젝트 챙기기 💤')}</h2></div><div class="card">
+    <div class="section" data-settings="reminders"><div class="section-h"><h2>${t('잊혀가는 프로젝트 챙기기 💤')}</h2></div><div class="card">
       <div class="setting"><div class="l"><b>${t('하루 한 번 넛지')}</b><span>${t('멈춰 있는 프로젝트 하나를 골라 다음 할 일과 함께 알려줘요')}</span></div>${sw('nudgeEnabled')}</div>
       <div class="setting"><div class="l"><b>${t('알림 시간')}</b></div><select data-k="nudgeHour" data-num>${hours}</select></div>
       <div class="setting"><div class="l"><b>${t('며칠 쉬면 「잠자는」 프로젝트?')}</b></div><select data-k="staleDays" data-num>${[3, 5, 7, 10, 14, 21].map((n) => `<option ${s.staleDays === n ? 'selected' : ''} value="${n}">${n}${t('일')}</option>`).join('')}</select></div>
@@ -987,17 +1365,18 @@ async function viewSettings() {
       <div class="setting"><div class="l"><b>${t('이만큼 지나면 알림 그만')}</b><span>${t('너무 오래된 건 보관 대상으로 봐요')}</span></div><select data-k="forgetDays" data-num>${[60, 90, 180, 365].map((n) => `<option ${s.forgetDays === n ? 'selected' : ''} value="${n}">${n}${t('일')}</option>`).join('')}</select></div>
       <div class="setting"><div class="l"><b>${t('지금 한 번 받아보기')}</b><span>${t('브리핑을 만들고 알림을 보내요 (최대 30초)')}</span></div><button class="btn sm" id="nudgenow">${t('보내기')}</button></div>
     </div></div>
-    <div class="section"><div class="section-h"><h2>${t('AI 브리핑')}</h2></div><div class="card">
+    <div class="section" data-settings="ai"><div class="section-h"><h2>${t('AI 브리핑')}</h2></div><div class="card">
       <div class="setting"><div class="l"><b>${t('요약에 쓸 도구')}</b><span>${t('가볍고 빠른 모델을 추천해요')}</span></div><select data-k="briefTool">${INSTALLED().map((k) => [k, TOOL[k]]).map(([k, tl]) => `<option value="${k}" ${s.briefTool === k ? 'selected' : ''}>${tl.name}</option>`).join('')}</select></div>
       <div class="setting"><div class="l"><b>${t('모델')}</b></div><select data-k="briefModel">${briefModels}</select></div>
     </div></div>
-    <div class="section"><div class="section-h"><h2>${t('세션')}</h2></div><div class="card">
+    <div class="section" data-settings="sessions"><div class="section-h"><h2>${t('세션')}</h2></div><div class="card">
       <div class="setting"><div class="l"><b>${t('자동 실행 세션도 보기')}</b><span>${t('스크립트·서브에이전트가 만든 세션 (codex exec, agy -p 등)')}</span></div>${sw('showAutomated')}</div>
       <div class="setting"><div class="l"><b>${t('기본 권한')}</b></div><select data-k="defaultPerm">${Object.entries(PERM).map(([k, p]) => `<option value="${k}" ${s.defaultPerm === k ? 'selected' : ''}>${p.label}</option>`).join('')}</select></div>
       <a class="setting" href="#/usage"><div class="l"><b>${t('사용량 · 한도')}</b><span>${t('CLI별 남은 한도와 토큰 사용량')}</span></div><span class="muted">›</span></a>
       <div class="setting"><div class="l"><b>${t('목록 새로고침')}</b><span>${t('세션 파일을 다시 읽어요')}</span></div><button class="btn sm" id="reindex">${ICON.refresh}</button></div>
     </div></div>
     <p class="small muted" style="text-align:center;margin-top:24px">${t('Baton · 바이브코딩 이어달리기 🏃‍♂️')} · v${esc(G.state?.version || '')}<br>${esc(G.state?.home || '')} · <a href="https://github.com/SongKye/baton/releases" target="_blank" rel="noopener">${t('새 버전 확인')}</a></p>`;
+  organizeSettings(v);
   $$('[data-k]', v).forEach((el) => (el.onchange = async () => {
     const k = el.dataset.k;
     const val = el.type === 'checkbox' ? el.checked : el.dataset.num !== undefined ? Number(el.value) : el.value;
@@ -1009,8 +1388,25 @@ async function viewSettings() {
     toast(t('저장했어요'));
     if (k === 'briefTool') viewSettings();
   }));
+  $$('[name="appearance"]', v).forEach(input => {
+    input.onchange = () => window.BatonTheme.set(input.value);
+  });
+  $$('[name="palette"]', v).forEach(input => {
+    input.onchange = () => window.BatonTheme.setPalette(input.value);
+  });
+  window.BatonTheme.refresh();
+  $('#default-folder').onclick = async () => {
+    const cwd = await folderPicker(s.defaultCwd || G.state?.defaultCwd || '~', { allowNew: false });
+    if (!cwd) return;
+    try { await api('/api/settings', { body: { defaultCwd: cwd } }); store.set('newcwd', cwd); await loadState(); viewSettings(); }
+    catch (e) { toast(e.message, true); }
+  };
   $('#pon') && ($('#pon').onclick = async () => { try { await enablePush(); viewSettings(); } catch (e) { toast(e.message, true); } });
   $('#poff') && ($('#poff').onclick = async () => { const sub = ps.sub; await api('/api/push/unsubscribe', { body: { endpoint: sub.endpoint } }); await sub.unsubscribe(); toast(t('알림을 껐어요')); viewSettings(); });
+  $('#deskcards-sw') && ($('#deskcards-sw').onchange = (e) => {
+    localStorage.setItem('baton.deskCards', e.target.checked ? '1' : '0');
+    if (e.target.checked) deskCard({ kind: 'test', title: t('🏃 Baton 알림 테스트'), body: t('이 위치에 알림이 떠요'), url: '#/settings' });
+  });
   $('#ptest') && ($('#ptest').onclick = async () => { const r = await api('/api/push/test', { method: 'POST' }); toast(t('{n}개 기기로 보냈어요', { n: r.sent })); });
   $('#nudgenow').onclick = async (e) => {
     e.target.disabled = true; e.target.innerHTML = '<div class="spinner"></div>';
@@ -1019,7 +1415,6 @@ async function viewSettings() {
     e.target.disabled = false; e.target.textContent = t('보내기');
   };
   $('#reindex').onclick = async () => { await api('/api/refresh', { method: 'POST' }); toast(t('새로 읽었어요')); };
-  securitySection(v);
   envSection(v);
 }
 
@@ -1203,16 +1598,27 @@ async function viewTools() {
   v.innerHTML = `<div class="section tool-grid">
     ${card('#/ports', '🖥️', t('서빙 중인 포트'), t('불러오는 중…'), 'tc-ports')}
     ${card('#/skills', '🧩', t('스킬'), t('어떤 스킬이 어디 있고 언제 쓰였는지'), 'tc-skills')}
+    ${card('#/mcp', '🔌', t('MCP 서버'), t('에이전트가 물고 있는 MCP와 실제 호출 기록'), 'tc-mcp')}
     ${card('#/usage', '📊', t('사용량 · 한도'), t('CLI별 남은 한도와 토큰'), 'tc-usage')}
     ${card('#/scheduled', '⏰', t('예약 메시지'), t('한도가 풀리면 보낼 메시지'), 'tc-sched')}
     ${card('#/cleanup', '🧹', t('세션 정리'), t('테스트·자동 실행·"hi" 세션 한 번에 지우기'), 'tc-clean')}
     ${card('#/trash', '🗑️', t('휴지통'), t('지운 세션 되살리기 (30일 보관)'), 'tc-trash')}
   </div>`;
   api('/api/ports').then((d) => { const n = d.ports.filter((p) => p.mine && !p.baton).length; $('#tc-ports') && ($('#tc-ports').textContent = t('내 서버 {n}개 실행 중', { n })); }).catch(() => {});
+  api('/api/mcp').then((d) => { const on = d.servers.filter((x) => x.enabled === true && x.scope !== 'unlisted').length, used = d.servers.filter((x) => x.uses).length; $('#tc-mcp') && ($('#tc-mcp').textContent = t('{n}개 설정 · 최근 30일 {m}개 사용', { n: on, m: used })); }).catch(() => {});
   api('/api/cleanup').then((d) => { $('#tc-clean') && ($('#tc-clean').textContent = t('정리 후보 {n}개', { n: d.items.length })); }).catch(() => {});
   api('/api/scheduled').then((d) => { $('#tc-sched') && ($('#tc-sched').textContent = d.items.length ? t('{n}개 대기 중 · 다음: {when}', { n: d.items.length, when: whenFull(d.items[0].runAt) }) : t('대기 중인 예약 없음')); }).catch(() => {});
   api('/api/trash').then((d) => { $('#tc-trash') && ($('#tc-trash').textContent = d.items.length ? t('{n}개 보관 중 · 30일 뒤 완전 삭제', { n: d.items.length }) : t('비어 있어요')); }).catch(() => {});
 }
+
+// Every whitespace-separated term must appear somewhere in the fields (case-insensitive).
+const matchQ = (q, ...fields) => {
+  const terms = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const hay = fields.filter((x) => x != null && x !== '' && x !== false).join(' ').toLowerCase();
+  return terms.every((w) => hay.includes(w));
+};
+const searchBox = (id, value, placeholder) => `<label class="search">${ICON.search}<input id="${id}" type="search" placeholder="${placeholder}" aria-label="${placeholder}" value="${esc(value)}" autocomplete="off"></label>`;
 
 // ---------------------------------------------------------------- PORTS
 async function viewPorts() {
@@ -1236,24 +1642,39 @@ async function viewPorts() {
       ${p.baton ? '' : `<div class="pact">${reach}${unshare}<button class="btn sm ghost danger" data-stop="${p.pid}" data-port="${p.port}">${t('중지')}</button></div>`}
     </div>`;
   };
-  v.innerHTML = `
-    <div class="section"><div class="section-h"><h2>${t('내 서버')}</h2><span class="count">${mine.length}</span></div>
-      ${mine.length ? mine.map(portCard).join('') : `<div class="card empty"><b>${t('실행 중인 서버가 없어요')}</b></div>`}</div>
-    ${sys.length ? `<div class="section"><details class="sysports"><summary>${t('시스템 서비스 {n}개', { n: sys.length })}</summary>
-      <div class="card list">${sys.map((p) => `<div class="srow"><div class="body"><div class="t"><b>:${p.port}</b>&nbsp;<span class="muted">${esc(p.page?.title || '')}</span></div><div class="m">${p.local ? t('이 PC 전용') : t('외부 접속 가능')} · ${esc(p.addrs.join(', '))}</div></div></div>`).join('')}</div></details></div>` : ''}
+  const sysRow = (p) => `<div class="srow"><div class="body"><div class="t"><b>:${p.port}</b>&nbsp;<span class="muted">${esc(p.page?.title || '')}</span></div><div class="m">${p.local ? t('이 PC 전용') : t('외부 접속 가능')} · ${esc(p.addrs.join(', '))}</div></div></div>`;
+  let q = sessionStorage.getItem('pq') || '';
+  const hit = (p) => matchQ(q, `:${p.port}`, p.page?.title, p.name, p.cwd, p.project && projectName(p.project), p.project, p.cmd, p.agent?.title, p.agent && TOOL[p.agent.tool]?.name, p.addrs?.join(' '));
+  v.innerHTML = `${searchBox('pq', q, t('포트·이름·폴더·명령 검색'))}<div id="plist"></div>
     <p class="small muted" style="text-align:center;line-height:1.6">${t('「폰에서 열 수 있게」는 Tailscale로 내 기기에만 공유해요 (인터넷 공개 아님)')}<br>${t('Vite 같은 개발 서버는 외부 주소를 막을 수 있어요 →')} <code>server.allowedHosts</code> ${t('설정 필요')}</p>`;
+  const bind = (el) => {
+    $$('[data-share]', el).forEach((b) => (b.onclick = async () => {
+      b.disabled = true;
+      try { const r = await api(`/api/ports/${b.dataset.share}/share`, { method: 'POST' }); toast(t('공유했어요')); if (r.url) window.open(r.url, '_blank'); render(); }
+      catch (e) { toast(e.message, true); b.disabled = false; }
+    }));
+    $$('[data-unshare]', el).forEach((b) => (b.onclick = async () => { await api(`/api/ports/${b.dataset.unshare}/unshare`, { method: 'POST' }).catch((e) => toast(e.message, true)); render(); }));
+    $$('[data-stop]', el).forEach((b) => (b.onclick = async () => {
+      const ok = await pick(t(':{port} 서버를 멈출까요?', { port: b.dataset.port }), [{ value: true, label: t('멈추기'), desc: t('프로세스 {pid}에 종료 신호를 보내요', { pid: b.dataset.stop }), danger: true }, { value: false, label: t('취소') }]);
+      if (!ok) return;
+      try { await api(`/api/pids/${b.dataset.stop}/stop`, { method: 'POST' }); toast(t('멈췄어요')); setTimeout(render, 800); } catch (e) { toast(e.message, true); }
+    }));
+  };
+  const draw = () => {
+    const el = $('#plist');
+    if (!el) return;
+    const searching = Boolean(q.trim()), m = mine.filter(hit), sy = sys.filter(hit);
+    el.innerHTML = searching && !m.length && !sy.length
+      ? `<div class="empty"><b>${t('검색 결과가 없어요')}</b></div>`
+      : `<div class="section"><div class="section-h"><h2>${t('내 서버')}</h2><span class="count">${m.length}</span></div>
+      ${m.length ? m.map(portCard).join('') : `<div class="card empty"><b>${searching ? t('검색 결과가 없어요') : t('실행 중인 서버가 없어요')}</b></div>`}</div>
+    ${sy.length ? `<div class="section"><details class="sysports"${searching ? ' open' : ''}><summary>${t('시스템 서비스 {n}개', { n: sy.length })}</summary>
+      <div class="card list">${sy.map(sysRow).join('')}</div></details></div>` : ''}`;
+    bind(el);
+  };
+  $('#pq').oninput = (e) => { q = e.target.value; sessionStorage.setItem('pq', q); draw(); };
   $('#prefresh').onclick = () => render();
-  $$('[data-share]', v).forEach((b) => (b.onclick = async () => {
-    b.disabled = true;
-    try { const r = await api(`/api/ports/${b.dataset.share}/share`, { method: 'POST' }); toast(t('공유했어요')); if (r.url) window.open(r.url, '_blank'); render(); }
-    catch (e) { toast(e.message, true); b.disabled = false; }
-  }));
-  $$('[data-unshare]', v).forEach((b) => (b.onclick = async () => { await api(`/api/ports/${b.dataset.unshare}/unshare`, { method: 'POST' }).catch((e) => toast(e.message, true)); render(); }));
-  $$('[data-stop]', v).forEach((b) => (b.onclick = async () => {
-    const ok = await pick(t(':{port} 서버를 멈출까요?', { port: b.dataset.port }), [{ value: true, label: t('멈추기'), desc: t('프로세스 {pid}에 종료 신호를 보내요', { pid: b.dataset.stop }), danger: true }, { value: false, label: t('취소') }]);
-    if (!ok) return;
-    try { await api(`/api/pids/${b.dataset.stop}/stop`, { method: 'POST' }); toast(t('멈췄어요')); setTimeout(render, 800); } catch (e) { toast(e.message, true); }
-  }));
+  draw();
 }
 
 // ---------------------------------------------------------------- SKILLS
@@ -1262,8 +1683,10 @@ async function viewSkills(_, params) {
   v.innerHTML = '<div class="section"><div class="skeleton" style="height:300px"></div></div>';
   const d = await api('/api/skills');
   const f = store.get('skfilter', { tool: '', used: false });
+  let q = sessionStorage.getItem('skq') || '';
   const draw = () => {
-    let list = d.skills.filter((s) => (!f.tool || s.tool === f.tool) && (!f.used || s.uses));
+    let list = d.skills.filter((s) => (!f.tool || s.tool === f.tool) && (!f.used || s.uses)
+      && matchQ(q, s.name, s.alias, s.kind === 'command' && `/${s.name}`, s.description, s.scopeLabel, s.pathShort, TOOL[s.tool]?.name));
     const groups = new Map();
     for (const s of list) {
       const k = `${s.tool}|${s.scopeLabel}`;
@@ -1277,7 +1700,7 @@ async function viewSkills(_, params) {
       return (order[ga.scope] - order[gb.scope]) || (ub - ua);
     });
     const used30 = d.skills.filter((s) => s.uses).length;
-    $('#sklist').innerHTML = `<p class="small muted" style="margin:4px 2px 12px">${t('전체 {n}개 · 최근 30일 동안 {m}개가 실제로 쓰였어요', { n: d.skills.length, m: used30 })}</p>`
+    $('#sklist').innerHTML = `<p class="small muted" style="margin:4px 2px 12px">${q.trim() ? `${t('{n}개 찾음', { n: list.length })} · ` : ''}${t('전체 {n}개 · 최근 30일 동안 {m}개가 실제로 쓰였어요', { n: d.skills.length, m: used30 })}</p>`
       + (keys.length ? keys.map((k) => {
         const items = groups.get(k).sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0) || a.name.localeCompare(b.name));
         const [tool, label] = k.split('|');
@@ -1288,7 +1711,8 @@ async function viewSkills(_, params) {
             <div class="m">${s.lastUsed ? `<span>${t('마지막 사용 {when}', { when: ago(s.lastUsed) })}</span>` : `<span>${t('최근 30일 사용 기록 없음')}</span>`}</div></div></a>`).join('')}</div></div>`;
       }).join('') : `<div class="empty"><b>${t('조건에 맞는 스킬이 없어요')}</b></div>`);
   };
-  v.innerHTML = `<div class="chips" id="skf"></div><div id="sklist"></div>`;
+  v.innerHTML = `${searchBox('skq', q, t('스킬 이름·설명·위치 검색'))}<div class="chips" id="skf"></div><div id="sklist"></div>`;
+  $('#skq').oninput = (e) => { q = e.target.value; sessionStorage.setItem('skq', q); draw(); };
   const chips = () => {
     $('#skf').innerHTML = [['', t('전체')], ['claude', 'Claude'], ['codex', 'Codex'], ['agy', 'Antigravity']].map(([k, l]) => `<button class="chip ${f.tool === k ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')
       + `<button class="chip ${f.used ? 'on' : ''}" id="skused">${t('쓰인 것만')}</button>`;
@@ -1313,6 +1737,206 @@ async function viewSkill([id]) {
     </div>
     <div class="section"><div class="section-h"><h2>${t('쓰인 세션')}</h2><span class="count">${t('{n}회', { n: s.uses })}</span></div>${sessions}</div>
     ${s.content ? `<div class="section"><div class="section-h"><h2>${s.kind === 'command' ? t('명령어 내용') : 'SKILL.md'}</h2></div><div class="card md-card msg-ai">${md(s.content.replace(/^---[\s\S]*?---\s*/, ''))}</div></div>` : ''}`;
+}
+
+// ---------------------------------------------------------------- MCP
+const MCP_ST = { ok: ['ok', t('연결됨')], fail: ['fail', t('연결 실패')], auth: ['auth', t('인증 필요')], pending: ['pend', t('연결 중')], unknown: ['pend', t('상태 모름')] };
+const mcpDot = (st) => (st ? `<i class="mcp-dot ${(MCP_ST[st.status] || MCP_ST.unknown)[0]}" title="${esc((MCP_ST[st.status] || MCP_ST.unknown)[1])} · ${esc(ago(st.at))}"></i>` : '');
+const mcpTransport = (s) => (s.transport === 'stdio' ? t('로컬 실행') : s.transport && s.transport !== '?' ? s.transport.toUpperCase() : '');
+const mcpTarget = (s) => (s.url ? s.url : s.command ? [s.command, ...(s.args || [])].join(' ') : '');
+const mcpFlags = (s) => [
+  s.enabled === false ? `<span class="flag">${t('꺼짐')}</span>` : s.enabled === 'pending' ? `<span class="flag warn">${t('승인 대기')}</span>` : '',
+  s.status?.status === 'fail' ? `<span class="flag err">${t('연결 실패')}</span>` : s.status?.status === 'auth' ? `<span class="flag warn">${t('인증 필요')}</span>` : '',
+].join('');
+/** One row per server. `opts.session` highlights calls made in that session; `opts.here` labels usage as "in this project". */
+function mcpRow(s, { session = false, here = false } = {}) {
+  const top = (s.tools || []).slice(0, 3).map((x) => `${esc(x.name)}${x.n > 1 ? ` ×${x.n}` : ''}`).join(', ');
+  const usage = session && s.sessionUses ? `<span class="flag run">${t('이 세션 {n}회', { n: s.sessionUses })}</span>` : s.uses ? `<span class="flag run">${t('{n}회', { n: s.uses })}</span>` : '';
+  const target = mcpTarget(s);
+  const meta = !s.lastUsed ? t('최근 30일 호출 없음') : here ? t('이 프로젝트에서 마지막 사용 {when}', { when: ago(s.lastUsed) }) : t('마지막 사용 {when}', { when: ago(s.lastUsed) });
+  return `<a class="srow mcprow ${s.enabled === true ? '' : 'off'}" href="#/mcp/${s.id}">
+    <div class="body"><div class="t">${mcpDot(s.status)}<span class="tt">${esc(s.name)}</span>${usage}${mcpFlags(s)}</div>
+      ${target ? `<div class="p mono">${esc(target)}</div>` : ''}
+      <div class="m">${mcpTransport(s) ? `<span class="flag">${esc(mcpTransport(s))}</span>` : ''}${s.why ? `<span>${esc(s.why)}</span>` : `<span>${meta}</span>`}${top ? `<span>· ${top}</span>` : ''}</div></div></a>`;
+}
+
+async function viewMcps() {
+  const v = shell({ title: t('MCP 서버'), fab: false, right: `<button class="icon-btn" id="madd" aria-label="${t('추가')}">${ICON.plus}</button><button class="icon-btn" id="mcheck" aria-label="${t('연결 확인')}">${ICON.refresh}</button>` });
+  v.innerHTML = '<div class="section"><div class="skeleton" style="height:300px"></div></div>';
+  $('#madd').onclick = () => mcpQuickSheet();
+  let d = await api('/api/mcp');
+  const f = store.get('mcpfilter', { tool: '', used: false });
+  let q = sessionStorage.getItem('mcpq') || '';
+  const draw = () => {
+    const list = d.servers.filter((s) => (!f.tool || s.tool === f.tool) && (!f.used || s.uses)
+      && matchQ(q, s.name, s.scopeLabel, mcpTarget(s), s.fileShort, TOOL[s.tool]?.name, ...(s.tools || []).map((x) => x.name)));
+    const groups = new Map();
+    for (const s of list) { const k = `${s.tool}|${s.scopeLabel}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(s); }
+    const order = { local: 0, project: 1, user: 2, cloud: 3, plugin: 4, managed: 5, builtin: 6, unlisted: 7 };
+    const keys = [...groups.keys()].sort((a, b) => {
+      const ga = groups.get(a), gb = groups.get(b);
+      const ua = Math.max(0, ...ga.map((x) => x.lastUsed || 0)), ub = Math.max(0, ...gb.map((x) => x.lastUsed || 0));
+      return (order[ga[0].scope] - order[gb[0].scope]) || (ub - ua);
+    });
+    const used = d.servers.filter((s) => s.uses).length;
+    $('#mcplist').innerHTML = `<p class="small muted" style="margin:4px 2px 12px">${q.trim() ? `${t('{n}개 찾음', { n: list.length })} · ` : ''}${t('전체 {n}개 · 최근 30일 동안 {m}개가 실제로 호출됐어요', { n: d.servers.length, m: used })}</p>`
+      + (keys.length ? keys.map((k) => {
+        const items = groups.get(k).sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0) || a.name.localeCompare(b.name));
+        const [tool, label] = k.split('|');
+        return `<div class="section"><div class="section-h"><h2><span class="tool-badge ${tool}">${TOOL[tool].name}</span> ${esc(label)}</h2><span class="count">${items.length}</span></div>
+          <div class="card list">${items.map((s) => mcpRow(s)).join('')}</div></div>`;
+      }).join('') : `<div class="empty"><b>${d.servers.length ? t('조건에 맞는 MCP 서버가 없어요') : t('설정된 MCP 서버가 없어요')}</b>${d.servers.length ? '' : t('CLI에 MCP를 추가하면 여기에 나타나요 (예: claude mcp add …)')}</div>`)
+      + `<p class="small muted" style="text-align:center;line-height:1.6;margin-top:16px">${t('호출 기록은 Claude Code와 Codex 세션에서 읽어요')}<br>${t('↻ 버튼은 claude mcp list로 실제 연결 상태와 claude.ai 커넥터를 확인해요')}</p>`;
+  };
+  v.innerHTML = `${searchBox('mcpq', q, t('서버 이름·도구·명령·위치 검색'))}<div class="chips" id="mcpf"></div><div id="mcplist"></div>`;
+  $('#mcpq').oninput = (e) => { q = e.target.value; sessionStorage.setItem('mcpq', q); draw(); };
+  const chips = () => {
+    const has = new Set(d.servers.map((s) => s.tool));
+    $('#mcpf').innerHTML = [['', t('전체')], ...TOOL_IDS().filter((k) => has.has(k) || INSTALLED().includes(k)).map((k) => [k, TOOL[k].name])].map(([k, l]) => `<button class="chip ${f.tool === k ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')
+      + `<button class="chip ${f.used ? 'on' : ''}" id="mcpused">${t('쓰인 것만')}</button>`;
+    $$('[data-t]', v).forEach((b) => (b.onclick = () => { f.tool = b.dataset.t; store.set('mcpfilter', f); chips(); draw(); }));
+    $('#mcpused').onclick = () => { f.used = !f.used; store.set('mcpfilter', f); chips(); draw(); };
+  };
+  $('#mcheck').onclick = async () => {
+    const b = $('#mcheck'); b.disabled = true; b.classList.add('spin');
+    try {
+      const r = await api('/api/mcp/check', { body: { tool: 'claude' } });
+      if (r.error) toast(r.error, true); else if (r.supported) toast(t('연결 상태를 확인했어요'));
+      d = await api('/api/mcp?fresh=1'); chips(); draw();
+    } catch (e) { toast(e.message, true); }
+    b.disabled = false; b.classList.remove('spin');
+  };
+  chips(); draw();
+}
+
+async function viewMcp([id]) {
+  const v = shell({ title: t('MCP 서버'), fab: false, right: `<a class="icon-btn" href="#/mcp" aria-label="${t('목록')}">${ICON.back}</a>` });
+  const s = await api(`/api/mcp/${encodeURIComponent(id)}`);
+  const kv = (k, val) => (val ? `<div class="kv"><b>${k}</b><code>${val}</code></div>` : '');
+  const scopeHelp = {
+    user: t('이 CLI가 어느 폴더에서 작업하든 항상 불러와요'),
+    local: t('이 프로젝트 폴더에서만, 이 컴퓨터의 나에게만 적용돼요 (git에 올라가지 않아요)'),
+    project: t('이 프로젝트 폴더(와 하위 폴더)에서 작업할 때 불러와요. 설정 파일을 커밋하면 팀원도 같이 써요'),
+    plugin: t('플러그인이 켜져 있으면 모든 폴더에서 불러와요'),
+    managed: t('회사 관리자가 배포한 설정이라 여기서 바꿀 수 없어요'),
+    cloud: t('claude.ai 계정에 연결한 커넥터예요. 로그인한 모든 Claude Code에서 쓸 수 있어요'),
+    builtin: t('CLI에 들어 있는 서버예요'),
+    unlisted: t('세션 기록에는 있지만 지금 설정 파일에서는 찾지 못했어요 (지워졌거나 다른 곳에서 추가됐어요)'),
+  };
+  const sessions = s.sessions.length
+    ? `<div class="card list">${s.sessions.map((x) => { const [tool, sid] = x.key.split(/:(.+)/); return `<a class="srow" href="#/s/${tool}/${encodeURIComponent(sid)}"><div class="tool-avatar ${tool}">${TOOL[tool]?.short || '?'}</div><div class="body"><div class="t"><span class="tt">${esc(x.cwd ? projectName(x.cwd) : sid.slice(0, 8))}</span></div><div class="m"><span>${ago(x.ts)}</span><span>· ${t('{n}회', { n: x.n })}</span></div></div></a>`; }).join('')}</div>`
+    : `<div class="card empty"><b>${t('최근 30일 동안 호출된 적이 없어요')}</b>${s.tool === 'claude' || s.tool === 'codex' ? t('필요 없는 서버라면 꺼두면 컨텍스트(토큰)를 아낄 수 있어요') : t('이 CLI는 호출 기록을 아직 읽지 못해요')}</div>`;
+  v.innerHTML = `
+    <div class="section"><h1 class="sk-title">${mcpDot(s.status)} ${esc(s.name)}</h1>
+      <div class="m mcp-meta"><span class="tool-badge ${s.tool}">${TOOL[s.tool].name}</span><span class="flag">${esc(s.scopeLabel)}</span>${mcpTransport(s) ? `<span class="flag">${esc(mcpTransport(s))}</span>` : ''}${mcpFlags(s)}</div>
+      <p class="sk-desc">${esc(scopeHelp[s.scope] || '')}${s.why ? `<br><b>${esc(s.why)}</b>` : ''}</p>
+      ${s.status ? `<p class="small muted">${t('마지막 확인: {st} · {when}', { st: (MCP_ST[s.status.status] || MCP_ST.unknown)[1], when: ago(s.status.at) })}${s.status.detail && s.status.status !== 'ok' ? ` — ${esc(s.status.detail)}` : ''}</p>` : ''}
+      <div class="card sk-path">
+        ${kv(t('실행 명령'), s.command ? esc([s.command, ...(s.args || [])].join(' ')) : '')}
+        ${kv('URL', s.url ? esc(s.url) : '')}
+        ${kv(t('환경 변수'), s.envKeys?.length ? esc(s.envKeys.join(', ')) + ` <span class="muted">(${t('값은 숨김')})</span>` : '')}
+        ${kv(t('헤더'), s.headerKeys?.length ? esc(s.headerKeys.join(', ')) + ` <span class="muted">(${t('값은 숨김')})</span>` : '')}
+        ${kv(t('허용 도구'), s.toolsAllow?.length ? esc(s.toolsAllow.join(', ')) : '')}
+        ${kv(t('막은 도구'), s.toolsDeny?.length ? esc(s.toolsDeny.join(', ')) : '')}
+        ${kv(t('설정 파일'), s.fileShort ? esc(s.fileShort) : '')}
+        ${s.projectShort ? kv(t('프로젝트'), `<a href="#/p/${encodeURIComponent(s.project)}">${esc(s.projectShort)}</a>`) : ''}
+      </div>
+      ${s.twins?.length ? `<p class="small muted">${t('같은 이름이 다른 곳에도 설정돼 있어요:')} ${s.twins.map((x) => `<a href="#/mcp/${x.id}">${esc(x.scopeLabel)}</a>`).join(', ')}</p>` : ''}
+    </div>
+    ${s.tools.length ? `<div class="section"><div class="section-h"><h2>${t('호출한 도구')}</h2><span class="count">${t('{n}회', { n: s.uses })}</span></div>
+      <div class="card list">${s.tools.map((x) => `<div class="srow"><div class="body"><div class="t"><span class="tt mono">${esc(x.name)}</span><span class="flag run">${t('{n}회', { n: x.n })}</span></div></div></div>`).join('')}</div></div>` : ''}
+    <div class="section"><div class="section-h"><h2>${t('쓴 세션')}</h2><span class="count">${s.sessions.length}</span></div>${sessions}</div>
+    ${['user', 'local', 'project'].includes(s.scope) && s.file ? `<div class="section"><div class="pact">
+      <button class="btn sm" id="mcopy">${t('다른 CLI에도 추가')}</button>
+      ${s.scope === 'user' || s.tool === 'claude' ? `<button class="btn sm ghost danger" id="mrm">${t('삭제')}</button>` : ''}</div></div>` : ''}`;
+  $('#mcopy', v) && ($('#mcopy', v).onclick = async () => {
+    const targets = INSTALLED().filter((k) => k !== s.tool || s.scope !== 'user');
+    const tools = await sheet({
+      title: t('{name}을(를) 다른 CLI에도 추가', { name: s.name }),
+      body: `<div class="pwform"><p class="small muted">${t('설정(키·토큰 포함)을 그대로 복사해서 각 CLI의 전역 설정에 넣어요.')}</p><div class="chips">${targets.map((k) => `<label class="chip check"><input type="checkbox" data-tool="${k}" ${k !== s.tool ? 'checked' : ''}>${TOOL[k].name}</label>`).join('')}</div></div>`,
+      footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('추가')}</button>`,
+      onMount: (el, close) => {
+        $('[data-x]', el).onclick = () => close(undefined);
+        $('[data-ok]', el).onclick = () => close($$('[data-tool]', el).filter((c) => c.checked).map((c) => c.dataset.tool));
+      },
+    });
+    if (!tools?.length) return;
+    try {
+      const r = await api('/api/mcp/copy', { body: { id: s.id, tools } });
+      const bad = r.results.filter((x) => !x.ok);
+      if (bad.length) toast(bad.map((x) => `${TOOL[x.tool].name}: ${x.error}`).join(' · '), true);
+      else toast(t('✅ {name} 추가했어요 · {list}', { name: r.name, list: r.results.map((x) => TOOL[x.tool].name).join(', ') }));
+    } catch (e) { toast(e.message, true); }
+  });
+  $('#mrm', v) && ($('#mrm', v).onclick = async () => {
+    if (!confirm(t('{name}을(를) {tool} 설정에서 지울까요? (파일은 백업해둬요)', { name: s.name, tool: TOOL[s.tool].name }))) return;
+    try { await api('/api/mcp/remove', { body: { id: s.id } }); toast(t('지웠어요')); location.hash = '#/mcp'; }
+    catch (e) { toast(e.message, true); }
+  });
+}
+
+/** Pick a preset (or custom) and add it. */
+async function mcpQuickSheet() {
+  const [{ presets }, rep] = await Promise.all([api('/api/mcp/presets'), api('/api/mcp').catch(() => ({ servers: [] }))]);
+  const where = (id) => [...new Set(rep.servers.filter((x) => x.name === id && x.scope === 'user').map((x) => x.tool))];
+  const id = await pick(t('어떤 MCP를 추가할까요?'), [...presets.map((p) => ({ value: p.id, label: `${p.icon} ${p.name}${where(p.id).length ? ' ✓' : ''}`, desc: p.desc })), { value: '__custom', label: `✏️ ${t('직접 추가')}`, desc: t('실행 명령이나 URL을 알고 있을 때') }]);
+  if (!id) return;
+  await mcpAddSheet(id === '__custom' ? null : presets.find((p) => p.id === id), id === '__custom' ? [] : where(id), () => render());
+}
+
+/** "Which MCP servers does each CLI load here?" — used on the project page and in the chat sheet. */
+function mcpEffectiveHtml(d, { session = false, only } = {}) {
+  const tools = Object.entries(d.tools).filter(([k]) => !only || k === only);
+  return tools.map(([tool, x]) => {
+    const on = x.servers.filter((s) => s.enabled === true);
+    const rest = x.servers.filter((s) => s.enabled !== true);
+    return `<div class="mcp-tool">
+      <div class="mcp-th"><span class="tool-badge ${tool}">${TOOL[tool].name}</span><span class="small muted">${on.length ? t('{n}개 불러옴', { n: on.length }) : t('MCP 없음')}${x.checkedAt ? ` · ${t('확인 {when}', { when: ago(x.checkedAt) })}` : ''}</span>
+        ${tool === 'claude' ? `<button class="btn sm ghost" data-mcpcheck="${tool}">${t('연결 확인')}</button>` : ''}</div>
+      ${x.servers.length ? `<div class="card list">${[...on, ...rest].map((s) => mcpRow(s, { session, here: true })).join('')}</div>` : ''}
+    </div>`;
+  }).join('') || `<div class="card empty"><b>${t('설치된 CLI가 없어요')}</b></div>`;
+}
+function bindMcpCheck(el, cwd, reload) {
+  $$('[data-mcpcheck]', el).forEach((b) => (b.onclick = async (e) => {
+    e.preventDefault();
+    b.disabled = true; b.textContent = t('확인 중…');
+    try { const r = await api('/api/mcp/check', { body: { tool: b.dataset.mcpcheck, cwd } }); if (r.error) toast(r.error, true); }
+    catch (err) { toast(err.message, true); }
+    reload();
+  }));
+}
+async function loadProjectMcp(box, cwd) {
+  if (!box) return;
+  const draw = async () => {
+    try {
+      const d = await api(`/api/mcp/effective?cwd=${encodeURIComponent(cwd)}`);
+      const total = Object.values(d.tools).reduce((n, x) => n + x.servers.filter((s) => s.enabled === true).length, 0);
+      box.innerHTML = `<div class="section-h"><h2>${t('MCP 서버')}</h2><span class="count">${total}</span><a class="more" href="#/mcp">${t('전체 ›')}</a></div>
+        <p class="small muted" style="margin:-4px 2px 8px">${t('이 폴더에서 작업할 때 각 CLI가 불러오는 MCP예요')}</p>${mcpEffectiveHtml(d)}`;
+      bindMcpCheck(box, cwd, draw);
+    } catch { box.remove(); }
+  };
+  await draw();
+}
+async function mcpSessionSheet(session) {
+  const cwd = session.cwd || session.project;
+  const body = `<div id="mcpsheet"><div class="skeleton" style="height:120px"></div></div>`;
+  return sheet({
+    title: t('이 세션의 MCP'), body,
+    onMount: async (el) => {
+      const box = $('#mcpsheet', el);
+      const draw = async () => {
+        try {
+          const d = await api(`/api/mcp/effective?cwd=${encodeURIComponent(cwd)}&tool=${session.tool}&session=${encodeURIComponent(`${session.tool}:${session.id}`)}`);
+          const x = d.tools[session.tool];
+          box.innerHTML = `<p class="small muted" style="margin:0 2px 10px">${t('{name}가 {p} 폴더에서 불러오는 MCP예요', { name: TOOL[session.tool].name, p: esc(shortPath(cwd)) })}${x && !x.tracked ? `<br>${t('이 CLI는 호출 기록을 아직 읽지 못해요')}` : ''}</p>${mcpEffectiveHtml(d, { session: true, only: session.tool })}`;
+          bindMcpCheck(box, cwd, draw);
+        } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+      };
+      draw();
+    },
+  });
 }
 
 // ---------------------------------------------------------------- CLEANUP / TRASH
@@ -1398,18 +2022,32 @@ const OS_LABEL = { windows: 'Windows', macos: 'macOS', linux: 'Linux', wsl: 'WSL
 
 async function viewSetup() {
   const v = shell({ title: t('시작하기'), fab: false, right: `<button class="icon-btn" id="surefresh" aria-label="${t('새로고침')}">${ICON.refresh}</button>` });
+  v.classList.add('setup-view');
   v.innerHTML = '<div class="section"><div class="skeleton" style="height:120px"></div></div><div class="section"><div class="skeleton" style="height:320px"></div></div>';
   const st = await api('/api/setup?fresh=1');
   const ok = (b) => `<span class="pill ${b ? 'ok' : 'no'}">${b ? '✓' : '✕'}</span>`;
-  const anyReady = st.tools.some((x) => x.installed && (x.loggedIn || x.optionalLogin));
+  const ready = (x) => x.installed && (x.loggedIn || x.optionalLogin);
+  const anyReady = st.tools.some(ready);
+  const ts = st.tailscale;
+  const pcOk = st.node.ok && st.git.installed;
+  const phoneOk = Boolean(ts.url);
+  const remote = !st.local;
+  const steps = [
+    ['pc', t('컴퓨터 준비'), pcOk],
+    ['ai', t('AI 연결'), anyReady],
+    ['mcp', t('도구 붙이기'), null],
+    ['phone', t('폰 연결'), phoneOk || remote],
+    ['auto', t('자동 시작'), st.autostart.enabled],
+  ];
+  const stepH = (i, id, title, sub, optional) => `<div class="section-h step-h" id="step-${id}"><h2><span class="stepnum ${steps[i][2] ? 'done' : ''}">${steps[i][2] ? '✓' : i + 1}</span>${title}${optional ? ` <span class="opt">${t('선택')}</span>` : ''}</h2></div>${sub ? `<p class="small muted step-sub">${sub}</p>` : ''}`;
+
   const toolCard = (x) => {
     const state = !x.installed ? 'missing' : x.loggedIn ? 'ready' : x.optionalLogin ? 'ready' : 'login';
     const badge = x.provider && x.installed ? `<span class="pill ${x.loggedIn ? 'ok' : 'warn'}">${esc(x.provider)}</span>` : state === 'ready' ? `<span class="pill ok">${x.loggedIn ? t('사용 준비 완료') : t('설치됨')}</span>`
       : state === 'login' ? `<span class="pill warn">${t('로그인 필요')}</span>` : `<span class="pill">${t('설치 안 됨')}</span>`;
     const btns = [];
     if (!x.installed && x.canInstall) btns.push(`<button class="btn sm primary" data-job="install" data-tool="${x.id}">${t('원클릭 설치')}</button>`);
-    if (x.installed && !x.loggedIn && x.loginKind !== 'terminal') btns.push(`<button class="btn sm ${state === 'login' ? 'primary' : ''}" data-job="login" data-tool="${x.id}">${t('로그인')}</button>`);
-    if (x.installed && CONNECT[x.id]) btns.push(`<button class="btn sm" data-connect="${x.id}">${t('API·회사·내 서버로 연결')}</button>`);
+    if (x.installed && !x.loggedIn && x.loginKind !== 'terminal') btns.push(`<button class="btn sm ${state === 'login' ? 'primary' : ''}" data-job="login" data-tool="${x.id}">${t('구독 계정으로 로그인')}</button>`);
     if (x.installed && (x.loggedIn || x.optionalLogin)) btns.push(`<button class="btn sm ghost" data-test="${x.id}">${t('연결 테스트')}</button>`);
     btns.push(`<a class="btn sm ghost" href="${esc(x.docs)}" target="_blank" rel="noopener">${t('문서')} ↗</a>`);
     return `<div class="card setup-tool" data-tool-card="${x.id}">
@@ -1423,59 +2061,217 @@ async function viewSetup() {
       <div class="jobbox" hidden></div>
     </div>`;
   };
-  const ts = st.tailscale;
+  const toolStrip = () => `<div class="tool-strip">${st.tools.map((x) => `<span class="ts-item ${ready(x) ? 'on' : x.installed ? 'half' : ''}"><span class="tool-avatar ${x.id}">${esc(TOOL[x.id]?.short || '?')}</span>${esc(x.name)}<em>${ready(x) ? (x.provider ? esc(x.provider) : '✓') : x.installed ? t('로그인 필요') : t('없음')}</em></span>`).join('')}</div>`;
+
+  const AI_MODES = [
+    ['sub', '🎟', t('구독 계정'), t('Claude Pro·Max, ChatGPT Plus, Google, Cursor')],
+    ['key', '🔑', t('API 키'), t('키를 붙여넣으면 맞는 도구에 알아서 연결해요')],
+    ['company', '🏢', t('회사 계정'), t('Amazon Bedrock · Google Vertex · 사내 게이트웨이')],
+    ['local', '🖥', t('내 컴퓨터·서버의 모델'), t('Ollama · LM Studio · vLLM 같은 자체 서빙')],
+  ];
+  let aiMode = sessionStorage.getItem('setup.ai') || 'sub';
+
+  const phoneSteps = () => {
+    const isPhone = /iPhone|iPad|Android/.test(navigator.userAgent);
+    const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    const phones = ts.phones || [];
+    const li = (done, title, body) => `<li class="pstep ${done ? 'done' : ''}"><span class="pdot">${done ? '✓' : ''}</span><div><b>${title}</b>${body ? `<div class="pbody">${body}</div>` : ''}</div></li>`;
+    if (remote) {
+      return `<div class="card pad"><div class="banner ok-banner">✅ ${t('이 기기는 Baton에 연결돼 있어요')}</div><ol class="psteps">
+        ${li(standalone, t('홈 화면에 추가하기'), standalone ? t('앱처럼 열려 있어요') : isPhone && /iPhone|iPad/.test(navigator.userAgent) ? t('Safari 아래쪽 공유 버튼 → 「홈 화면에 추가」. 아이폰은 이렇게 해야 알림을 받을 수 있어요') : t('Chrome ⋮ 메뉴 → 「앱 설치」 또는 「홈 화면에 추가」'))}
+        ${li(false, t('알림 켜기'), `${t('응답이 끝나면 폰이 울려요')} <a class="btn sm" href="#/settings">${t('설정에서 켜기')} ›</a>`)}
+      </ol></div>`;
+    }
+    const tsInstall = st.os === 'linux' || st.os === 'wsl' ? `<code class="copy" data-copy="curl -fsSL https://tailscale.com/install.sh | sh">curl -fsSL https://tailscale.com/install.sh | sh</code>` : '';
+    const tsLogin = st.os === 'linux' || st.os === 'wsl' ? `<code class="copy" data-copy="sudo tailscale up">sudo tailscale up</code>` : t('Tailscale 앱을 열고 로그인하세요 (Google·Microsoft·GitHub 계정)');
+    return `<div class="card pad"><ol class="psteps">
+      ${li(ts.installed && ts.online, t('이 PC에 Tailscale 설치·로그인'), ts.installed && ts.online ? esc(ts.host || '') : `${t('내 기기끼리만 연결되는 무료 앱이에요. 인터넷에 공개되지 않아요.')}<div class="pact">${!ts.installed ? `<a class="btn sm primary" href="https://tailscale.com/download" target="_blank" rel="noopener">${t('다운로드')} ↗</a>` : ''}</div>${!ts.installed ? tsInstall : tsLogin}`)}
+      ${li(phones.length > 0, t('폰에도 Tailscale 앱 설치 → 같은 계정으로 로그인'), phones.length ? phones.map((p) => esc(`${p.name} (${p.os})`)).join(', ')
+        : `<div class="qrrow"><div class="qr" data-qr="https://tailscale.com/download"></div><span>${t('폰 카메라로 찍으면 앱 설치 페이지가 열려요. 설치 후 PC와 같은 계정으로 로그인하세요.')}</span></div>`)}
+      ${li(Boolean(ts.url), t('Baton을 내 기기에 공유'), ts.url ? `<div class="qrrow"><div class="qr big" data-qr="${esc(ts.url)}"></div><span><b>${t('폰 카메라로 이 QR을 찍으세요')}</b><br>${t('Tailscale이 켜진 내 기기에서만 열려요')}<br><code class="copy" data-copy="${esc(ts.url)}">${esc(ts.url)}</code></span></div>`
+        : ts.online ? `<button class="btn sm primary" data-job="tailscale-share">${t('내 기기에 공유')}</button><div class="jobbox" hidden data-for="tailscale-share"></div>` : t('위 단계를 먼저 끝내주세요'))}
+      ${li(false, t('폰에서 마무리: 홈 화면에 추가 + 알림 켜기'), t('아이폰: Safari 공유 버튼 → 「홈 화면에 추가」 → 추가된 앱의 설정에서 알림 켜기. 안드로이드: Chrome ⋮ → 「앱 설치」'))}
+    </ol></div>`;
+  };
+
   v.innerHTML = `
     <div class="section setup-hero">
-      <h2>${t('바이브코딩 준비를 끝내볼게요 🏃')}</h2>
-      <p class="muted">${t('Baton은 여러 AI 코딩 도구의 세션을 한곳에서 이어가게 해줘요. 쓰고 싶은 도구를 설치하고 로그인만 하면 바로 연동돼요.')}</p>
+      <h2>${remote ? t('Baton 설정 🏃') : t('PC에서 한 번만 설정하면 돼요 🏃')}</h2>
+      <p class="muted">${remote ? t('지금 폰(다른 기기)에서 보고 있어요. 설치·로그인은 Baton이 켜진 PC에서 실행되고, 로그인 링크는 이 기기에서 열려요.') : t('AI 도구를 연결하고, 원하면 폰에서도 이어서 쓸 수 있게 해요. 5분이면 끝나요.')}</p>
+      <div class="stepbar">${steps.map(([id, title, done], i) => `<a href="#step-${id}" data-jump="${id}" class="${done ? 'done' : ''}"><i>${done ? '✓' : i + 1}</i>${esc(title)}</a>`).join('')}</div>
       <div class="setting lang-row"><div class="l"><b>Language · 언어</b></div>
         <select id="slang"><option value="en" ${LANG === 'en' ? 'selected' : ''}>English</option><option value="ko" ${LANG === 'ko' ? 'selected' : ''}>한국어</option></select></div>
     </div>
 
-    <div class="section"><div class="section-h"><h2>1. ${t('내 컴퓨터')}</h2></div><div class="card env">
-      <div class="setting"><div class="l"><b>${t('운영체제')}</b><span>${esc(OS_LABEL[st.os] || st.os)} · ${esc(st.arch)}</span></div>${ok(true)}</div>
+    <div class="section">${stepH(0, 'pc', t('컴퓨터 준비'), pcOk ? t('필요한 건 다 있어요') : t('AI 도구를 돌리는 데 필요한 것들이에요'))}
+      <details class="card env" ${pcOk ? '' : 'open'}><summary class="setting"><div class="l"><b>${esc(OS_LABEL[st.os] || st.os)} · Node.js v${esc(st.node.version)}${st.git.installed ? ` · Git v${esc(st.git.version || '')}` : ''}</b></div>${ok(pcOk)}</summary>
       <div class="setting"><div class="l"><b>Node.js</b><span>v${esc(st.node.version)}${st.node.ok ? '' : ` — ${t('22.13 이상이 필요해요')}`}</span></div>${ok(st.node.ok)}</div>
       <div class="setting"><div class="l"><b>Git</b><span>${st.git.installed ? `v${esc(st.git.version || '')}` : t('AI 도구가 코드 변경을 관리할 때 필요해요')}</span></div>
         ${st.git.installed ? ok(true) : st.git.canInstall ? `<button class="btn sm primary" data-job="git">${t('설치')}</button>` : `<code class="copy" data-copy="${esc(st.git.hint || '')}">${esc(st.git.hint || '')}</code>`}</div>
       ${st.os === 'windows' ? `<div class="setting"><div class="l"><b>${t('WSL 추천')}</b><span>${t('Codex·Antigravity는 WSL(리눅스)에서 가장 잘 동작해요. WSL 안에서 Baton을 실행하면 모든 도구를 쓸 수 있어요.')}</span></div><a class="btn sm ghost" href="https://learn.microsoft.com/windows/wsl/install" target="_blank" rel="noopener">${t('안내')} ↗</a></div>` : ''}
       <div class="jobbox" hidden data-for="git"></div>
-    </div></div>
+    </details></div>
 
-    <div class="section"><div class="section-h"><h2>2. ${t('AI 코딩 도구')}</h2><span class="count">${st.tools.filter((x) => x.installed).length}/${st.tools.length}</span></div>
-      <p class="small muted" style="margin:-4px 2px 10px">${t('하나만 있어도 충분해요. 설치하면 그 도구의 세션이 자동으로 Baton에 나타나요.')}</p>
-      <div class="setup-tools">${st.tools.map(toolCard).join('')}</div></div>
+    <div class="section">${stepH(1, 'ai', t('AI 연결'), t('AI를 어떻게 쓰고 있나요? 하나만 있어도 충분해요.'))}
+      <div class="choice-grid" id="aimodes">${AI_MODES.map(([id, icon, title, desc]) => `<button class="choice ${aiMode === id ? 'on' : ''}" data-mode="${id}"><span class="ci">${icon}</span><b>${title}</b><span>${desc}</span></button>`).join('')}</div>
+      <div id="aipanel"></div></div>
 
-    <div class="section"><div class="section-h"><h2>3. ${t('폰에서 쓰기 (선택)')}</h2></div><div class="card">
-      <div class="setting"><div class="l"><b>Tailscale</b><span>${!ts.installed ? t('내 기기끼리만 연결되는 무료 VPN이에요. PC와 폰에 설치하면 밖에서도 Baton을 열 수 있어요.') : ts.url ? t('폰에서 이 주소로 열 수 있어요: {url}', { url: ts.url }) : ts.online ? t('켜져 있어요. 아래 버튼으로 Baton을 내 기기에 공유하세요.') : t('설치돼 있지만 로그인이 필요해요 (tailscale up)')}</span></div>
-        ${!ts.installed ? `<a class="btn sm" href="https://tailscale.com/download" target="_blank" rel="noopener">${t('다운로드')} ↗</a>`
-          : ts.url ? `<a class="btn sm ghost" href="${esc(ts.url)}" target="_blank" rel="noopener">${t('열기')} ↗</a>`
-          : ts.online ? `<button class="btn sm primary" data-job="tailscale-share">${t('내 기기에 공유')}</button>` : ''}</div>
-      <div class="jobbox" hidden data-for="tailscale-share"></div>
-    </div></div>
+    <div class="section">${stepH(2, 'mcp', t('AI에 도구 붙이기 (MCP)'), t('브라우저 조작, 최신 문서 검색, GitHub·노션 연동 같은 능력을 더해줘요. 고르면 설치된 CLI 모두에 한 번에 추가해요.'), true)}
+      <div id="mcppresets"><div class="skeleton" style="height:140px"></div></div></div>
 
-    <div class="section"><div class="section-h"><h2>4. ${t('자동 시작 (선택)')}</h2></div><div class="card">
-      <div class="setting"><div class="l"><b>${t('컴퓨터를 켜면 Baton도 켜기')}</b><span>${st.autostart.supported ? (st.autostart.enabled ? t('켜져 있어요') : t('로그인할 때 Baton을 백그라운드로 실행해요')) : t('이 환경에서는 지원하지 않아요 (systemd 없음). 터미널에서 npm start로 실행하세요.')}</span></div>
+    <div class="section">${stepH(3, 'phone', t('폰에서 쓰기'), remote ? '' : t('PC에서 돌아가는 AI를 밖에서도 폰으로 이어서 써요. 순서대로 따라 하면 돼요.'), true)}${phoneSteps()}</div>
+
+    <div class="section">${stepH(4, 'auto', t('자동 시작'), '', true)}<div class="card">
+      <div class="setting"><div class="l"><b>${t('컴퓨터를 켜면 Baton도 켜기')}</b><span>${st.autostart.supported ? (st.autostart.enabled ? t('켜져 있어요') : t('폰에서 언제든 접속하려면 켜두세요')) : t('이 환경에서는 지원하지 않아요 (systemd 없음). 터미널에서 npm start로 실행하세요.')}</span></div>
         ${st.autostart.supported ? `<button class="btn sm ${st.autostart.enabled ? 'ghost' : 'primary'}" data-job="${st.autostart.enabled ? 'autostart-off' : 'autostart-on'}">${st.autostart.enabled ? t('끄기') : t('켜기')}</button>` : ''}</div>
       <div class="jobbox" hidden data-for="autostart"></div>
     </div></div>
 
     <div class="section"><button class="btn block ${anyReady ? 'primary' : 'ghost'}" id="sdone">${anyReady ? t('대시보드로 가기 →') : t('나중에 할게요')}</button></div>`;
 
+  // ---- AI panel
+  const drawAi = () => {
+    const box = $('#aipanel', v);
+    $$('#aimodes .choice', v).forEach((b) => b.classList.toggle('on', b.dataset.mode === aiMode));
+    if (aiMode === 'sub') {
+      box.innerHTML = `<p class="small muted panel-help">${t('도구를 설치하고 구독 계정으로 로그인하세요. 설치하면 그 도구의 세션이 자동으로 Baton에 나타나요.')}</p><div class="setup-tools">${st.tools.map(toolCard).join('')}</div>`;
+    } else if (aiMode === 'key') {
+      box.innerHTML = `<div class="card pad"><label class="field"><span>${t('API 키 붙여넣기')}</span><input type="password" id="akey" placeholder="sk-ant-… · sk-… · sk-or-… · gsk_…" autocomplete="off" spellcheck="false"></label>
+        <div id="akeyout" class="small muted">${t('Anthropic(Claude), OpenAI, OpenRouter, Groq 키를 알아봐요. 키는 이 PC의 CLI 설정 파일에만 저장돼요.')}</div></div>${toolStrip()}`;
+      $('#akey', box).oninput = (e) => keyDetect(e.target.value.trim(), $('#akeyout', box));
+    } else if (aiMode === 'company') {
+      const c = (id, title, desc) => { const x = st.tools.find((y) => y.id === id); return `<div class="setting"><div class="l"><b>${title}</b><span>${desc}</span></div>${x?.installed ? `<button class="btn sm primary" data-connect="${id}">${t('연결')}</button>` : `<button class="btn sm" data-job="install" data-tool="${id}">${t('먼저 설치')}</button>`}</div>`; };
+      box.innerHTML = `<p class="small muted panel-help">${t('회사 IT에서 받은 정보(주소·키·리전)를 그대로 넣으면 돼요. CLI 자체 설정 파일에 저장해서 터미널에서도 똑같이 동작해요.')}</p>
+        <div class="card">${c('claude', 'Claude Code', t('Amazon Bedrock · Google Vertex · LLM 게이트웨이(LiteLLM 등) · Anthropic API 키'))}
+        ${c('codex', 'Codex', t('Azure OpenAI · 사내 게이트웨이 · OpenAI API 키'))}
+        <a class="setting" href="#/settings"><div class="l"><b>${t('프록시·인증서 같은 환경 변수')}</b><span>${t('회사 네트워크에서 HTTPS_PROXY, NODE_EXTRA_CA_CERTS 등이 필요하면 설정 → 회사 환경에서 넣어요')}</span></div><span class="muted">›</span></a>
+        <div class="jobbox" hidden></div></div>${toolStrip()}`;
+    } else {
+      box.innerHTML = `<div class="card pad" id="llmscan"><div class="row-h"><b>${t('이 PC에서 실행 중인 모델 서버')}</b><button class="btn sm ghost" id="llmre">${t('다시 찾기')}</button></div><div id="llmlist"><div class="skeleton" style="height:60px"></div></div></div>${toolStrip()}`;
+      const scan = async () => {
+        const list = $('#llmlist', box);
+        list.innerHTML = `<div class="small muted">${t('찾는 중…')}</div>`;
+        const d = await api('/api/setup/local-llms').catch(() => ({ servers: [] }));
+        list.innerHTML = d.servers.length ? d.servers.map((s, i) => `<div class="llm" data-i="${i}"><div class="l"><b>${esc(s.name)}</b><span class="mono">${esc(s.baseUrl)}</span></div>
+            ${s.models.length ? `<select data-model>${s.models.map((m) => `<option>${esc(m)}</option>`).join('')}</select>` : `<input data-model placeholder="${t('모델 이름')}">`}
+            <div class="pact"><button class="btn sm primary" data-llm="opencode">${t('OpenCode로 연결')}</button><button class="btn sm ghost" data-llm="claude">Claude Code</button><button class="btn sm ghost" data-llm="codex">Codex</button></div></div>`).join('')
+            + `<p class="small muted">${t('OpenCode가 로컬 모델과 가장 잘 맞아요. Claude Code는 서버가 Anthropic API를, Codex는 Responses API를 지원해야 해요 (연결 후 바로 테스트해요).')}</p>`
+          : `<div class="empty-mini"><b>${t('실행 중인 모델 서버를 못 찾았어요')}</b><span>${t('Ollama를 설치하고 모델을 받아두면 (예: ollama pull qwen3-coder) 여기서 바로 보여요.')}</span>
+            <div class="pact"><a class="btn sm" href="https://ollama.com/download" target="_blank" rel="noopener">${t('Ollama 받기')} ↗</a><button class="btn sm ghost" data-connect="opencode">${t('주소 직접 입력')}</button></div></div>`;
+        $$('[data-llm]', list).forEach((b) => (b.onclick = () => {
+          const row = b.closest('.llm'), s = d.servers[Number(row.dataset.i)], model = $('[data-model]', row).value.trim();
+          const tool = b.dataset.llm;
+          if (!st.tools.find((x) => x.id === tool)?.installed) { toast(t('{name}를 먼저 설치해주세요 (구독 계정 탭)', { name: TOOL[tool].name }), true); return; }
+          const base = tool === 'claude' ? s.baseUrl.replace(/\/v1$/, '') : s.baseUrl;
+          connectSheet(tool, () => setTimeout(render, 400), { kind: tool === 'claude' ? 'gateway' : 'server', values: { name: s.name, baseUrl: base, model } });
+        }));
+        bindSetupButtons(list);
+      };
+      $('#llmre', box).onclick = scan;
+      scan();
+    }
+    bindSetupButtons(box);
+  };
+  // ---- API key detection
+  const keyDetect = (key, out) => {
+    const has = (id) => st.tools.find((x) => x.id === id)?.installed;
+    const go = (label, tool, opts) => `<div class="keyhit"><span>✓ ${label}</span>${has(tool) ? `<button class="btn sm primary" data-keygo="${tool}" data-opts='${esc(JSON.stringify(opts))}'>${t('{name}에 연결', { name: TOOL[tool].name })}</button>` : `<button class="btn sm" data-job="install" data-tool="${tool}">${t('{name} 설치', { name: TOOL[tool].name })}</button>`}</div>`;
+    if (!key) { out.innerHTML = t('Anthropic(Claude), OpenAI, OpenRouter, Groq 키를 알아봐요. 키는 이 PC의 CLI 설정 파일에만 저장돼요.'); return; }
+    if (/^sk-ant-/.test(key)) out.innerHTML = go(t('Anthropic 키예요'), 'claude', { kind: 'apikey' });
+    else if (/^sk-or-/.test(key)) out.innerHTML = go(t('OpenRouter 키예요 — 수백 개 모델을 OpenCode로 쓸 수 있어요'), 'opencode', { kind: 'server', values: { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' } });
+    else if (/^gsk_/.test(key)) out.innerHTML = go(t('Groq 키예요'), 'opencode', { kind: 'server', values: { name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' } });
+    else if (/^sk-/.test(key)) out.innerHTML = go(t('OpenAI 키예요'), 'codex', { kind: 'apikey' });
+    else if (/^AIza/.test(key)) out.innerHTML = `<span class="warn-text">${t('Google AI 키는 지금 CLI 연동을 지원하지 않아요. Antigravity는 Google 계정 로그인으로 써요.')}</span>`;
+    else out.innerHTML = `<span>${t('어느 회사 키인지 모르겠어요. 골라주세요:')}</span><div class="pact"><button class="btn sm" data-keygo="claude" data-opts='{"kind":"apikey"}'>Anthropic</button><button class="btn sm" data-keygo="codex" data-opts='{"kind":"apikey"}'>OpenAI</button><button class="btn sm" data-keygo="opencode" data-opts='{"kind":"server"}'>${t('기타 (OpenAI 호환)')}</button></div>`;
+    $$('[data-keygo]', out).forEach((b) => (b.onclick = async () => {
+      const opts = JSON.parse(b.dataset.opts);
+      const tool = b.dataset.keygo;
+      if (!has(tool)) { toast(t('{name}를 먼저 설치해주세요 (구독 계정 탭)', { name: TOOL[tool].name }), true); return; }
+      if (opts.kind === 'apikey') {
+        b.disabled = true;
+        try { const r = await api('/api/setup/connect', { body: { tool, kind: 'apikey', fields: { apiKey: key } } }); toast(t('저장했어요: {file}', { file: r.file })); await testConnectionUi(tool); render(); }
+        catch (e) { toast(e.message, true); b.disabled = false; }
+      } else connectSheet(tool, () => setTimeout(render, 400), { kind: opts.kind, values: { ...(opts.values || {}), apiKey: key } });
+    }));
+    bindSetupButtons(out);
+  };
+
+  // ---- MCP presets
+  const drawMcp = async () => {
+    const box = $('#mcppresets', v);
+    if (!box) return;
+    const [{ presets }, rep] = await Promise.all([api('/api/mcp/presets'), api('/api/mcp').catch(() => ({ servers: [] }))]);
+    const where = (id) => [...new Set(rep.servers.filter((s) => s.name === id && s.scope === 'user').map((s) => s.tool))];
+    const all = store.get('setup.mcpall', false);
+    const list = all ? presets : presets.slice(0, 6);
+    box.innerHTML = `<div class="preset-grid">${list.map((p) => { const w = where(p.id); return `<button class="preset ${w.length ? 'added' : ''}" data-preset="${p.id}">
+        <span class="pi">${p.icon}</span><span class="pb"><b>${esc(p.name)}</b><span>${esc(p.desc)}</span>
+        <span class="ptags">${w.length ? `<em class="ok">✓ ${w.map((x) => esc(TOOL[x]?.name || x)).join(', ')}</em>` : ''}${p.oauth ? `<em>${t('로그인 필요')}</em>` : ''}${p.fields.some((f) => f.secret && !f.optional) ? `<em>${t('토큰 필요')}</em>` : ''}${p.missing ? `<em class="warn">${t('{x} 필요', { x: p.missing })}</em>` : ''}</span></span></button>`; }).join('')}</div>
+      <div class="pact center">${!all ? `<button class="btn sm ghost" id="mcpmore">${t('더 보기 ({n})', { n: presets.length - list.length })}</button>` : ''}<button class="btn sm ghost" id="mcpcustom">${t('직접 추가')}</button><a class="btn sm ghost" href="#/mcp">${t('설치된 MCP 보기')} ›</a></div>`;
+    $$('[data-preset]', box).forEach((b) => (b.onclick = () => mcpAddSheet(presets.find((p) => p.id === b.dataset.preset), where(b.dataset.preset), drawMcp)));
+    $('#mcpmore', box) && ($('#mcpmore', box).onclick = () => { store.set('setup.mcpall', true); drawMcp(); });
+    $('#mcpcustom', box).onclick = () => mcpAddSheet(null, [], drawMcp);
+  };
+
+  function bindSetupButtons(root) {
+    $$('code.copy', root).forEach((c) => (c.onclick = () => { navigator.clipboard?.writeText(c.dataset.copy); toast(t('복사했어요')); }));
+    $$('[data-connect]', root).forEach((b) => (b.onclick = () => connectSheet(b.dataset.connect, () => setTimeout(render, 400))));
+    $$('[data-test]', root).forEach((b) => (b.onclick = async () => { b.disabled = true; await testConnectionUi(b.dataset.test); b.disabled = false; }));
+    $$('[data-job]', root).forEach((b) => (b.onclick = async () => {
+      const action = b.dataset.job, tool = b.dataset.tool || null;
+      const box = (tool && $(`[data-tool-card="${tool}"] .jobbox`, v)) || $(`.jobbox[data-for="${action.replace(/-(on|off)$/, '')}"]`, v) || b.closest('.card, .section')?.querySelector('.jobbox') || (() => { const d = document.createElement('div'); d.className = 'jobbox'; b.after(d); return d; })();
+      b.disabled = true;
+      try {
+        const { job } = await api('/api/setup/jobs', { body: { action, tool } });
+        runJobBox(box, job, () => { b.disabled = false; setTimeout(() => render(), 600); });
+      } catch (e) { toast(e.message, true); b.disabled = false; }
+    }));
+    $$('.qr[data-qr]', root).forEach(async (q) => { try { q.innerHTML = (await api(`/api/qr?text=${encodeURIComponent(q.dataset.qr)}`)).svg; } catch { q.remove(); } });
+  }
+
   $('#surefresh').onclick = () => render();
   $('#slang').onchange = async (e) => { await api('/api/settings', { body: { lang: e.target.value } }); location.reload(); };
   $('#sdone').onclick = async () => { await api('/api/settings', { body: { setupDone: true } }); await loadState(); location.hash = '#/'; };
-  $$('code.copy', v).forEach((c) => (c.onclick = () => { navigator.clipboard?.writeText(c.dataset.copy); toast(t('복사했어요')); }));
-  $$('[data-connect]', v).forEach((b) => (b.onclick = () => connectSheet(b.dataset.connect, () => setTimeout(render, 400))));
-  $$('[data-test]', v).forEach((b) => (b.onclick = async () => { b.disabled = true; await testConnectionUi(b.dataset.test); b.disabled = false; }));
-  $$('[data-job]', v).forEach((b) => (b.onclick = async () => {
-    const action = b.dataset.job, tool = b.dataset.tool || null;
-    const box = tool ? $(`[data-tool-card="${tool}"] .jobbox`, v) : $(`.jobbox[data-for="${action.replace(/-(on|off)$/, '')}"]`, v);
-    b.disabled = true;
-    try {
-      const { job } = await api('/api/setup/jobs', { body: { action, tool } });
-      runJobBox(box, job, () => { b.disabled = false; setTimeout(() => render(), 600); });
-    } catch (e) { toast(e.message, true); b.disabled = false; }
-  }));
+  $$('[data-jump]', v).forEach((a) => (a.onclick = (e) => { e.preventDefault(); $(`#step-${a.dataset.jump}`, v)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
+  $$('#aimodes .choice', v).forEach((b) => (b.onclick = () => { aiMode = b.dataset.mode; sessionStorage.setItem('setup.ai', aiMode); drawAi(); }));
+  bindSetupButtons(v);
+  drawAi();
+  drawMcp().catch(() => { $('#mcppresets', v).innerHTML = ''; });
+}
+
+/** Add an MCP server (preset or custom) to the chosen CLIs. */
+async function mcpAddSheet(p, already = [], after) {
+  const installed = INSTALLED();
+  const field = (f) => `<label><span>${esc(f.label)}</span><input data-f="${f.k}" type="${f.secret ? 'password' : 'text'}" placeholder="${esc(f.ph || '')}" value="${esc(f.value || '')}" autocomplete="off" spellcheck="false"></label>`;
+  const body = `<div class="pwform connect-form">
+    ${p ? `<p class="small muted">${esc(p.desc)}</p><p class="small mono muted">${esc(p.target)}</p>${p.oauth ? `<p class="small">🔐 ${t('처음 쓸 때 로그인이 필요해요. Claude Code는 터미널에서 claude → /mcp, Codex는 codex mcp login {name}', { name: p.id })}</p>` : ''}${p.missing ? `<p class="small warn-text">${t('이 서버는 {x}가 필요해요. 먼저 설치해주세요.', { x: p.missing })}</p>` : ''}${p.fields.map(field).join('')}`
+      : `<label><span>${t('이름')}</span><input data-f="name" placeholder="my-server" autocomplete="off"></label>
+         <label><span>${t('실행 명령 또는 URL')}</span><input data-f="target" placeholder="npx -y @scope/server  ·  https://example.com/mcp" autocomplete="off" spellcheck="false"></label>
+         <label><span>${t('환경 변수 / 헤더 (한 줄에 하나, KEY=값)')}</span><textarea data-f="pairs" placeholder="API_KEY=…"></textarea></label>`}
+    <div class="field"><span>${t('어느 CLI에 추가할까요?')}</span><div class="chips">${installed.map((k) => `<label class="chip check"><input type="checkbox" data-tool="${k}" ${already.includes(k) ? '' : 'checked'}>${TOOL[k].name}${already.includes(k) ? ' ✓' : ''}</label>`).join('')}</div></div>
+    <p class="small muted">${t('각 CLI의 전역 설정에 저장돼서 모든 폴더에서 쓸 수 있어요. 기존 파일은 백업해둬요.')}</p></div>`;
+  const r = await sheet({
+    title: p ? `${p.icon} ${p.name}` : t('MCP 서버 직접 추가'), body,
+    footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('추가')}</button>`,
+    onMount: (el, close) => {
+      $('[data-x]', el).onclick = () => close(undefined);
+      $('[data-ok]', el).onclick = async () => {
+        const vals = Object.fromEntries($$('[data-f]', el).map((i) => [i.dataset.f, i.value]));
+        const tools = $$('[data-tool]', el).filter((c) => c.checked).map((c) => c.dataset.tool);
+        const b = $('[data-ok]', el); b.disabled = true; b.textContent = t('추가하는 중…');
+        try {
+          const isUrl = /^https?:\/\//i.test(vals.target || '');
+          const req = p ? { preset: p.id, values: vals, tools } : { custom: { name: vals.name, target: vals.target, [isUrl ? 'headers' : 'env']: vals.pairs }, tools };
+          close(await api('/api/mcp/add', { body: req }));
+        } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = t('추가'); }
+      };
+    },
+  });
+  if (!r) return;
+  const bad = r.results.filter((x) => !x.ok);
+  if (!bad.length) toast(t('✅ {name} 추가했어요 · {list}', { name: r.name, list: r.results.map((x) => TOOL[x.tool].name).join(', ') }));
+  else toast(bad.map((x) => `${TOOL[x.tool].name}: ${x.error}`).join(' · '), true);
+  after?.();
 }
 
 /** Streams a setup job into a box: live log, sign-in link button, device code, and a code/answer input. */
@@ -1513,79 +2309,6 @@ function runJobBox(box, job, onEnd) {
     }
   };
   es.onerror = () => { /* the server closes the stream at the end */ };
-}
-
-// ---------------------------------------------------------------- AUTH (password gate)
-function viewLogin() {
-  document.body.classList.add('auth-mode');
-  app.innerHTML = `<div class="login">
-    <div class="login-card">
-      <div class="logo">🏃</div>
-      <h1>Baton</h1>
-      <p class="muted">${t('처음 보는 기기예요. 비밀번호를 입력하면 이 기기를 기억해둘게요.')}</p>
-      <form id="lform">
-        <input id="lpw" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••" autofocus>
-        <button class="btn primary block" id="lbtn">${t('들어가기')}</button>
-      </form>
-      <p class="small err" id="lerr"></p>
-      <p class="small muted">${t('비밀번호는 Baton이 실행 중인 PC의 설정에서 바꿀 수 있어요.')}</p>
-    </div></div>`;
-  $('#lform').onsubmit = async (e) => {
-    e.preventDefault();
-    const btn = $('#lbtn');
-    btn.disabled = true;
-    try {
-      await api('/api/auth/login', { body: { password: $('#lpw').value } });
-      document.body.classList.remove('auth-mode');
-      G.needLogin = false;
-      await loadState();
-      render();
-    } catch (err) {
-      $('#lerr').textContent = err.message;
-      $('#lpw').value = '';
-      $('#lpw').focus();
-      btn.disabled = false;
-    }
-  };
-}
-
-async function securitySection(v) {
-  const box = $('#secbox', v);
-  if (!box) return;
-  const d = await api('/api/security');
-  const days = [1, 7, 30, 90];
-  box.innerHTML = `
-    ${d.defaultPassword ? `<div class="banner warn-banner">⚠️ ${t('아직 기본 비밀번호(0000)를 쓰고 있어요. 바꿔주세요.')}</div>` : ''}
-    <div class="setting"><div class="l"><b>${t('비밀번호')}</b><span>${t('새 기기에서 처음 들어올 때 물어봐요')}</span></div><button class="btn sm" id="pwchange">${t('바꾸기')}</button></div>
-    <div class="setting"><div class="l"><b>${t('기기 기억 기간')}</b><span>${t('마지막 접속 후 이 기간 동안 다시 묻지 않아요')}</span></div>
-      <select data-k="trustDays" data-num>${days.map((n) => `<option value="${n}" ${d.trustDays === n ? 'selected' : ''}>${t('{n}일', { n })}</option>`).join('')}</select></div>
-    <div class="setting col"><div class="l"><b>${t('기억된 기기')}</b><span>${d.local ? t('지금 이 PC에서 직접 열고 있어요 (비밀번호 없이 허용)') : ''}</span></div>
-      <div class="devices">${d.devices.length ? d.devices.map((x) => `<div class="dev"><div class="l"><b>${esc(x.name || '?')}${x.current ? ` <span class="pill ok">${t('이 기기')}</span>` : ''}</b>
-        <span>${esc(x.ip || '')} · ${t('마지막 접속 {when}', { when: ago(x.lastSeen) })} · ${t('{date}까지', { date: new Date(x.expiresAt).toLocaleDateString(LOCALE) })}</span></div>
-        <button class="btn sm ghost" data-revoke="${x.id}">${t('내보내기')}</button></div>`).join('') : `<span class="small muted">${t('아직 없어요')}</span>`}</div>
-      ${d.devices.length > 1 ? `<button class="btn sm ghost danger" id="revall">${t('이 기기 빼고 모두 내보내기')}</button>` : ''}</div>`;
-  $('#pwchange', box).onclick = async () => {
-    const r = await sheet({
-      title: t('비밀번호 바꾸기'),
-      body: `<div class="pwform"><input type="password" id="pwcur" placeholder="${t('현재 비밀번호')}" autocomplete="current-password">
-        <input type="password" id="pwnew" placeholder="${t('새 비밀번호 (4자 이상)')}" autocomplete="new-password">
-        <input type="password" id="pwnew2" placeholder="${t('새 비밀번호 확인')}" autocomplete="new-password"></div>`,
-      footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('저장')}</button>`,
-      onMount: (el, close) => {
-        $('[data-x]', el).onclick = () => close(undefined);
-        $('[data-ok]', el).onclick = async () => {
-          const cur = $('#pwcur', el).value, nw = $('#pwnew', el).value;
-          if (nw !== $('#pwnew2', el).value) { toast(t('새 비밀번호가 서로 달라요'), true); return; }
-          try { await api('/api/security/password', { body: { current: cur, next: nw } }); close(true); }
-          catch (e) { toast(e.message, true); }
-        };
-      },
-    });
-    if (r) { toast(t('비밀번호를 바꿨어요')); securitySection(v); }
-  };
-  $$('[data-revoke]', box).forEach((b) => (b.onclick = async () => { await api(`/api/security/devices/${b.dataset.revoke}/revoke`, { method: 'POST' }); toast(t('내보냈어요')); securitySection(v); }));
-  $('#revall', box) && ($('#revall', box).onclick = async () => { await api('/api/security/revoke-all', { method: 'POST' }); toast(t('내보냈어요')); securitySection(v); });
-  $$('[data-k]', box).forEach((el) => (el.onchange = async () => { await api('/api/settings', { body: { trustDays: Number(el.value) } }); toast(t('저장했어요')); securitySection(v); }));
 }
 
 // ---------------------------------------------------------------- HANDOFF (continue a session in another CLI)
@@ -1650,10 +2373,8 @@ async function moveSessionSheet(s) {
   const d = await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}/folders`);
   const opts = d.suggestions.filter((x) => x.short !== d.current).map((x) => ({ value: x.short, label: projectName(x.short), desc: `${x.short} · ${t('이 세션이 {n}번 작업한 폴더', { n: x.uses })}` }));
   if (d.moved) opts.push({ value: d.original, label: t('↩ 원래 폴더로 되돌리기'), desc: d.original });
-  opts.push({ value: '__custom', label: t('✏️ 직접 입력') });
-  let cwd = await pick(t('어느 폴더로 옮길까요? (지금: {p})', { p: d.current }), opts);
+  const cwd = await folderPicker(d.current, { suggestions: opts, allowNew: false });
   if (!cwd) return false;
-  if (cwd === '__custom') { cwd = await promptSheet(t('폴더 경로'), d.current, { placeholder: '~/workspace/my-app' }); if (!cwd) return false; }
   try {
     const r = await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}/move`, { body: { cwd } });
     const msg = {
@@ -1722,23 +2443,47 @@ const CONNECT = {
   ],
 };
 
-async function connectSheet(tool, after) {
+async function connectSheet(tool, after, preset = {}) {
   const opts = CONNECT[tool];
   if (!opts) return;
-  const kind = await pick(t('{name}를 어떻게 연결할까요?', { name: TOOL[tool].name }), opts.map((o) => ({ value: o.kind, label: o.label(), desc: o.desc() })));
+  const kind = preset.kind || await pick(t('{name}를 어떻게 연결할까요?', { name: TOOL[tool].name }), opts.map((o) => ({ value: o.kind, label: o.label(), desc: o.desc() })));
   if (!kind) return;
   const o = opts.find((x) => x.kind === kind);
+  if (!o) return;
+  const pre = preset.values || {};
   let fields = {};
   if (o.fields.length) {
+    const hasProbe = o.fields.some((f) => f.k === 'baseUrl') && o.fields.some((f) => f.k === 'model');
     fields = await sheet({
       title: o.label(),
       body: `<div class="pwform connect-form"><p class="small muted">${esc(o.desc())}</p>${o.fields.map((f) => `<label><span>${esc(f.label)}</span>
-        <input data-f="${f.k}" type="${f.type || 'text'}" placeholder="${esc(f.ph || '')}" value="${esc(f.value || '')}" autocomplete="off" spellcheck="false"></label>`).join('')}
+        <input data-f="${f.k}" type="${f.type || 'text'}" placeholder="${esc(f.ph || '')}" value="${esc(pre[f.k] ?? f.value ?? '')}" autocomplete="off" spellcheck="false" ${f.k === 'model' && hasProbe ? 'list="cmodels"' : ''}></label>
+        ${f.k === 'model' && hasProbe ? `<datalist id="cmodels"></datalist><div class="small muted" id="cprobe">${t('주소를 넣으면 쓸 수 있는 모델 목록을 불러와요')}</div>` : ''}`).join('')}
         <p class="small muted">${t('CLI 자체 설정 파일에 저장돼서 터미널에서도 똑같이 동작해요. 기존 파일은 백업해둬요.')}</p></div>`,
       footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('연결')}</button>`,
       onMount: (el, close) => {
         $('[data-x]', el).onclick = () => close(undefined);
         $('[data-ok]', el).onclick = () => close(Object.fromEntries($$('[data-f]', el).map((i) => [i.dataset.f, i.value])));
+        if (!hasProbe) return;
+        const val = (k) => $(`[data-f="${k}"]`, el)?.value.trim() || '';
+        let seq = 0;
+        const probe = async () => {
+          const base = val('baseUrl');
+          if (!/^https?:\/\/./i.test(base)) return;
+          const my = ++seq, out = $('#cprobe', el);
+          out.textContent = t('모델 목록을 불러오는 중…');
+          const r = await api('/api/setup/probe', { body: { baseUrl: base, apiKey: val('apiKey') } }).catch((e) => ({ ok: false, error: e.message }));
+          if (my !== seq) return;
+          if (r.ok) {
+            $('#cmodels', el).innerHTML = r.models.map((m) => `<option value="${esc(m)}">`).join('');
+            const mi = $('[data-f="model"]', el);
+            if (!mi.value && r.models.length === 1) mi.value = r.models[0];
+            out.innerHTML = `✓ ${t('모델 {n}개를 찾았어요. 모델 칸을 누르면 골라요', { n: r.models.length })}`;
+          } else out.innerHTML = `<span class="warn-text">${esc(r.error)}</span>`;
+        };
+        let timer;
+        $$('[data-f="baseUrl"], [data-f="apiKey"]', el).forEach((i) => (i.oninput = () => { clearTimeout(timer); timer = setTimeout(probe, 600); }));
+        probe();
       },
     });
     if (!fields) return;
@@ -1820,11 +2565,13 @@ async function viewScheduled() {
 
 // ---------------------------------------------------------------- boot
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.type === 'navigate' && e.data.url) location.href = e.data.url; });
+navigator.serviceWorker?.addEventListener('message', (e) => {
+  if (e.data?.type === 'navigate' && e.data.url) location.href = e.data.url;
+  if (e.data?.type === 'desk-cards?') e.ports[0]?.postMessage({ cards: deskCardsOn() && document.visibilityState === 'visible' });
+});
+pushStatus().then((p) => { desk.pushOn = Boolean(p.sub); }).catch(() => {});
 (async () => {
   $$('[data-t]', $('#tabbar')).forEach((el) => { el.textContent = t(el.dataset.t); });
-  const auth = await api('/api/auth/status').catch(() => ({ authed: true }));
-  if (!auth.authed) { G.needLogin = true; viewLogin(); return; }
   await loadState();
   // first run: nothing set up yet -> onboarding
   if (G.state && !G.state.settings?.setupDone && !(G.state.tools || []).some((x) => x.installed) && !location.hash.startsWith('#/setup')) location.hash = '#/setup';

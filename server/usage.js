@@ -21,7 +21,8 @@ const AGY_DIR = path.join(HOME, '.gemini', 'antigravity-cli', 'conversations');
 
 // bucket value: [input, cacheWrite, cacheRead, output]
 // v2: per-file skill-use records (sk) were added -> older caches are rescanned once
-const CACHE_V = 3;
+// v4: per-file MCP tool-call records (mc: [server, tool, ts, cwd])
+const CACHE_V = 4;
 let cache = { v: CACHE_V, files: {}, codexLimits: null };
 try {
   const j = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
@@ -37,6 +38,10 @@ function skillPaths(text, cwd) {
   }
   return out;
 }
+
+// Claude Code and Codex both expose MCP tools to the model as mcp__<server>__<tool>
+const MCP_NAME_RE = /^mcp__(.+?)__(.+)$/;
+const mcpName = (n) => { const m = MCP_NAME_RE.exec(String(n || '')); return m ? [m[1], m[2]] : null; };
 
 const dayKey = (ts) => {
   const d = new Date(ts);
@@ -76,12 +81,18 @@ function add(b, key, v) {
 async function scanClaude(file) {
   const b = {};
   const sk = [];
+  const mc = [];
   const seen = new Set();
-  await eachLine(file, ['"usage"', '"name":"Skill"', '<command-name>'], (o) => {
+  const seenCalls = new Set();
+  await eachLine(file, ['"usage"', '"name":"Skill"', '<command-name>', '"name":"mcp__'], (o) => {
     const ts = Date.parse(o.timestamp) || 0;
     if (o.type === 'assistant') {
       for (const c of o.message?.content || []) {
-        if (c?.type === 'tool_use' && c.name === 'Skill' && (c.input?.skill || c.input?.command)) sk.push([c.input.skill || c.input.command, ts, null, o.cwd || null]);
+        if (c?.type !== 'tool_use') continue;
+        if (c.name === 'Skill' && (c.input?.skill || c.input?.command)) sk.push([c.input.skill || c.input.command, ts, null, o.cwd || null]);
+        const m = mcpName(c.name);
+        // streamed assistant entries repeat the same tool_use block -> dedupe by id
+        if (m && !seenCalls.has(c.id)) { seenCalls.add(c.id); mc.push([m[0], m[1], ts, o.cwd || null]); }
       }
     } else if (o.type === 'user' && typeof o.message?.content === 'string') {
       const m = o.message.content.match(/<command-name>\/?([^<\s]+)<\/command-name>/);
@@ -98,7 +109,7 @@ async function scanClaude(file) {
   });
   // subagent transcripts (<id>/subagents/x.jsonl) belong to the parent session
   const m = file.match(/([0-9a-f-]{36})(?:\/subagents\/[^/]+)?\.jsonl$/);
-  return { b, sk, sid: m ? `claude:${m[1]}` : null };
+  return { b, sk, mc, sid: m ? `claude:${m[1]}` : null };
 }
 
 async function scanCodex(file) {
@@ -107,10 +118,29 @@ async function scanCodex(file) {
   let prev = null;
   let limits = null;
   const sk = [];
+  const mc = [];
+  const mcIds = new Set();
+  const addMcp = (server, tool, ts, callId) => {
+    if (!server || !tool) return;
+    if (callId) { if (mcIds.has(callId)) return; mcIds.add(callId); }
+    mc.push([server, tool, ts, cwd]);
+  };
   let sid = null, cwd = null;
-  await eachLine(file, ['"token_count"', '"turn_context"', 'SKILL.md', '"session_meta"'], (o) => {
+  await eachLine(file, ['"token_count"', '"turn_context"', 'SKILL.md', '"session_meta"', 'mcp_tool_call', '"mcp__'], (o) => {
     const p = o.payload || {};
     if (o.type === 'session_meta') { sid = p.id ? `codex:${p.id}` : sid; cwd = p.cwd || cwd; return; }
+    const ts = Date.parse(o.timestamp) || 0;
+    if (o.type === 'event_msg' && (p.type === 'mcp_tool_call_begin' || p.type === 'mcp_tool_call_end')) {
+      addMcp(p.invocation?.server, p.invocation?.tool, ts, p.call_id);
+      return;
+    }
+    if (o.type === 'response_item' && p.type === 'function_call') {
+      const m = mcpName(p.name);
+      if (m) addMcp(m[0], m[1], ts, p.call_id);
+    } else if (o.type === 'response_item' && p.type === 'custom_tool_call' && typeof p.input === 'string') {
+      // code mode: the model calls tools from a script (only the call input, never tool outputs that list tool names)
+      for (const x of p.input.matchAll(/\bmcp__([\w-]+?)__([\w-]+)\s*\(/g)) addMcp(x[1], x[2], ts, null);
+    }
     if (o.type === 'response_item' && /call/.test(p.type || '')) {
       // the agent opened a SKILL.md (cat/sed/read) -> that skill was used
       const text = [p.arguments, p.input, JSON.stringify(p.action || '')].filter(Boolean).join(' ');
@@ -130,7 +160,7 @@ async function scanCodex(file) {
     prev = t;
   });
   if (!sid) { const m = file.match(/([0-9a-f]{8}-[0-9a-f-]{27,})\.jsonl$/); if (m) sid = `codex:${m[1]}`; }
-  return { b, limits, sk, sid };
+  return { b, limits, sk, mc, sid };
 }
 
 async function listAgyDbs(minMtime) {
@@ -202,7 +232,7 @@ export function refreshUsage() {
         else {
           try {
             const r = tool === 'claude' ? await scanClaude(p) : tool === 'codex' ? await scanCodex(p) : tool === 'opencode' ? await scanOpencode(p) : scanAgy(p);
-            next[p] = { t: tool, m: st.mtimeMs, s: st.size, b: r.b, sk: r.sk?.length ? r.sk : undefined, sid: r.sid || undefined };
+            next[p] = { t: tool, m: st.mtimeMs, s: st.size, b: r.b, sk: r.sk?.length ? r.sk : undefined, mc: r.mc?.length ? r.mc : undefined, sid: r.sid || undefined };
             if (r.limits && (!limits || r.limits.at > limits.at)) limits = r.limits;
           } catch { /* unreadable */ }
         }
@@ -221,6 +251,16 @@ export async function skillUses() {
   const out = [];
   for (const f of Object.values(cache.files)) {
     for (const [name, ts, p, cwd, kind] of f.sk || []) out.push({ tool: f.t, name, path: p, ts, cwd, session: f.sid, cmd: kind === 'cmd' });
+  }
+  return out;
+}
+
+/** Every recorded MCP tool call in the last ~30 days: { tool, server, name, ts, session, cwd }. */
+export async function mcpUses() {
+  if (!lastScan) await refreshUsage();
+  const out = [];
+  for (const f of Object.values(cache.files)) {
+    for (const [server, name, ts, cwd] of f.mc || []) out.push({ tool: f.t, server, name, ts, cwd, session: f.sid });
   }
   return out;
 }

@@ -31,8 +31,14 @@ async function tailscaleStatus() {
   const bin = which('tailscale');
   if (!bin) return { installed: false };
   const out = await sh(bin, ['status', '--json'], 6000);
-  let host = null, online = false;
-  try { const j = JSON.parse(out); host = j.Self?.DNSName?.replace(/\.$/, '') || null; online = j.BackendState === 'Running'; } catch { /* logged out */ }
+  let host = null, online = false, phones = [];
+  try {
+    const j = JSON.parse(out);
+    host = j.Self?.DNSName?.replace(/\.$/, '') || null;
+    online = j.BackendState === 'Running';
+    // phones/tablets on the same tailnet: proves step "install Tailscale on your phone" is done
+    phones = Object.values(j.Peer || {}).filter((p) => /^(ios|android)$/i.test(p.OS || '')).map((p) => ({ name: p.HostName, os: p.OS, online: Boolean(p.Online) }));
+  } catch { /* logged out */ }
   const serve = await sh(bin, ['serve', 'status', '--json'], 6000);
   let url = null;
   try {
@@ -41,7 +47,7 @@ async function tailscaleStatus() {
       for (const h of Object.values(cfg.Handlers || {})) if (String(h.Proxy || '').endsWith(`:${PORT}`)) url = `https://${hp.replace(/:443$/, '')}`;
     }
   } catch { /* none */ }
-  return { installed: true, online, host, url };
+  return { installed: true, online, host, url, phones };
 }
 
 function autostartPath() {
