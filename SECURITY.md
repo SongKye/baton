@@ -6,10 +6,9 @@ Baton can run coding agents on your computer, so access to it matters.
 
 - Baton listens on **`127.0.0.1` only**. Nothing on your network can reach it unless you expose it (for example with `tailscale serve`, which keeps it inside your own tailnet).
 - Requests made **directly on the same computer** are allowed.
-- **Every other device** must enter the password once. It then gets an HttpOnly cookie and stays trusted while it keeps coming back within the trust window (default 30 days). Devices can be signed out in **Settings → Security**.
-- The default password is **`0000`** — Baton shows a warning until you change it.
-- Wrong passwords are rate-limited per IP (lockout after 5 tries, backing off) and globally.
-- When Baton is behind `tailscale serve`, you can additionally restrict access to specific Tailscale logins with `BATON_ALLOWED_LOGINS=me@example.com`.
+- Remote access uses **Tailscale Serve identity**, without a Baton password or device cookie. Set `BATON_ALLOWED_LOGINS=me@example.com` to restrict access to specific Tailscale logins; when unset, any identity forwarded by the local Tailscale proxy is accepted.
+- Identity headers are accepted only from loopback connections. Direct network connections and forwarded requests without a Tailscale identity are rejected. Keep Baton bound to loopback and use a trusted local Tailscale Serve proxy.
+- Other development servers opened from Baton have their own access controls.
 
 ## Secrets
 

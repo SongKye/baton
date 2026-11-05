@@ -55,7 +55,6 @@ try { db.exec('ALTER TABLE session_meta ADD COLUMN cwd_override TEXT'); } catch 
 const DEFAULT_SETTINGS = {
   lang: 'en',                   // UI language: 'en' (default) or 'ko'
   setupDone: false,             // onboarding finished or skipped
-  trustDays: 30,                // a signed-in device stays trusted this many days after its last visit
   showAutomated: false,         // codex exec / agy subagent / tmp sessions
   nudgeEnabled: true,
   nudgeHour: 21,                // local hour to send the daily nudge
@@ -67,6 +66,7 @@ const DEFAULT_SETTINGS = {
   defaultPerm: 'auto',
   notifyOnRunDone: true,
   workspaceRoots: ['~/workspace'],
+  defaultCwd: '',
 };
 
 export function getKV(k, fallback = null) {
@@ -164,6 +164,12 @@ export function listEvents(limit = 50) {
 }
 export function markEventsRead() {
   q('UPDATE events SET read = 1 WHERE read = 0').run();
+}
+export function lastEventId() {
+  return q('SELECT MAX(id) AS id FROM events').get().id || 0;
+}
+export function eventsAfter(id, limit = 10) {
+  return q('SELECT * FROM events WHERE id > ? ORDER BY id ASC LIMIT ?').all(id, limit);
 }
 export function unreadCount() {
   return q('SELECT COUNT(*) AS n FROM events WHERE read = 0').get().n;
