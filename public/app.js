@@ -343,7 +343,30 @@ function sessionRow(s, { showProject = true } = {}) {
       <div class="t">${s.pinned ? '<span>📌</span>' : ''}<span class="tt">${esc(s.title)}</span>${s.unseen ? '<i class="unseen"></i>' : ''}</div>
       <div class="m"><span>${TOOL[s.tool].name}</span>${showProject && s.project ? `<span>· ${esc(projectName(s.project))}</span>` : ''}<span>· ${ago(s.updated)}</span>${flags.join('')}</div>
       ${preview ? `<div class="p">${esc(preview)}</div>` : ''}
-    </div></a>`;
+    </div><span class="srow-more" role="button" tabindex="0" aria-label="${t('세션 메뉴')}">${ICON.more}</span></a>`;
+}
+/** Session rows have a ⋯ button: open the session menu right from the list, without entering the chat. */
+function onRowMore(e) {
+  const b = e.target.closest?.('.srow-more'); if (!b) return;
+  if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault(); e.stopPropagation();
+  const a = b.closest('a.srow'); if (a) sessionMenuFromHref(a.getAttribute('href'));
+}
+document.addEventListener('click', onRowMore, true);
+document.addEventListener('keydown', onRowMore, true);
+/** Checkbox row for bulk selection (Sessions tab, project page). Running sessions can't be selected. */
+function selRow(s, { showProject = true } = {}) {
+  return `<label class="srow ckrow"><input type="checkbox" data-k="${esc(s.key)}" ${s.live ? 'disabled' : ''}>
+    <div class="body"><div class="t"><span class="tt">${esc(s.title)}</span></div><div class="m"><span class="tool-badge ${s.tool}">${TOOL[s.tool].name}</span>${showProject ? `<span>${esc(projectName(s.project || s.cwd))}</span>` : ''}<span>· ${ago(s.updated)}</span>${s.live ? `<span class="flag warn">${t('실행 중')}</span>` : ''}</div></div></label>`;
+}
+/** Bulk "move to trash" for the selected session keys; true when it went ahead. */
+async function trashMany(keys) {
+  if (!keys.length) return false;
+  const ok = await pick(t('{n}개 세션을 휴지통으로 옮길까요?', { n: keys.length }), [{ value: true, label: t('옮기기'), desc: t('30일 안에는 휴지통에서 되살릴 수 있어요'), danger: true }, { value: false, label: t('취소') }]);
+  if (!ok) return false;
+  const r = await api('/api/sessions/trash', { body: { keys } });
+  toast(t('{n}개를 휴지통으로 옮겼어요', { n: r.moved }));
+  return true;
 }
 function toolDots(tools) { return `<span class="tooldots">${Object.keys(tools || {}).map((k) => `<i class="${k}"></i>`).join('')}</span>`; }
 function projectRow(p) {
@@ -498,7 +521,9 @@ async function viewProject([id]) {
   const head = $('.topbar');
   head.insertAdjacentHTML('afterbegin', `<a class="icon-btn" href="#/projects" style="margin-left:-10px">${ICON.back}</a>`);
   v.innerHTML = '<div class="skeleton" style="height:160px;margin-top:10px"></div>';
-  let showAuto = false;
+  let showAuto = false, selecting = false;
+  const sel = new Set();
+  G.cleanup = () => document.body.classList.remove('selecting');
   const load = async () => {
     const d = await api(`/api/projects/${encodeURIComponent(id)}${showAuto ? '?automated=1' : ''}`);
     const p = d.project;
@@ -544,16 +569,35 @@ async function viewProject([id]) {
       <div class="section" id="briefbox">${d.briefPending ? `<div class="card brief"><div class="phase"><div class="spinner"></div>${t('정리하는 중이에요…')}</div></div>` : briefHtml}</div>
       ${p.note ? `<div class="section"><div class="section-h"><h2>${t('메모')}</h2></div><div class="card" style="padding:12px 14px;white-space:pre-wrap;font-size:14px">${esc(p.note)}</div></div>` : ''}
       <div class="section"><div class="section-h"><h2>${t('세션')}</h2><span class="count">${human.length}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span>
-        <button class="more" id="autotoggle">${showAuto ? t('자동 실행 숨기기') : (p.autoSessions ? t('자동 실행 보기') : '')}</button></div>
-        <div class="card list">${d.sessions.slice(0, 40).map((s) => sessionRow(s, { showProject: false })).join('') || `<div class="empty">${t('세션이 없어요')}</div>`}</div>
+        <button class="more" id="autotoggle">${showAuto ? t('자동 실행 숨기기') : (p.autoSessions ? t('자동 실행 보기') : '')}</button>
+        ${d.sessions.length ? `<button class="more" id="pselbtn">${selecting ? t('완료') : t('선택')}</button>` : ''}</div>
+        <div class="card list" id="plist">${d.sessions.slice(0, 40).map((s) => (selecting ? selRow(s, { showProject: false }) : sessionRow(s, { showProject: false }))).join('') || `<div class="empty">${t('세션이 없어요')}</div>`}</div>
         <div style="display:flex;gap:8px;margin-top:10px">
           ${latest ? `<a class="btn block" href="#/s/${latest.tool}/${encodeURIComponent(latest.id)}">${t('최근 세션 열기')}</a>` : ''}
           <a class="btn block primary" href="#/new?cwd=${encodeURIComponent(p.path)}">${t('새 세션')}</a>
         </div>
       </div>
       <div class="section" id="pmcp"></div>
-      ${gitHtml}`;
+      ${gitHtml}
+      <div class="bulkbar" id="pbar" ${selecting ? '' : 'hidden'}><button class="btn sm ghost" id="pall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="pcount">0</b>' })}</span><button class="btn primary danger-fill" id="ptrash">${t('휴지통으로')}</button></div>`;
     loadProjectMcp($('#pmcp'), p.path);
+    // session list: ⋯ / long-press menu, or checkboxes for bulk trash
+    const shown = d.sessions.slice(0, 40);
+    const drawBar = () => { $('#pcount').textContent = sel.size; $('#ptrash').disabled = !sel.size; };
+    if (!selecting) attachLongPress($('#plist'));
+    $$('[data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); c.onchange = () => { c.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); drawBar(); }; });
+    drawBar();
+    $('#pselbtn') && ($('#pselbtn').onclick = () => { selecting = !selecting; sel.clear(); document.body.classList.toggle('selecting', selecting); load(); });
+    $('#pall').onclick = () => {
+      const ok = shown.filter((s) => !s.live);
+      const all = ok.every((s) => sel.has(s.key));
+      for (const s of ok) all ? sel.delete(s.key) : sel.add(s.key);
+      $$('[data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); }); drawBar();
+    };
+    $('#ptrash').onclick = async () => {
+      if (!(await trashMany([...sel]))) return;
+      sel.clear(); selecting = false; document.body.classList.remove('selecting'); load();
+    };
     $$('[data-st]', v).forEach((btn) => (btn.onclick = async () => {
       await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { status: btn.dataset.st, snoozeDays: 0 } });
       toast(t('「{s}」로 바꿨어요', { s: STATUS[btn.dataset.st] })); load();
@@ -632,20 +676,14 @@ async function viewSessions() {
       : `<div class="empty"><b>${q ? t('검색 결과가 없어요') : t('세션이 없어요')}</b>${f.automated ? '' : t('자동 실행 세션은 「자동 실행 포함」을 켜면 보여요')}</div>`;
     const more = $('#smore'); if (more) more.onclick = async () => { offset += 50; await fetchPage(); draw(); };
     if (!selecting) attachLongPress($('#slist'));
-    $$('[data-k]', v).forEach((c) => (c.onchange = () => { c.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); drawBar(); }));
+    $$('[data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); c.onchange = () => { c.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); drawBar(); }; });
     drawBar();
   };
-  const selRow = (s) => `<label class="srow ckrow"><input type="checkbox" data-k="${esc(s.key)}" ${sel.has(s.key) ? 'checked' : ''} ${s.live ? 'disabled' : ''}>
-    <div class="body"><div class="t"><span class="tt">${esc(s.title)}</span></div><div class="m"><span class="tool-badge ${s.tool}">${TOOL[s.tool].name}</span><span>${esc(projectName(s.project || s.cwd))}</span><span>· ${ago(s.updated)}</span>${s.live ? `<span class="flag warn">${t('실행 중')}</span>` : ''}</div></div></label>`;
   const drawBar = () => { $('#sbar').hidden = !selecting; $('#scount').textContent = sel.size; $('#strash').disabled = !sel.size; };
   $('#selbtn').onclick = () => { selecting = !selecting; sel.clear(); $('#selbtn').textContent = selecting ? t('완료') : t('선택'); document.body.classList.toggle('selecting', selecting); draw(); };
   $('#sall').onclick = () => { const all = items.filter((s) => !s.live).every((s) => sel.has(s.key)); for (const s of items) if (!s.live) all ? sel.delete(s.key) : sel.add(s.key); draw(); };
   $('#strash').onclick = async () => {
-    const keys = [...sel];
-    const ok = await pick(t('{n}개 세션을 휴지통으로 옮길까요?', { n: keys.length }), [{ value: true, label: t('옮기기'), desc: t('30일 안에는 휴지통에서 되살릴 수 있어요'), danger: true }, { value: false, label: t('취소') }]);
-    if (!ok) return;
-    const r = await api('/api/sessions/trash', { body: { keys } });
-    toast(t('{n}개를 휴지통으로 옮겼어요', { n: r.moved }));
+    if (!(await trashMany([...sel]))) return;
     sel.clear(); await reload();
   };
   G.cleanup = () => document.body.classList.remove('selecting');
@@ -777,12 +815,63 @@ function parseChoices(text) {
   const isQ = (x) => /[?？]\**\s*$|[:：]\**\s*$/.test(x);
   const q = tail ? (isQ(tail) && CHOOSE.test(tail) ? tail : null) : (isQ(before) ? before : null);
   if (!q || q.length > 240) return null;
-  const options = opts.map((o) => {
-    const x = strip(o);
-    const m = x.match(/^(.{1,50}?)\s+(?:—|–|-|:)\s+.+$/);
-    return { label: (m ? m[1] : x).replace(/^[A-Ha-h1-9][.)]\s+/, '').replace(/[.。]$/, ''), full: x };
+  return { question: strip(q), options: opts.map(choiceOf) };
+}
+
+/**
+ * Several "question + choices" blocks at the end of a reply -> [{ question, options }] (2+ questions), else null.
+ * CLIs without a question tool that reaches Baton ask like this:
+ *   1. Which database?        **Auth:** which provider?
+ *      - Postgres             a) Google
+ *      - SQLite               b) GitHub
+ * Every block must be a real question (ends with "?", or ":" plus a choosing word) with 2-6 options.
+ */
+function parseQuestions(text) {
+  const raw = String(text || '').replace(/\r/g, '');
+  if (/```\s*$/.test(raw.trim())) return null;
+  const lines = raw.split('\n').map((l) => l.trim());
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  const OPT = /^(?:[-*•]|\d{1,2}[.)]|[A-Ha-h][.)]|\([A-Ha-h1-9]\))\s+(.+)$/;
+  const CHOOSE = /골라|고르|선택|어느|어떤|어떻게|중에|중 하나|which|choose|pick|select|prefer|또는|아니면/i;
+  const strip = (x) => x.replace(/\*\*|__|`/g, '').trim();
+  const qText = (x) => strip(x).replace(/^#{1,6}\s+/, '').replace(/^(?:Q\s*)?\d{1,2}[.)]\s+|^(?:Q|질문)\s*\d{1,2}\s*[.:)]\s*/i, '').trim();
+  const isQ = (x) => { const y = qText(x); return y.length > 1 && y.length <= 240 && (/[?？]$/.test(y) || (/[:：]$/.test(y) && CHOOSE.test(y))); };
+  // up to two closing lines ("Tell me and I'll start") after the last block
+  let end = lines.length, tail = 0;
+  while (end && (!lines[end - 1] || (!OPT.test(lines[end - 1]) && !isQ(lines[end - 1]) && tail < 2))) { if (lines[end - 1]) tail++; end--; }
+  const blocks = [];
+  let i = end;
+  for (;;) {
+    const opts = [];
+    while (i > 0 && OPT.test(lines[i - 1]) && !isQ(lines[i - 1])) { opts.unshift(lines[i - 1].match(OPT)[1]); i--; }
+    let j = i;
+    while (j > 0 && !lines[j - 1]) j--;
+    if (opts.length < 2 || opts.length > 6 || opts.some((o) => o.length > 120) || !j || !isQ(lines[j - 1])) break;
+    blocks.unshift({ question: qText(lines[j - 1]), options: opts.map(choiceOf) });
+    i = j - 1;
+    while (i > 0 && !lines[i - 1]) i--;
+  }
+  return blocks.length >= 2 ? blocks : null;
+}
+/** "**Postgres** — reliable, needs a server" -> { label: 'Postgres', full: '…' } */
+function choiceOf(o) {
+  const x = o.replace(/\*\*|__|`/g, '').trim();
+  const m = x.match(/^(.{1,50}?)\s+(?:—|–|-|:)\s+.+$/);
+  return { label: (m ? m[1] : x).replace(/^[A-Ha-h1-9][.)]\s+/, '').replace(/[.。]$/, ''), full: x };
+}
+/** The pager for questions asked in plain text; the answers go back as one ordinary message. */
+function textAskCard(qs, sendText) {
+  const card = askPager(qs.map((q) => ({ question: q.question, header: '', multiSelect: false, options: q.options.map((o) => ({ label: o.label, description: o.full !== o.label ? o.full : '' })) })), {
+    onSubmit: async (ans) => {
+      if (!ans) { card.remove(); return true; }
+      const msg = qs.map((q, i) => (ans[q.question] ? `${i + 1}. ${q.question}\n→ ${ans[q.question]}` : '')).filter(Boolean).join('\n\n');
+      const ok = await sendText(msg);
+      if (ok) card.remove();
+      return ok;
+    },
   });
-  return { question: strip(q), options };
+  card.classList.add('ask-text-card');
+  return card;
 }
 
 function composerPrefs(tool) {
@@ -985,53 +1074,106 @@ function liveRun(container, runId, { onSession, onDone } = {}) {
   return { close: () => { closed = true; clearInterval(timer); es?.close(); document.removeEventListener('visibilitychange', onVis); } };
 }
 
-/** The agent asks the user to choose (Claude Code AskUserQuestion): option buttons, multi-select, free text. */
-function askCard(runId, ev) {
-  const qs = ev.questions || [];
+/**
+ * Questions from the agent, one per page: tap an option (a single choice moves on by itself) or type your own,
+ * then a review page and 「제출」. A lone single-choice question is still answered with one tap.
+ * onSubmit({ [question]: "label" | "a, b" | "free text" } | null = skipped) resolves true when it went through.
+ */
+function askPager(qs, { onSubmit, top = `❓ ${t('AI가 물어봐요')}` }) {
+  const n = qs.length;
   const pick = qs.map(() => new Set());
   const other = qs.map(() => '');
-  const quick = qs.length === 1 && !qs[0].multiSelect; // one single-choice question: a tap answers it
+  const quick = n === 1 && !qs[0].multiSelect;
+  let step = 0; // 0..n-1 = a question, n = review page (only when there are several)
+  let busy = false, advance = null;
   const card = document.createElement('div');
   card.className = 'ask-card';
-  card.innerHTML = `<div class="ask-top">❓ ${t('AI가 물어봐요')}</div>
-    ${qs.map((q, i) => `<div class="ask-q" data-q="${i}">
-      ${q.header ? `<span class="ask-h">${esc(q.header)}</span>` : ''}<div class="ask-text">${esc(q.question)}</div>
-      ${q.multiSelect ? `<div class="small muted">${t('여러 개 골라도 돼요')}</div>` : ''}
-      <div class="ask-opts">${q.options.map((o, j) => `<button class="ask-opt" data-o="${j}"><b>${esc(o.label)}</b>${o.description && o.description.trim().toLowerCase() !== o.label.trim().toLowerCase() ? `<span>${esc(o.description)}</span>` : ''}</button>`).join('')}</div>
-      <input class="ask-other" placeholder="${t('직접 입력…')}" autocomplete="off">
-    </div>`).join('')}
-    <div class="ask-act"><button class="btn sm ghost" data-skip>${t('건너뛰기')}</button><button class="btn sm primary" data-send ${quick ? 'hidden' : 'disabled'}>${t('답하기')}</button></div>`;
-  const answers = () => Object.fromEntries(qs.map((q, i) => {
-    const labels = [...pick[i]].map((j) => q.options[j].label);
+  const answerOf = (i) => {
+    const labels = [...pick[i]].map((j) => qs[i].options[j].label);
     if (other[i].trim()) labels.push(other[i].trim());
-    return [q.question, labels.join(', ')];
-  }).filter(([, v]) => v));
-  const ready = () => qs.every((q, i) => pick[i].size || other[i].trim());
-  const send = async (ans) => {
-    $$('button, input', card).forEach((x) => { x.disabled = true; });
-    try { await api(`/api/runs/${runId}/answer`, { body: { requestId: ev.requestId, answers: ans } }); }
-    catch (e) { toast(e.message, true); $$('button, input', card).forEach((x) => { x.disabled = false; }); }
+    return labels.join(', ');
   };
-  $$('.ask-q', card).forEach((qel) => {
-    const i = Number(qel.dataset.q), q = qs[i];
-    $$('.ask-opt', qel).forEach((b) => (b.onclick = () => {
-      const j = Number(b.dataset.o);
+  const answers = () => Object.fromEntries(qs.map((q, i) => [q.question, answerOf(i)]).filter(([, v]) => v));
+  const done = (i) => Boolean(pick[i].size || other[i].trim());
+  const reach = () => { const k = qs.findIndex((_, i) => !done(i)); return k < 0 ? n : k; }; // furthest page you may jump to
+  const submit = async (ans) => {
+    if (busy) return;
+    busy = true; clearTimeout(advance);
+    $$('button, input', card).forEach((x) => { x.disabled = true; });
+    const ok = await onSubmit(ans).catch(() => false);
+    busy = false;
+    if (!ok && card.isConnected && !card.classList.contains('done')) draw();
+  };
+  const go = (i) => { clearTimeout(advance); step = Math.max(0, Math.min(i, n > 1 ? n : 0)); draw(); };
+  const optHtml = (q, i) => q.options.map((o, j) => `<button class="ask-opt ${pick[i].has(j) ? 'on' : ''}" data-o="${j}"><b>${esc(o.label)}</b>${o.description && o.description.trim().toLowerCase() !== o.label.trim().toLowerCase() ? `<span>${esc(o.description)}</span>` : ''}</button>`).join('');
+  const syncButtons = () => {
+    const nx = $('[data-next]', card); if (nx) nx.disabled = !done(step);
+    const sd = $('[data-send]', card);
+    if (sd) { sd.disabled = !qs.every((_, i) => done(i)); if (quick) sd.hidden = !other[0].trim(); }
+  };
+  function draw() {
+    const review = n > 1 && step === n;
+    const steps = n > 1 ? `<div class="ask-steps">${qs.map((q, i) => `<button class="ask-dot${i === step ? ' on' : ''}${done(i) ? ' ok' : ''}" data-go="${i}" ${i > reach() ? 'disabled' : ''} aria-label="${esc(q.header || String(i + 1))}"></button>`).join('')}<span>${review ? t('답 확인') : `${step + 1} / ${n}`}</span></div>` : '';
+    let body;
+    if (review) {
+      body = `<div class="ask-review">${qs.map((q, i) => `<button class="ask-ans" data-go="${i}"><span>${esc(q.question)}</span><b>${esc(answerOf(i))}</b></button>`).join('')}</div>
+        <div class="small muted">${t('고칠 답을 누르면 그 질문으로 돌아가요')}</div>`;
+    } else {
+      const q = qs[step];
+      body = `<div class="ask-q">
+        ${q.header ? `<span class="ask-h">${esc(q.header)}</span>` : ''}<div class="ask-text">${esc(q.question)}</div>
+        ${q.multiSelect ? `<div class="small muted">${t('여러 개 골라도 돼요')}</div>` : ''}
+        <div class="ask-opts">${optHtml(q, step)}</div>
+        <input class="ask-other" placeholder="${t('직접 입력…')}" autocomplete="off" value="${esc(other[step])}">
+      </div>`;
+    }
+    const prev = n > 1 && step > 0 ? `<button class="btn sm ghost" data-prev>${t('이전')}</button>` : '';
+    const fwd = n === 1 || review
+      ? `<button class="btn sm primary" data-send>${n > 1 ? t('제출') : t('답하기')}</button>`
+      : `<button class="btn sm primary" data-next>${step === n - 1 ? t('확인') : t('다음')}</button>`;
+    card.innerHTML = `<div class="ask-top">${top}</div>${steps}${body}
+      <div class="ask-act"><button class="btn sm ghost" data-skip>${t('건너뛰기')}</button><span class="sp"></span>${prev}${fwd}</div>`;
+    syncButtons();
+    $$('[data-go]', card).forEach((x) => (x.onclick = () => go(Number(x.dataset.go))));
+    $('[data-prev]', card) && ($('[data-prev]', card).onclick = () => go(step - 1));
+    $('[data-next]', card) && ($('[data-next]', card).onclick = () => done(step) && go(step + 1));
+    $('[data-send]', card) && ($('[data-send]', card).onclick = () => submit(answers()));
+    $('[data-skip]', card).onclick = () => submit(null);
+    if (review) return;
+    const i = step, q = qs[i], inp = $('.ask-other', card);
+    $$('.ask-opt', card).forEach((x) => (x.onclick = () => {
+      const j = Number(x.dataset.o);
       if (q.multiSelect) { pick[i].has(j) ? pick[i].delete(j) : pick[i].add(j); }
-      else { pick[i] = new Set([j]); other[i] = ''; $('.ask-other', qel).value = ''; }
-      $$('.ask-opt', qel).forEach((x) => x.classList.toggle('on', pick[i].has(Number(x.dataset.o))));
-      if (quick) send(answers());
-      else $('[data-send]', card).disabled = !ready();
+      else { pick[i] = new Set([j]); other[i] = ''; inp.value = ''; }
+      $$('.ask-opt', card).forEach((y) => y.classList.toggle('on', pick[i].has(Number(y.dataset.o))));
+      syncButtons();
+      if (quick) return submit(answers());
+      // single choice with more questions to go: show the tap, then turn the page
+      if (!q.multiSelect && n > 1) { clearTimeout(advance); advance = setTimeout(() => { if (step === i) go(i + 1); }, 220); }
     }));
-    const inp = $('.ask-other', qel);
     inp.oninput = () => {
       other[i] = inp.value;
-      if (!q.multiSelect && inp.value.trim()) { pick[i].clear(); $$('.ask-opt', qel).forEach((x) => x.classList.remove('on')); }
-      const btn = $('[data-send]', card); btn.hidden = false; btn.disabled = !ready();
+      if (!q.multiSelect && inp.value.trim()) { pick[i].clear(); $$('.ask-opt', card).forEach((y) => y.classList.remove('on')); }
+      syncButtons();
     };
-    inp.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing && ready()) { e.preventDefault(); send(answers()); } };
+    inp.onkeydown = (e) => {
+      if (e.key !== 'Enter' || e.isComposing || !done(i)) return;
+      e.preventDefault();
+      if (n > 1) go(i + 1); else submit(answers());
+    };
+  }
+  draw();
+  return card;
+}
+
+/** Claude Code AskUserQuestion during a live run: the answer goes back to the CLI on stdin. */
+function askCard(runId, ev) {
+  const card = askPager(ev.questions || [], {
+    onSubmit: async (ans) => {
+      try { await api(`/api/runs/${runId}/answer`, { body: { requestId: ev.requestId, answers: ans } }); return true; }
+      catch (e) { toast(e.message, true); return false; }
+    },
   });
-  $('[data-send]', card).onclick = () => send(answers());
-  $('[data-skip]', card).onclick = () => send(null);
   card.answered = (ans) => {
     card.classList.add('done');
     const rows = ans === undefined ? `<div class="small muted">${t('응답이 끝나서 닫혔어요')}</div>`
@@ -1143,8 +1285,11 @@ async function viewChat([tool, id]) {
     if (!d.messages.length) msgsEl.insertAdjacentHTML('beforeend', `<div class="empty">${t('표시할 대화가 없어요')}</div>`);
     // the reply ended with a question and choices -> tap to answer
     const lastMsg = d.messages[d.messages.length - 1];
-    const ch = !busy && !live && lastMsg?.role === 'assistant' ? parseChoices(lastMsg.text) : null;
+    const asked = !busy && !live && lastMsg?.role === 'assistant';
+    const mq = asked ? parseQuestions(lastMsg.text) : null;
+    const ch = asked && !mq ? parseChoices(lastMsg.text) : null;
     const lastAi = [...$$('.msg-ai', msgsEl)].pop();
+    if (mq && lastAi) lastAi.after(textAskCard(mq, (text) => send(text, composerPrefs(tool), [])));
     if (ch && lastAi) {
       lastAi.insertAdjacentHTML('afterend', `<div class="quick-replies"><span>💬 ${t('눌러서 바로 답하기')}</span><div class="qr-opts">${ch.options.map((o, k) => `<button class="btn sm" data-qr-i="${k}" title="${esc(o.full)}">${esc(o.label)}</button>`).join('')}</div></div>`);
       $$('[data-qr-i]', msgsEl).forEach((b) => (b.onclick = async () => {
