@@ -9,7 +9,8 @@ import * as store from './store.js';
 import { decoratedSessions, projectsList, findSession, readMessages, getSnapshot, forceRefresh } from './indexer.js';
 import { gitInfo, projectRoot, projectFingerprint } from './projects.js';
 import { startRun, getRun, stopRun, listRuns, publicRun, activeRunFor, bus } from './runner.js';
-import { catalogs } from './models.js';
+import { catalogs, fromLine } from './models.js';
+import { schedule, listScheduled, cancelScheduled, nextReset, startScheduler } from './schedule.js';
 import { vapidPublicKey, notify, setPublicOrigin } from './push.js';
 import { allLimits } from './limits.js';
 import { trashSession, restoreSession, listTrash, emptyTrash, startTrashPurge, cleanupReason } from './trash.js';
@@ -381,6 +382,16 @@ route('POST', '/api/sessions/:tool/:id/move', async (req, url, { tool, id }) => 
   catch (e) { return [400, { error: e.message }]; }
 });
 
+// ---------- scheduled messages (send when the limit resets) ----------
+route('GET', '/api/scheduled', async (req, url) => ({ items: listScheduled({ key: url.searchParams.get('key'), all: url.searchParams.get('all') === '1' }) }));
+route('GET', '/api/scheduled/reset/:tool', async (req, url, { tool }) => ({ reset: await nextReset(tool, { force: true }).catch(() => null) }));
+route('POST', '/api/scheduled', async (req) => {
+  const b = await body(req);
+  try { return { item: await schedule({ tool: b.tool, sessionId: b.sessionId, prompt: b.prompt, model: b.model, effort: b.effort, perm: b.perm, when: b.when, at: b.at }) }; }
+  catch (e) { return [400, { error: e.message }]; }
+});
+route('POST', '/api/scheduled/:id/cancel', async (req, url, { id }) => { cancelScheduled(id); return { ok: true }; });
+
 // ---------- handoff between CLIs ----------
 route('POST', '/api/handoff', async (req) => {
   const b = await body(req);
@@ -486,9 +497,10 @@ bus.on('run_end', (run) => {
   const url = run.sessionId ? `/#/s/${run.tool}/${encodeURIComponent(run.sessionId)}` : '/#/';
   const label = clip(run.title || run.prompt, 40);
   const ok = run.status === 'done';
-  const title = ok ? `✅ ${label}` : `⚠️ ${label}`;
+  // title = who answered ("From Claude Code - Opus 5.5"); body = which session + the reply
+  const title = fromLine(run.tool, run.model);
   const res = run.events.findLast?.((e) => e.t === 'done');
-  const bodyText = ok ? clip((res?.result || tr('응답이 끝났어요')).replace(/\s+/g, ' '), 140) : clip(run.error || tr('실패했어요'), 140);
+  const bodyText = `${ok ? '✅' : '⚠️'} ${label}\n${ok ? clip((res?.result || tr('응답이 끝났어요')).replace(/\s+/g, ' '), 140) : clip(run.error || tr('실패했어요'), 140)}`;
   if (settings.notifyOnRunDone && !watching) notify({ kind: ok ? 'run_done' : 'run_error', title, body: bodyText, url, tag: `run-${run.sessionId || run.id}` }).catch(() => {});
   else store.addEvent(ok ? 'run_done' : 'run_error', title, bodyText, url);
   forceRefresh().catch(() => {});
@@ -587,6 +599,7 @@ server.listen(PORT, HOST, async () => {
   if (process.platform === 'win32') setTimeout(() => listPorts().catch(() => {}), 3000).unref(); // first PowerShell start is slow (~7 s)
   if (envInfo.imported.length || envInfo.extra.length) console.log(`[baton] env: ${envInfo.imported.length} vars from ${envInfo.shell || 'shell'}, ${envInfo.extra.length} from settings`);
   startNudgeScheduler();
+  startScheduler();
   startWatcher();
   startTrashPurge();
   startPendingMoves(async (key) => {

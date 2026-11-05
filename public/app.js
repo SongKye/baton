@@ -178,6 +178,7 @@ const routes = [
   [/^#\/skill\/(.+)$/, viewSkill, 'tools'],
   [/^#\/cleanup$/, viewCleanup, 'tools'],
   [/^#\/trash$/, viewTrash, 'tools'],
+  [/^#\/scheduled$/, viewScheduled, 'tools'],
 ];
 
 async function render() {
@@ -501,6 +502,7 @@ async function sessionMenuFromHref(href) {
 async function sessionMenu(s, after, { onTrashed } = {}) {
   const act = await pick(s.title, [
     { value: 'notify', label: s.notify ? `${t('🔔 끝나면 알림')} · ${s.notify === 2 ? t('매번') : t('한 번')}` : t('🔔 끝나면 폰으로 알림'), desc: t('PC 터미널에서 돌리는 중이어도 알려줘요') },
+    { value: 'schedule', label: t('⏰ 메시지 예약'), desc: t('한도가 풀리면 바로, 또는 정한 시각에 이 세션으로 보내요') },
     { value: 'newhere', label: t('➕ 이 프로젝트에서 새 세션'), desc: t('같은 폴더에서 원하는 CLI로 새 작업을 시작해요 (맥락은 넘기지 않아요)') },
     { value: 'move', label: t('📁 작업 폴더 옮기기'), desc: s.moved ? t('지금: {p}', { p: s.cwd }) : t('실제 작업하는 프로젝트 폴더로 이 세션을 옮겨요') },
     { value: 'handoff', label: t('🔀 다른 CLI로 이어가기'), desc: t('토큰이 부족할 때 다른 도구가 이 세션을 이어받아요') },
@@ -517,6 +519,7 @@ async function sessionMenu(s, after, { onTrashed } = {}) {
   else if (act === 'project') { if (s.project) location.hash = `#/p/${encodeURIComponent(s.project)}`; return; }
   else if (act === 'notify') { await notifyMenu(s); }
   else if (act === 'newhere') { await newSessionHere(s); return; }
+  else if (act === 'schedule') { if (await scheduleSheet(s)) after?.(); return; }
   else if (act === 'move') { if (await moveSessionSheet(s)) after?.(); return; }
   else if (act === 'handoff') { const d = await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}?limit=1&seen=0`).catch(() => ({})); await handoffSheet(s, d.links); return; }
   else if (act === 'trash') { if (await trashOne(s)) { if (onTrashed) onTrashed(); else after?.(); } return; }
@@ -794,9 +797,14 @@ async function viewChat([tool, id]) {
     $('#csub').innerHTML = `<span class="tool-badge ${tool}">${TOOL[tool].name}</span><span>${esc(projectName(session.project || session.cwd))}</span>${session.model ? `<span>· ${esc(session.model)}</span>` : ''}${session.notify ? `<span class="flag bell">${t('🔔 끝나면 알림')}</span>` : ''}`;
     $('#back').setAttribute('href', session.project ? `#/p/${encodeURIComponent(session.project)}` : '#/sessions');
     const banner = session.terminal ? `<div class="banner warn" style="margin-bottom:4px">${t('⚠️ 이 세션은 PC 터미널에서도 열려 있어요. 여기서 보내면 기록이 갈라질 수 있으니 PC 쪽이 쉬고 있을 때 보내세요.')}</div>` : '';
-    msgsEl.innerHTML = `${start > 0 ? `<button class="btn sm ghost load-older" id="older">${t('이전 대화 더 보기')}</button>` : ''}${banner}<div id="hobanners"></div>${msgsHtml(d.messages)}`;
+    msgsEl.innerHTML = `${start > 0 ? `<button class="btn sm ghost load-older" id="older">${t('이전 대화 더 보기')}</button>` : ''}${banner}<div id="hobanners"></div>${msgsHtml(d.messages)}<div id="schedbanners"></div>`;
     api('/api/limits').catch(() => ({})).then((lim) => {
       const hb = $('#hobanners'); if (!hb) return;
+      api(`/api/scheduled?key=${encodeURIComponent(`${tool}:${id}`)}`).then((sd) => {
+        const box = $('#schedbanners'); if (!box) return;
+        box.innerHTML = scheduledBanner(sd.items || []);
+        $$('[data-sched-cancel]', box).forEach((b) => (b.onclick = async () => { await api(`/api/scheduled/${b.dataset.schedCancel}/cancel`, { method: 'POST' }); toast(t('예약을 취소했어요')); load({ keepScroll: true }); }));
+      }).catch(() => {});
       hb.innerHTML = (session.moved ? `<div class="banner">📁 ${t('작업 폴더: {p} (원래 {o})', { p: esc(session.cwd), o: esc(session.origCwd || '') })}</div>` : '') + handoffBanners(session, links, lim);
       $$('[data-handoff]', hb).forEach((b) => (b.onclick = () => handoffSheet(session, links)));
       $$('[data-newhere]', hb).forEach((b) => (b.onclick = () => newSessionHere(session)));
@@ -825,8 +833,9 @@ async function viewChat([tool, id]) {
         scroll.scrollTop = scroll.scrollHeight;
         if (ev.limited) {
           msgsEl.insertAdjacentHTML('beforeend', `<div class="done-card denied"><div>⏳ ${t('{name} 사용 한도에 걸린 것 같아요. 다른 CLI가 이 세션을 이어받아 계속할 수 있어요.', { name: TOOL[tool].name })}</div>
-            <div class="row"><button class="btn sm primary" data-handoff-now>${t('다른 CLI로 이어가기')}</button></div></div>`);
+            <div class="row"><button class="btn sm primary" data-sched-now>${t('⏰ 한도 풀리면 보내기')}</button><button class="btn sm" data-handoff-now>${t('다른 CLI로 이어가기')}</button></div></div>`);
           $$('[data-handoff-now]', msgsEl).forEach((b) => (b.onclick = () => handoffSheet(session, links, { reason: t('한도에 걸렸어요. 어디서 이어갈까요?') })));
+          $$('[data-sched-now]', msgsEl).forEach((b) => (b.onclick = async () => { if (await scheduleSheet(session)) load({ keepScroll: true }); }));
         } else if (ev.denied?.length) showDenied(ev.denied);
         else if (ev.ok === false && ev.error) msgsEl.insertAdjacentHTML('beforeend', `<div class="done-card err">⚠️ ${esc(ev.error)}</div>`);
         loadState();
@@ -1195,11 +1204,13 @@ async function viewTools() {
     ${card('#/ports', '🖥️', t('서빙 중인 포트'), t('불러오는 중…'), 'tc-ports')}
     ${card('#/skills', '🧩', t('스킬'), t('어떤 스킬이 어디 있고 언제 쓰였는지'), 'tc-skills')}
     ${card('#/usage', '📊', t('사용량 · 한도'), t('CLI별 남은 한도와 토큰'), 'tc-usage')}
+    ${card('#/scheduled', '⏰', t('예약 메시지'), t('한도가 풀리면 보낼 메시지'), 'tc-sched')}
     ${card('#/cleanup', '🧹', t('세션 정리'), t('테스트·자동 실행·"hi" 세션 한 번에 지우기'), 'tc-clean')}
     ${card('#/trash', '🗑️', t('휴지통'), t('지운 세션 되살리기 (30일 보관)'), 'tc-trash')}
   </div>`;
   api('/api/ports').then((d) => { const n = d.ports.filter((p) => p.mine && !p.baton).length; $('#tc-ports') && ($('#tc-ports').textContent = t('내 서버 {n}개 실행 중', { n })); }).catch(() => {});
   api('/api/cleanup').then((d) => { $('#tc-clean') && ($('#tc-clean').textContent = t('정리 후보 {n}개', { n: d.items.length })); }).catch(() => {});
+  api('/api/scheduled').then((d) => { $('#tc-sched') && ($('#tc-sched').textContent = d.items.length ? t('{n}개 대기 중 · 다음: {when}', { n: d.items.length, when: whenFull(d.items[0].runAt) }) : t('대기 중인 예약 없음')); }).catch(() => {});
   api('/api/trash').then((d) => { $('#tc-trash') && ($('#tc-trash').textContent = d.items.length ? t('{n}개 보관 중 · 30일 뒤 완전 삭제', { n: d.items.length }) : t('비어 있어요')); }).catch(() => {});
 }
 
@@ -1748,6 +1759,63 @@ async function testConnectionUi(tool) {
     else toast(t('⚠️ 연결 실패: {e}', { e: r.error.slice(0, 160) }), true);
     return r;
   } catch (e) { toast(e.message, true); return null; }
+}
+
+// ---------------------------------------------------------------- SCHEDULED MESSAGES
+function whenFull(ms) {
+  const d = new Date(ms);
+  return d.toLocaleString(LOCALE, { month: 'numeric', day: 'numeric', weekday: 'short', hour: 'numeric', minute: '2-digit' });
+}
+
+/** Queue a message for `session`: when its CLI's limit resets, or at a chosen time. */
+async function scheduleSheet(session, { prompt = '' } = {}) {
+  const r = await api(`/api/scheduled/reset/${session.tool}`).catch(() => ({}));
+  const opts = [];
+  if (r.reset) opts.push({ value: 'reset', label: t('⏳ 한도가 풀리면 바로'), desc: t('{when} · {label} 초기화 직후', { when: whenFull(r.reset.at), label: r.reset.label }) });
+  opts.push({ value: 'time', label: t('🕐 시간 정해서'), desc: t('원하는 날짜·시각에 보내요') });
+  const when = await pick(t('언제 보낼까요?'), opts);
+  if (!when) return false;
+  let at = null;
+  if (when === 'time') {
+    const def = new Date(Date.now() + 3600_000); def.setSeconds(0, 0);
+    const local = new Date(def.getTime() - def.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const v = await sheet({
+      title: t('보낼 시각'),
+      body: `<div class="pwform"><input type="datetime-local" id="schedat" value="${local}"></div>`,
+      footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('다음')}</button>`,
+      onMount: (el, close) => { $('[data-x]', el).onclick = () => close(undefined); $('[data-ok]', el).onclick = () => close($('#schedat', el).value); },
+    });
+    if (!v) return false;
+    at = new Date(v).getTime();
+  }
+  const msg = await promptSheet(t('보낼 메시지'), prompt || t('계속해줘. 한도 때문에 멈춘 작업을 이어서 진행해줘.'), { multiline: true, okLabel: t('예약') });
+  if (!msg || !msg.trim()) return false;
+  const prefs = composerPrefs(session.tool);
+  try {
+    const { item } = await api('/api/scheduled', { body: { tool: session.tool, sessionId: session.id, prompt: msg.trim(), model: prefs.model, effort: prefs.effort, perm: prefs.perm, when, at } });
+    toast(t('⏰ {when}에 보낼게요', { when: whenFull(item.runAt) }));
+    return true;
+  } catch (e) { toast(e.message, true); return false; }
+}
+
+function scheduledBanner(items) {
+  return items.filter((x) => x.status === 'pending').map((x) => `<div class="banner sched">⏰ <span>${t('{when}에 보낼 예정', { when: whenFull(x.runAt) })}${x.whenType === 'reset' ? ` · ${t('한도 초기화 후')}` : ''}<br><b>${esc(clip1(x.prompt, 80))}</b></span>
+    <button class="btn sm ghost" data-sched-cancel="${x.id}">${t('취소')}</button></div>`).join('');
+}
+const clip1 = (s, n) => (String(s).length > n ? `${String(s).slice(0, n - 1)}…` : String(s));
+
+async function viewScheduled() {
+  const v = shell({ title: t('예약 메시지'), fab: false });
+  const d = await api('/api/scheduled?all=1');
+  const pending = d.items.filter((x) => x.status === 'pending');
+  const done = d.items.filter((x) => x.status !== 'pending').slice(-20).reverse();
+  const row = (x) => `<a class="srow" href="#/s/${x.tool}/${encodeURIComponent(x.sessionId)}"><div class="tool-avatar ${x.tool}">${TOOL[x.tool]?.short || '?'}</div>
+    <div class="body"><div class="t"><span class="tt">${esc(x.title || x.sessionId)}</span></div>
+    <div class="m"><span>${x.status === 'pending' ? t('{when}에 보낼 예정', { when: whenFull(x.runAt) }) : x.status === 'sent' ? t('보냈어요') : x.status === 'canceled' ? t('취소됨') : t('실패: {e}', { e: esc(x.error || '') })}</span></div>
+    <div class="p">${esc(x.prompt)}</div></div>${x.status === 'pending' ? `<button class="btn sm ghost" data-sched-cancel="${x.id}">${t('취소')}</button>` : ''}</a>`;
+  v.innerHTML = `${pending.length ? `<div class="card list">${pending.map(row).join('')}</div>` : `<div class="empty" style="padding-top:12vh"><b>${t('예약된 메시지가 없어요')}</b>${t('대화 화면 ⋯ 메뉴나 한도 초과 안내에서 예약할 수 있어요')}</div>`}
+    ${done.length ? `<div class="section"><div class="section-h"><h2>${t('지난 예약')}</h2></div><div class="card list">${done.map(row).join('')}</div></div>` : ''}`;
+  $$('[data-sched-cancel]', v).forEach((b) => (b.onclick = async (e) => { e.preventDefault(); await api(`/api/scheduled/${b.dataset.schedCancel}/cancel`, { method: 'POST' }); toast(t('예약을 취소했어요')); render(); }));
 }
 
 // ---------------------------------------------------------------- boot
