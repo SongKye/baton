@@ -451,8 +451,11 @@ async function viewProject([id]) {
     const d = await api(`/api/projects/${encodeURIComponent(id)}${showAuto ? '?automated=1' : ''}`);
     const p = d.project;
     $('.topbar h1').textContent = p.name;
-    $('.topbar h1').insertAdjacentHTML('afterend', `<div class="sub">${esc(p.path)}</div>`);
-    head.querySelector('.icon-btn[href="#/inbox"]').outerHTML = `<button class="icon-btn" id="pmore">${ICON.more}</button>`;
+    // load() re-runs after every edit — update the header in place instead of appending again.
+    let sub = head.querySelector('h1 + .sub');
+    if (!sub) { $('.topbar h1').insertAdjacentHTML('afterend', '<div class="sub"></div>'); sub = head.querySelector('h1 + .sub'); }
+    sub.textContent = p.path;
+    head.querySelector('.icon-btn[href="#/inbox"]')?.replaceWith(Object.assign(document.createElement('button'), { className: 'icon-btn', id: 'pmore', innerHTML: ICON.more }));
     const human = d.sessions.filter((s) => !s.automated);
     const latest = human[0] || d.sessions[0];
     const b = d.brief;
