@@ -7,6 +7,7 @@ import { getSnapshot, forceRefresh } from './indexer.js';
 import { liveSessions } from './live.js';
 import { activeRunFor, bus } from './runner.js';
 import { notify } from './push.js';
+import { fromLine } from './models.js';
 import { clip } from './util.js';
 import { tr } from './i18n.js';
 
@@ -51,7 +52,7 @@ async function tick() {
     if (now - (batonEnded.get(key) || 0) < 60_000) continue; // Baton's own run_end push already covered it
     const fresh = (await forceRefresh()).byKey.get(key) || s;
     const body = clip(String(fresh.lastReply || tr('응답이 끝났어요')).replace(/\s+/g, ' '), 140);
-    notify({ kind: 'watch_done', title: `✅ ${clip(fresh.title || tr('세션'), 40)}`, body, url: `/#/s/${s.tool}/${encodeURIComponent(s.id)}`, tag: `watch-${key}` }).catch(() => {});
+    notify({ kind: 'watch_done', title: fromLine(s.tool, fresh.model), body: `✅ ${clip(fresh.title || tr('세션'), 40)}\n${body}`, url: `/#/s/${s.tool}/${encodeURIComponent(s.id)}`, tag: `watch-${key}` }).catch(() => {});
     if (mode === 1) patchSessionMeta(key, { notify: 0 });
   }
   for (const k of state.keys()) if (!watched.some((w) => w.key === k)) state.delete(k);

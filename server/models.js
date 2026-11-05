@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process';
 import { HOME } from './util.js';
 import { childEnv } from './runner.js';
 import { getKV, setKV } from './store.js';
-import { binFor } from './tools.js';
+import { binFor, TOOLS } from './tools.js';
 import { runCli } from './platform.js';
 import { tr } from './i18n.js';
 import { claudeProviderCached, codexProvider } from './providers.js';
@@ -196,6 +196,17 @@ function simpleCatalog(tool, note) {
     efforts: [''],
     defaults: { model: null, effort: null },
   };
+}
+
+/** "From Claude Code - Opus 5.5": who answered, for notifications. */
+export function fromLine(tool, model) {
+  let cat = null;
+  try { cat = catalogs()[tool]; } catch { /* ignore */ }
+  const id = model || cat?.defaults?.model || null;
+  const m = cat?.models?.find((x) => x.id && x.id === id);
+  const label = m?.short || (id ? (tool === 'claude' ? prettyClaude(id) : id) : null);
+  const name = TOOLS[tool]?.name || tool;
+  return label ? `From ${name} - ${label}` : `From ${name}`;
 }
 
 export function catalogs() {

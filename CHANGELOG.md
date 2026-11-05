@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Added
 - MIT license.
+- **Scheduled messages**: queue a message for a session to be sent as soon as its CLI's usage limit resets (re-checked live, postponed if still exhausted, retried if it hits the limit again) or at a chosen time. From the limit-reached card, the chat ⋯ menu, and Tools → Scheduled messages.
+
+### Changed
+- Notifications say who answered: the title is "From Claude Code - Opus 5.5" (CLI and model), the body shows the session and the reply.
 
 ## [0.1.0] - 2026-11-05
 
