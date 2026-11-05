@@ -162,6 +162,10 @@ Browse subfolders when starting a session or moving its working folder, and sear
 
 Wide screens get a studio layout with a sidebar; phones keep the compact one. Pick a color palette (Default, Forest, Nord, Dracula, Tokyo Night, Monokai, Rosé Pine) and light / dark / system brightness in **Settings → Appearance & language**.
 
+## Updates
+
+Baton checks for a new release a few times a day and tells you once: a banner on Home and a notification. **Update now** pulls the new version (`git pull --ff-only`), installs its packages and restarts Baton — sessions and settings stay. If you installed from a zip, or your checkout has local changes, you get the steps instead. Check any time from the version line at the bottom of Settings; turn the alerts off in **Settings → Notifications**.
+
 ## How it works
 
 ```

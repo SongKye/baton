@@ -54,7 +54,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
   .tabbar { top: 0; bottom: 0; right: auto; width: var(--side-w); height: 100dvh; padding: 32px 18px 24px; display: flex; flex-direction: column; gap: 8px; background: #203c30; color: #e9efdf; border: 0; }
   .tabbar::before { display: none; }
   .studio-brand { display: flex; align-items: center; gap: 11px; margin: 0 6px 54px; }
-  .studio-mark { display: grid; place-items: center; width: 39px; height: 42px; background: #d4e5b4; color: #203c30; border-radius: 12px; font: italic 700 31px Georgia, serif; }
+  .studio-mark { display: block; width: 40px; height: 40px; flex: none; border-radius: 9px; }
   .studio-brand strong { font-size: 25px; font-weight: 600; letter-spacing: -.04em; }
   .studio-brand strong span { display: block; font-size: 7px; letter-spacing: .12em; color: #afc3b5; margin-top: 1px; }
   .tabbar > a { min-height: 46px; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 0 14px; font-size: 13px; color: #bdcec2; border-radius: 9px; }
