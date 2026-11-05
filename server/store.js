@@ -65,6 +65,7 @@ const DEFAULT_SETTINGS = {
   briefModel: 'haiku',
   defaultPerm: 'auto',
   notifyOnRunDone: true,
+  updateCheck: true,            // look for new Baton releases and announce them
   workspaceRoots: ['~/workspace'],
   defaultCwd: '',
 };

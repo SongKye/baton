@@ -29,6 +29,7 @@ import { providersSummary, resetProviderCache } from './providers.js';
 import { connect, testConnection, probeModels, findLocalLlms } from './connect.js';
 import { presets as mcpPresets, addMcp, copyMcp, removeMcp } from './mcp-install.js';
 import { qrSvg } from './qr.js';
+import { checkUpdate, updateCached, startUpdateChecker, restartSelf } from './update.js';
 import crypto from 'node:crypto';
 import { ensureBrief, briefPending } from './brief.js';
 import { dozingProjects, sendNudge, startNudgeScheduler } from './nudge.js';
@@ -101,6 +102,7 @@ route('GET', '/api/state', async () => ({
   tools: toolsMeta().map((t) => ({ ...t, installed: Boolean(binFor(t.id)) })),
   defaultCwd: defaultCwd(),
   version: VERSION,
+  update: updateCached(),
   os: OS_NAME,
 }));
 
@@ -157,6 +159,9 @@ route('POST', '/api/setup/probe', async (req) => {
 });
 route('GET', '/api/setup/local-llms', async () => findLocalLlms());
 // QR code for "scan this with your phone" (SVG built here, no third-party service sees the address)
+route('GET', '/api/update', async () => checkUpdate());
+route('POST', '/api/update/check', async () => checkUpdate({ force: true }));
+route('POST', '/api/update/restart', async () => { restartSelf(server); return { ok: true }; });
 route('GET', '/api/qr', async (req, url) => {
   const text = url.searchParams.get('text') || '';
   if (!text || text.length > 600) return [400, { error: 'text required' }];
@@ -663,6 +668,7 @@ server.listen(PORT, HOST, async () => {
   if (process.platform === 'win32') setTimeout(() => listPorts().catch(() => {}), 3000).unref(); // first PowerShell start is slow (~7 s)
   if (envInfo.imported.length || envInfo.extra.length) console.log(`[baton] env: ${envInfo.imported.length} vars from ${envInfo.shell || 'shell'}, ${envInfo.extra.length} from settings`);
   startNudgeScheduler();
+  startUpdateChecker();
   startScheduler();
   startWatcher();
   startTrashPurge();
