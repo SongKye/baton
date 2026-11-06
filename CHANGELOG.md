@@ -122,7 +122,8 @@ First public preview.
 ### Security
 - Listens on `127.0.0.1` only. Other devices need a password once (default `0000` — change it) and are remembered for 30 days; failed attempts are rate-limited.
 
-[Unreleased]: https://github.com/SongKye/baton/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/SongKye/baton/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/SongKye/baton/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/SongKye/baton/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SongKye/baton/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/SongKye/baton/compare/v0.2.0...v0.2.1
