@@ -377,6 +377,59 @@ async function render() {
 }
 window.addEventListener('hashchange', render);
 
+// ---------------------------------------------------------------- pull to refresh (touch only)
+// List screens don't poll, and the installed app has no browser pull-to-refresh (body has overscroll-behavior: none).
+// Pulling down from the very top re-renders the current screen; in a chat that means the chat's own scroller.
+(() => {
+  const PULL = 70, MAX = 110;
+  let y0 = null, x0 = 0, dy = 0, pulling = false, busy = false, ind = null;
+  const scroller = () => (document.body.classList.contains('chat-mode') ? $('#scroll') : null);
+  const atTop = () => { const s = scroller(); return s ? s.scrollTop <= 0 : (window.scrollY || document.documentElement.scrollTop) <= 0; };
+  const indicator = () => {
+    if (!ind) { ind = document.createElement('div'); ind.className = 'ptr'; ind.innerHTML = '<div class="spinner"></div>'; document.body.append(ind); }
+    return ind;
+  };
+  const show = (d) => {
+    const el = indicator(), p = Math.min(1, d / PULL);
+    el.style.transition = 'none';
+    el.style.opacity = String(p);
+    el.style.transform = `translate(-50%, ${Math.min(d, MAX) * 0.6}px) rotate(${p * 270}deg)`;
+    el.classList.toggle('ready', d >= PULL);
+  };
+  const hide = () => { if (!ind) return; ind.style.transition = ''; ind.style.opacity = '0'; ind.style.transform = 'translate(-50%, 0)'; ind.classList.remove('ready', 'busy'); };
+  document.addEventListener('touchstart', (e) => {
+    y0 = null; pulling = false; dy = 0;
+    if (busy || sheetStack.length || e.touches.length !== 1) return;
+    if (e.target.closest?.('input, textarea, select, [contenteditable], .sheet, .scrim, .composer')) return;
+    if (!atTop()) return;
+    y0 = e.touches[0].clientY; x0 = e.touches[0].clientX;
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if (y0 == null) return;
+    const t0 = e.touches[0], ddy = t0.clientY - y0, ddx = t0.clientX - x0;
+    if (!pulling) {
+      if (ddy < -4 || Math.abs(ddx) > Math.abs(ddy) + 4) { y0 = null; return; } // scrolling up or sideways
+      if (ddy < 10 || !atTop()) return;
+      pulling = true;
+    }
+    dy = ddy - 10;
+    if (e.cancelable) e.preventDefault(); // no rubber-band while pulling
+    show(dy);
+  }, { passive: false });
+  const end = async () => {
+    const go = pulling && dy >= PULL;
+    y0 = null; pulling = false; dy = 0;
+    if (!go) { hide(); return; }
+    busy = true;
+    const el = indicator();
+    el.style.transition = ''; el.style.opacity = '1'; el.style.transform = 'translate(-50%, 42px)';
+    el.classList.add('busy');
+    try { await Promise.all([render(), loadState()]); } finally { busy = false; hide(); }
+  };
+  document.addEventListener('touchend', end);
+  document.addEventListener('touchcancel', () => { y0 = null; pulling = false; dy = 0; hide(); });
+})();
+
 function shell({ title, sub = '', right = '', fab = true }) {
   const unread = G.state?.unread || 0;
   app.innerHTML = `
