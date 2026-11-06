@@ -5,6 +5,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Desktop chat input**: on a mouse + keyboard computer, Enter sends and Shift+Enter starts a new line (Ctrl/Cmd+Enter still works; phones keep Enter as a new line). Paste an image or drag it onto the chat to attach it.
+- **Open a local server in one click**: on *Serving ports*, web servers get an *Open ↗* button (`http://localhost:port`) when you're using Baton on that PC.
+- **Esc closes sheets** (only the top one when several are open).
+- **Show more on the project page**: projects with more than 40 sessions now page through all of them; *Select all* covers every row on screen.
+- **OpenCode and Cursor filters** on the Sessions and Skills tabs (every installed tool gets a chip).
+
+### Fixed
+- Desktop home: the update banner stays at the top instead of dropping to the bottom of the side column; the duplicate *New session* button and logo are gone; the usage card shows every installed tool without overflowing; sleeping projects stack as cards instead of a hidden-scrollbar strip.
+- Desktop chat: header, new-session bar, messages and input share one width; the sidebar keeps *Sessions* highlighted; the running-reply pill for other sessions stays visible.
+- Two-column port cards on wide screens no longer sit 10px out of line or overflow.
+- Desktop notification cards and their setting now work from 760px, matching the desktop layout.
+- *Original layout* and *Compare layouts* pages have a link back to the default screen.
+- A missing script, style or image now returns 404 instead of the app page, and notifications use the new Baton icon.
+
 ## [0.3.0] - 2026-11-06
 
 ### Added

@@ -86,6 +86,8 @@ function toast(msg, err = false) {
 }
 
 // ---------------------------------------------------------------- bottom sheets
+// Open sheets, oldest first: Escape closes only the topmost one.
+const sheetStack = [];
 function sheet({ title, body, footer, onMount }) {
   return new Promise((resolve) => {
     const scrim = document.createElement('div'); scrim.className = 'scrim';
@@ -96,10 +98,20 @@ function sheet({ title, body, footer, onMount }) {
     let done = false;
     const close = (v) => {
       if (done) return; done = true;
+      const at = sheetStack.indexOf(close); if (at >= 0) sheetStack.splice(at, 1);
+      document.removeEventListener('keydown', onKey, true);
       scrim.classList.remove('show'); el.classList.remove('show');
       setTimeout(() => { scrim.remove(); el.remove(); }, 250);
       resolve(v);
     };
+    // Capture phase so an Escape inside a sheet's text field closes the sheet, not some handler behind it.
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.isComposing || sheetStack[sheetStack.length - 1] !== close) return;
+      e.preventDefault(); e.stopPropagation();
+      close(undefined);
+    };
+    sheetStack.push(close);
+    document.addEventListener('keydown', onKey, true);
     scrim.onclick = () => close(undefined);
     // swipe down to dismiss — but never from inside a text field (selecting / scrolling text) or a scrolled area.
     // touchmove is non-passive so a drag on the sheet (or scrim) never scroll-chains into the page behind it.
@@ -248,7 +260,8 @@ async function loadState() {
 }
 
 // ---------------------------------------------------------------- desktop notification cards (bottom-right)
-const DESK_MQ = matchMedia('(min-width: 900px) and (hover: hover) and (pointer: fine)');
+// Same breakpoint as the Studio desktop layout (studio.css, 760px).
+const DESK_MQ = matchMedia('(min-width: 760px) and (hover: hover) and (pointer: fine)');
 const deskCardsOn = () => DESK_MQ.matches && localStorage.getItem('baton.deskCards') !== '0';
 // With push on, the service worker shows an OS notification whenever no Baton tab is focused,
 // so cards only cover events that happened while this tab had focus (no duplicates).
@@ -280,7 +293,7 @@ function deskCard(ev) {
   const el = document.createElement('a');
   el.className = `deskcard k-${esc(ev.kind || '')}`;
   el.href = ev.url || '#/';
-  el.innerHTML = `<img src="/icon-192.png?v=2" alt=""><div class="b"><div class="tt">${esc(ev.title || 'Baton')}</div>${ev.body ? `<div class="bd">${esc(ev.body)}</div>` : ''}</div><button class="x" aria-label="${t('닫기')}">${ICON.x}</button>`;
+  el.innerHTML = `<img src="/icon-handoff-192-v1.png" alt=""><div class="b"><div class="tt">${esc(ev.title || 'Baton')}</div>${ev.body ? `<div class="bd">${esc(ev.body)}</div>` : ''}</div><button class="x" aria-label="${t('닫기')}">${ICON.x}</button>`;
   const close = () => { el.classList.add('out'); setTimeout(() => el.remove(), 220); };
   el.querySelector('.x').onclick = (e) => { e.preventDefault(); e.stopPropagation(); close(); };
   el.addEventListener('click', () => setTimeout(close, 50));
@@ -302,6 +315,12 @@ function updateRunPill(runs) {
   }
   G.lastRunIds = nowIds;
   G.runs = runs;
+  drawRunPill();
+}
+/** Pill for runs you're not looking at (on desktop it stays visible inside a chat too). */
+function drawRunPill() {
+  const onScreen = (r) => $(`.live[data-run="${CSS.escape(String(r.id))}"]`) || (r.sessionId && location.hash.startsWith(`#/s/${r.tool}/${encodeURIComponent(r.sessionId)}`));
+  const runs = (G.runs || []).filter((r) => !onScreen(r));
   let pill = $('#runpill');
   if (!runs.length) { pill?.remove(); return; }
   if (!pill) { pill = document.createElement('a'); pill.id = 'runpill'; pill.className = 'runpill'; document.body.append(pill); }
@@ -318,9 +337,9 @@ const routes = [
   [/^#\/projects$/, viewProjects, 'projects'],
   [/^#\/p\/(.+)$/, viewProject, 'projects'],
   [/^#\/sessions$/, viewSessions, 'sessions'],
-  [/^#\/s\/([a-z]+)\/(.+)$/, viewChat, null],
+  [/^#\/s\/([a-z]+)\/(.+)$/, viewChat, null, 'sessions'],
   [/^#\/setup$/, viewSetup, 'settings'],
-  [/^#\/new$/, viewNew, null],
+  [/^#\/new$/, viewNew, null, 'sessions'],
   [/^#\/settings$/, viewSettings, 'settings'],
   [/^#\/inbox$/, viewInbox, 'home'],
   [/^#\/usage$/, viewUsage, 'tools'],
@@ -342,13 +361,14 @@ async function render() {
   const params = new URLSearchParams(qs || '');
   if (G.cleanup) { try { G.cleanup(); } catch { /* ignore */ } G.cleanup = null; }
   G.navCount = (G.navCount || 0) + 1;
-  for (const [re, fn, tab] of routes) {
+  for (const [re, fn, tab, sideTab] of routes) {
     const m = hash.match(re);
     if (!m) continue;
+    // tab === null → full-screen chat (mobile hides the tab bar); the desktop sidebar still marks where you are.
     document.body.classList.toggle('chat-mode', tab === null);
-    $$('#tabbar a').forEach((a) => a.classList.toggle('on', a.dataset.tab === tab));
+    $$('#tabbar a').forEach((a) => a.classList.toggle('on', a.dataset.tab === (tab ?? sideTab)));
     window.scrollTo(0, 0);
-    try { await fn(m.slice(1).map(decodeURIComponent), params); }
+    try { await fn(m.slice(1).map(decodeURIComponent), params); drawRunPill(); }
     catch (e) { console.error(e); app.innerHTML = `<div class="empty" style="padding-top:30vh"><b>${t('불러오지 못했어요')}</b>${esc(e.message)}<br><br><button class="btn" onclick="location.reload()">${t('다시 시도')}</button></div>`; }
     return;
   }
@@ -375,6 +395,7 @@ function sessionRow(s, { showProject = true } = {}) {
   if (s.running) flags.push(`<span class="flag run">${t('응답 중')}</span>`);
   else if (s.terminal) flags.push(`<span class="flag warn">${s.terminal === 'busy' ? t('PC에서 작업 중') : t('PC에서 열림')}</span>`);
   if (s.automated) flags.push(`<span class="flag">${t('자동')}</span>`);
+  else if (s.delegated) flags.push(`<span class="flag" title="${t('다른 도구가 백그라운드로 실행한 세션')}">${t('위임됨')}</span>`);
   if (s.notify < 0) flags.push(`<span class="flag bell" title="${t('알림 꺼짐')}">🔕</span>`);
   const preview = s.lastReply || s.lastPrompt || s.firstPrompt || '';
   return `<a class="srow" href="#/s/${s.tool}/${encodeURIComponent(s.id)}">
@@ -393,6 +414,16 @@ function onRowMore(e) {
   const a = b.closest('a.srow'); if (a) sessionMenuFromHref(a.getAttribute('href'));
 }
 document.addEventListener('click', onRowMore, true);
+document.addEventListener('wheel', (e) => {
+  const h = e.target.closest?.('.hscroll');
+  if (!h || e.ctrlKey || e.shiftKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+  if (h.scrollWidth <= h.clientWidth + 1 || getComputedStyle(h).overflowX === 'visible') return;
+  const max = h.scrollWidth - h.clientWidth;
+  // At either end, let the page scroll on as usual.
+  if ((e.deltaY < 0 && h.scrollLeft <= 0) || (e.deltaY > 0 && h.scrollLeft >= max - 1)) return;
+  e.preventDefault();
+  h.scrollLeft += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+}, { passive: false });
 document.addEventListener('keydown', onRowMore, true);
 /** Checkbox row for bulk selection (Sessions tab, project page). Running sessions can't be selected. */
 function selRow(s, { showProject = true } = {}) {
@@ -564,6 +595,8 @@ async function viewProject([id]) {
   head.insertAdjacentHTML('afterbegin', `<a class="icon-btn" href="#/projects" style="margin-left:-10px">${ICON.back}</a>`);
   v.innerHTML = '<div class="skeleton" style="height:160px;margin-top:10px"></div>';
   let showAuto = false, selecting = false, noteEditing = false, reloadAfterNote = false;
+  const PAGE = 40;
+  let limit = PAGE; // grows with 「더 보기」 and survives reloads (status change, memo save…)
   const sel = new Set();
   G.cleanup = () => document.body.classList.remove('selecting');
   const load = async () => {
@@ -577,6 +610,8 @@ async function viewProject([id]) {
     sub.textContent = p.path;
     head.querySelector('.icon-btn[href="#/inbox"]')?.replaceWith(Object.assign(document.createElement('button'), { className: 'icon-btn', id: 'pmore', innerHTML: ICON.more }));
     const human = d.sessions.filter((s) => !s.automated);
+    const listHtml = () => d.sessions.slice(0, limit).map((s) => (selecting ? selRow(s, { showProject: false }) : sessionRow(s, { showProject: false }))).join('') || `<div class="empty">${t('세션이 없어요')}</div>`;
+    const moreLabel = () => `${t('더 보기')} · ${t('{n}개 남음', { n: Math.max(0, d.sessions.length - limit) })}`;
     const latest = human[0] || d.sessions[0];
     const b = d.brief;
     const briefHtml = b ? `
@@ -617,7 +652,8 @@ async function viewProject([id]) {
       <div class="section"><div class="section-h"><h2>${t('세션')}</h2><span class="count">${human.length}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span>
         <button class="more" id="autotoggle">${showAuto ? t('자동 실행 숨기기') : (p.autoSessions ? t('자동 실행 보기') : '')}</button>
         ${d.sessions.length ? `<button class="more" id="pselbtn">${selecting ? t('완료') : t('선택')}</button>` : ''}</div>
-        <div class="card list" id="plist">${d.sessions.slice(0, 40).map((s) => (selecting ? selRow(s, { showProject: false }) : sessionRow(s, { showProject: false }))).join('') || `<div class="empty">${t('세션이 없어요')}</div>`}</div>
+        <div class="card list" id="plist">${listHtml()}</div>
+        <button class="btn block ghost" id="psmore" style="margin-top:10px;${d.sessions.length > limit ? '' : 'display:none'}">${moreLabel()}</button>
         <div style="display:flex;gap:8px;margin-top:10px">
           ${latest ? `<a class="btn block" href="#/s/${latest.tool}/${encodeURIComponent(latest.id)}">${t('최근 세션 열기')}</a>` : ''}
           <a class="btn block primary" href="#/new?cwd=${encodeURIComponent(p.path)}">${t('새 세션')}</a>
@@ -656,14 +692,22 @@ async function viewProject([id]) {
     $('#pnotecard').onclick = editNote;
     $('#punmute') && ($('#punmute').onclick = async () => { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { muted: false } }); toast(t('알림을 다시 켰어요')); load(); });
     // session list: ⋯ / long-press menu, or checkboxes for bulk trash
-    const shown = d.sessions.slice(0, 40);
+    const shown = () => d.sessions.slice(0, limit);
     const drawBar = () => { $('#pcount').textContent = sel.size; $('#ptrash').disabled = !sel.size; };
     if (!selecting) attachLongPress($('#plist'));
-    $$('[data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); c.onchange = () => { c.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); drawBar(); }; });
+    const bindChecks = () => $$('#plist [data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); c.onchange = () => { c.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); drawBar(); }; });
+    bindChecks();
     drawBar();
+    $('#psmore').onclick = () => {
+      limit += PAGE;
+      $('#plist').innerHTML = listHtml();
+      $('#psmore').style.display = d.sessions.length > limit ? '' : 'none'; // .btn's display beats [hidden]
+      $('#psmore').textContent = moreLabel();
+      bindChecks();
+    };
     $('#pselbtn') && ($('#pselbtn').onclick = () => { selecting = !selecting; sel.clear(); document.body.classList.toggle('selecting', selecting); load(); });
     $('#pall').onclick = () => {
-      const ok = shown.filter((s) => !s.live);
+      const ok = shown().filter((s) => !s.live);
       const all = ok.every((s) => sel.has(s.key));
       for (const s of ok) all ? sel.delete(s.key) : sel.add(s.key);
       $$('[data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); }); drawBar();
@@ -722,6 +766,7 @@ async function viewSessions() {
   let selecting = false;
   const sel = new Set();
   const f = store.get('sfilter', { tool: '', automated: false, hidden: false });
+  const seenTools = new Set();
   let q = sessionStorage.getItem('sq') || '';
   let offset = 0, items = [], total = 0;
   v.innerHTML = `
@@ -730,7 +775,7 @@ async function viewSessions() {
     <div id="slist" style="margin-top:12px"></div>
     <div class="bulkbar" id="sbar" hidden><button class="btn sm ghost" id="sall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="scount">0</b>' })}</span><button class="btn primary danger-fill" id="strash">${t('휴지통으로')}</button></div>`;
   const drawChips = () => {
-    $('#sf').innerHTML = [['', t('전체')], ['claude', 'Claude'], ['codex', 'Codex'], ['agy', 'Antigravity']]
+    $('#sf').innerHTML = [['', t('전체')], ...TOOL_IDS().filter((k) => k === f.tool || seenTools.has(k) || INSTALLED().includes(k)).map((k) => [k, TOOL[k].name])]
       .map(([k, l]) => `<button class="chip ${f.tool === k ? 'on' : ''}" data-tool="${k}">${l}</button>`).join('')
       + `<button class="chip ${f.automated ? 'on' : ''}" data-tg="automated">${t('자동 실행 포함')}</button><button class="chip ${f.hidden ? 'on' : ''}" data-tg="hidden">${t('숨긴 세션')}</button><a class="chip" href="#/cleanup">${t('🧹 정리하기')}</a>`;
     $$('[data-tool]', v).forEach((b) => (b.onclick = () => { f.tool = b.dataset.tool; reload(); }));
@@ -744,6 +789,7 @@ async function viewSessions() {
     if (f.hidden) sp.set('hidden', '1');
     const d = await api('/api/sessions?' + sp);
     total = d.total; items = offset ? items.concat(d.items) : d.items;
+    for (const s of d.items) seenTools.add(s.tool); // history from a CLI that's since been uninstalled still gets a chip
   };
   const draw = () => {
     $('#slist').innerHTML = items.length
@@ -763,7 +809,7 @@ async function viewSessions() {
     sel.clear(); await reload();
   };
   G.cleanup = () => document.body.classList.remove('selecting');
-  const reload = async () => { store.set('sfilter', f); drawChips(); offset = 0; await fetchPage(); draw(); };
+  const reload = async () => { store.set('sfilter', f); drawChips(); offset = 0; await fetchPage(); drawChips(); draw(); };
   let searchTimer;
   $('#sq').oninput = (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { q = e.target.value.trim(); sessionStorage.setItem('sq', q); reload(); }, 220); };
   await reload();
@@ -953,11 +999,14 @@ function textAskCard(qs, sendText) {
 function composerPrefs(tool) {
   return store.get(`prefs:${tool}`, { model: '', effort: '', perm: G.state?.settings?.defaultPerm || 'auto' });
 }
+// Mouse + keyboard machine: Enter sends, Shift+Enter breaks the line. Touch keeps Enter as a newline.
+const DESK_KEYS = matchMedia('(hover: hover) and (pointer: fine)');
+const sendHint = () => (DESK_KEYS.matches ? t('Enter로 보내기 · Shift+Enter로 줄바꿈') : t('Ctrl+Enter로 보내기'));
 function composerHtml(tool, isNew = false) {
   return `<div class="composer"><div class="inner"><div class="box">
     <div class="thumbs" id="thumbs" hidden></div>
-    <textarea id="input" rows="1" placeholder="${isNew ? t('{name}에게 첫 메시지…', { name: TOOL[tool].name }) : t('{name}에게 이어서 물어보기…', { name: TOOL[tool].name })}" enterkeyhint="enter"></textarea>
-    <div class="row"><button class="attach" id="attach" aria-label="${t('사진 첨부')}">${ICON.image}</button><input type="file" id="file" accept="image/*" multiple hidden><div class="opts" id="opts"></div><button class="send" id="send" disabled aria-label="${t('보내기')}">${ICON.send}</button></div>
+    <textarea id="input" rows="1" placeholder="${isNew ? t('{name}에게 첫 메시지…', { name: TOOL[tool].name }) : t('{name}에게 이어서 물어보기…', { name: TOOL[tool].name })}" enterkeyhint="${DESK_KEYS.matches ? 'send' : 'enter'}"></textarea>
+    <div class="row"><button class="attach" id="attach" aria-label="${t('사진 첨부')}" title="${t('사진 첨부 · 붙여넣기나 끌어다 놓기도 돼요')}">${ICON.image}</button><input type="file" id="file" accept="image/*" multiple hidden><div class="opts" id="opts"></div><button class="send" id="send" disabled aria-label="${t('보내기')}" title="${t('보내기')} (${sendHint()})">${ICON.send}</button></div>
   </div></div></div>`;
 }
 const EFFORT_DESC = { minimal: t('최소 · 가장 빠름'), low: t('낮음 · 빠르고 저렴'), medium: t('보통'), high: t('높음 · 더 깊게 생각'), xhigh: t('매우 높음'), max: t('최대 · 가장 느리고 토큰 많이 씀') };
@@ -1054,8 +1103,10 @@ function setupViewport() {
 function liveRun(container, runId, { onSession, onDone } = {}) {
   const el = document.createElement('div');
   el.className = 'live';
+  el.dataset.run = runId; // lets the run pill skip the run that's already on screen
   el.style.cssText = 'display:flex;flex-direction:column;gap:12px';
   container.append(el);
+  drawRunPill();
   const segs = []; // {type:'text', text, el} | {type:'tools', items, el}
   let lastI = -1, es = null, closed = false, started = Date.now(), thinking = false, rafPending = false, waiting = false;
   const asks = new Map();
@@ -1303,27 +1354,68 @@ function wireComposer(tool, onSend, draftKey) {
     el.innerHTML = atts.map((a, i) => `<div class="thumb"><img src="${a.url}" alt=""><button data-i="${i}" aria-label="${t('빼기')}">${ICON.x}</button></div>`).join('');
     $$('button', el).forEach((b) => (b.onclick = () => { atts.splice(+b.dataset.i, 1); drawThumbs(); fit(); }));
   };
+  // Same path for the file picker, clipboard paste and drag & drop: images only, 8 max.
+  const addFiles = async (list) => {
+    const imgs = [...list].filter((f) => f && f.type?.startsWith('image/'));
+    if (!imgs.length) return false;
+    const files = imgs.slice(0, Math.max(0, 8 - atts.length));
+    for (const f of files) {
+      try { atts.push(await shrinkImage(f)); } catch { toast(t('{name}을(를) 읽지 못했어요', { name: f.name || 'image' }), true); }
+    }
+    if (imgs.length > files.length || (files.length && atts.length >= 8)) toast(t('사진은 8장까지 첨부할 수 있어요'));
+    drawThumbs(); fit();
+    return true;
+  };
   $('#attach').onclick = () => $('#file').click();
   $('#file').onchange = async (e) => {
-    const files = [...e.target.files].slice(0, 8 - atts.length);
+    const files = [...e.target.files];
     e.target.value = '';
-    for (const f of files) {
-      try { atts.push(await shrinkImage(f)); } catch { toast(t('{name}을(를) 읽지 못했어요', { name: f.name }), true); }
-    }
-    if (files.length && atts.length >= 8) toast(t('사진은 8장까지 첨부할 수 있어요'));
-    drawThumbs(); fit();
+    await addFiles(files);
   };
+  const clipImages = (dt) => {
+    if (!dt) return [];
+    const files = [...(dt.files || [])].filter((f) => f.type.startsWith('image/'));
+    if (files.length) return files;
+    return [...(dt.items || [])].filter((it) => it.kind === 'file' && it.type.startsWith('image/')).map((it) => it.getAsFile()).filter(Boolean);
+  };
+  ta.addEventListener('paste', (e) => {
+    const files = clipImages(e.clipboardData);
+    if (!files.length) return; // plain text paste stays native
+    e.preventDefault();
+    addFiles(files);
+  });
+  const chat = ta.closest('.chat');
+  const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  if (chat) {
+    let depth = 0;
+    const off = () => { depth = 0; chat.classList.remove('dropping'); };
+    chat.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); depth++; chat.classList.add('dropping'); });
+    chat.addEventListener('dragover', (e) => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+    chat.addEventListener('dragleave', (e) => { if (!hasFiles(e)) return; if (--depth <= 0) off(); });
+    chat.addEventListener('drop', async (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault(); off();
+      if (!(await addFiles(e.dataTransfer.files))) toast(t('사진 파일만 첨부할 수 있어요'), true);
+      else ta.focus();
+    });
+  }
   const draft = sessionStorage.getItem(draftKey) || store.get(draftKey, '');
   if (draft) { ta.value = draft; sessionStorage.removeItem(draftKey); }
   ta.oninput = () => { fit(); store.set(draftKey, ta.value); };
-  ta.onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); btn.click(); } };
+  ta.onkeydown = (e) => {
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return; // IME (Korean/Japanese) is still composing
+    const send = e.metaKey || e.ctrlKey || (DESK_KEYS.matches && !e.shiftKey && !e.altKey);
+    if (!send) return; // Shift+Enter on desktop, plain Enter on touch → newline
+    e.preventDefault();
+    if (!btn.disabled) btn.click();
+  };
   btn.onclick = async () => {
     const imgs = atts.slice();
     const text = ta.value.trim() || (imgs.length ? t('이 사진을 봐줘.') : '');
     if (!text) return;
     btn.disabled = true;
     const ok = await onSend(text, composerPrefs(tool), imgs);
-    if (ok) { ta.value = ''; atts = []; drawThumbs(); store.set(draftKey, ''); fit(); ta.blur(); } else btn.disabled = false;
+    if (ok) { ta.value = ''; atts = []; drawThumbs(); store.set(draftKey, ''); fit(); if (!DESK_KEYS.matches) ta.blur(); } else btn.disabled = false;
   };
   drawOpts(tool);
   fit();
@@ -1864,7 +1956,7 @@ async function homeUsageCard() {
     };
     el.innerHTML = `<a class="card usage-mini" href="#/usage">
       <div class="h"><b>${t('사용 한도')}</b><span class="more">${t('자세히 ›')}</span></div>
-      <div class="row">${INSTALLED().slice(0, 4).map(cell).join('')}</div>
+      <div class="row">${INSTALLED().map(cell).join('')}</div>
     </a>`;
   } catch { el.remove(); }
 }
@@ -1899,6 +1991,7 @@ const matchQ = (q, ...fields) => {
 const searchBox = (id, value, placeholder) => `<label class="search">${ICON.search}<input id="${id}" type="search" placeholder="${placeholder}" aria-label="${placeholder}" value="${esc(value)}" autocomplete="off"></label>`;
 
 // ---------------------------------------------------------------- PORTS
+const ON_THIS_PC = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
 async function viewPorts() {
   const v = shell({ title: t('서빙 중인 포트'), fab: false, right: `<button class="icon-btn" id="prefresh" aria-label="${t('새로고침')}">${ICON.refresh}</button>` });
   v.innerHTML = '<div class="section"><div class="skeleton" style="height:300px"></div></div>';
@@ -1907,9 +2000,12 @@ async function viewPorts() {
   const sys = d.ports.filter((p) => !p.mine);
   const portCard = (p) => {
     const title = p.page?.title || (p.page?.kind === 'api' ? t('API 서버') : p.page?.kind === 'tcp' ? t('HTTP 아님') : '');
-    const reach = p.phoneUrl
+    const web = p.page && p.page.kind !== 'tcp';
+    // Browsing Baton on this PC: the server is one click away on localhost.
+    const openHere = web && ON_THIS_PC ? `<a class="btn sm${p.phoneUrl ? '' : ' primary'}" href="http://localhost:${p.port}" target="_blank" rel="noopener">${t('열기')} ↗</a>` : '';
+    const reach = openHere + (p.phoneUrl
       ? `<a class="btn sm primary" href="${esc(p.phoneUrl)}" target="_blank" rel="noopener">${t('폰에서 열기 ↗')}</a>`
-      : p.page && p.page.kind !== 'tcp' ? `<button class="btn sm" data-share="${p.port}">${t('폰에서 열 수 있게')}</button>` : '';
+      : web ? `<button class="btn sm" data-share="${p.port}">${t('폰에서 열 수 있게')}</button>` : '');
     const unshare = p.tailnetServe?.length && ![443, 8443].includes(p.tailnetServe[0].port) && !p.baton ? `<button class="btn sm ghost" data-unshare="${p.tailnetServe[0].port}">${t('공유 끄기')}</button>` : '';
     return `<div class="card port-card ${p.baton ? 'baton' : ''}">
       <div class="ph"><span class="pnum">:${p.port}</span><div class="pt"><b>${esc(title || p.name || t('알 수 없음'))}</b><span>${esc(p.name || '')}${p.startedAt ? ` · ${t('{when}부터 실행 중', { when: ago(p.startedAt) })}` : ''}</span></div></div>
@@ -1945,7 +2041,7 @@ async function viewPorts() {
     el.innerHTML = searching && !m.length && !sy.length
       ? `<div class="empty"><b>${t('검색 결과가 없어요')}</b></div>`
       : `<div class="section"><div class="section-h"><h2>${t('내 서버')}</h2><span class="count">${m.length}</span></div>
-      ${m.length ? m.map(portCard).join('') : `<div class="card empty"><b>${searching ? t('검색 결과가 없어요') : t('실행 중인 서버가 없어요')}</b></div>`}</div>
+      ${m.length ? `<div class="port-grid">${m.map(portCard).join('')}</div>` : `<div class="card empty"><b>${searching ? t('검색 결과가 없어요') : t('실행 중인 서버가 없어요')}</b></div>`}</div>
     ${sy.length ? `<div class="section"><details class="sysports"${searching ? ' open' : ''}><summary>${t('시스템 서비스 {n}개', { n: sy.length })}</summary>
       <div class="card list">${sy.map(sysRow).join('')}</div></details></div>` : ''}`;
     bind(el);
@@ -1992,7 +2088,8 @@ async function viewSkills(_, params) {
   v.innerHTML = `${searchBox('skq', q, t('스킬 이름·설명·위치 검색'))}<div class="chips" id="skf"></div><div id="sklist"></div>`;
   $('#skq').oninput = (e) => { q = e.target.value; sessionStorage.setItem('skq', q); draw(); };
   const chips = () => {
-    $('#skf').innerHTML = [['', t('전체')], ['claude', 'Claude'], ['codex', 'Codex'], ['agy', 'Antigravity']].map(([k, l]) => `<button class="chip ${f.tool === k ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')
+    const has = new Set(d.skills.map((s) => s.tool));
+    $('#skf').innerHTML = [['', t('전체')], ...TOOL_IDS().filter((k) => k === f.tool || has.has(k) || INSTALLED().includes(k)).map((k) => [k, TOOL[k].name])].map(([k, l]) => `<button class="chip ${f.tool === k ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')
       + `<button class="chip ${f.used ? 'on' : ''}" id="skused">${t('쓰인 것만')}</button>`;
     $$('[data-t]', v).forEach((b) => (b.onclick = () => { f.tool = b.dataset.t; store.set('skfilter', f); chips(); draw(); }));
     $('#skused').onclick = () => { f.used = !f.used; store.set('skfilter', f); chips(); draw(); };
