@@ -4,7 +4,7 @@
 .palette-option { min-width: 0; position: relative; cursor: pointer; }
 .palette-option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .palette-card { display: block; padding: 9px; border: 2px solid var(--border); border-radius: 12px; height: 100%; }
-.palette-preview { --swatch-bg: #f6f5f0; --swatch-surface: #fffefa; --swatch-line: #eeeee6; --swatch-accent: #38674f; --swatch-side: #203c30; display: flex; height: 85px; background: var(--swatch-bg); border-radius: 6px; overflow: hidden; }
+.palette-preview { --swatch-bg: #f5f4f0; --swatch-surface: #ffffff; --swatch-line: #efede7; --swatch-accent: #365b4b; --swatch-side: #292b28; display: flex; height: 85px; background: var(--swatch-bg); border-radius: 6px; overflow: hidden; }
 .palette-preview > i { width: 23%; background: var(--swatch-side); }
 .palette-preview > span { flex: 1; padding: 12px 10px; display: flex; flex-direction: column; gap: 5px; }
 .palette-preview b { height: 5px; width: 40%; background: var(--swatch-accent); border-radius: 3px; margin-bottom: 3px; }
@@ -19,7 +19,6 @@
 @media (max-width: 600px) { .palette-options { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; } }
 @media (min-width: 760px) {
   :root[data-palette]:not([data-palette="default"]) .tabbar:has(.studio-brand) { background: var(--palette-sidebar); }
-  :root[data-palette]:not([data-palette="default"]) .studio-mark { background: var(--accent); color: var(--accent-ink); }
   :root[data-palette]:not([data-palette="default"]) .tabbar:has(.studio-brand) > a.on svg { stroke: #f3f3f8; }
   :root[data-palette]:not([data-palette="default"]) .studio-brand strong,
   :root[data-palette]:not([data-palette="default"]) .studio-foot a { color: #f0eff5; }

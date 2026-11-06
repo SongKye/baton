@@ -8,7 +8,7 @@ const copy = (a, b) => ko ? a : b;
 const nav = document.querySelector('#tabbar');
 const brand = document.createElement('div');
 brand.className = 'studio-brand';
-brand.innerHTML = '<span class="studio-mark" aria-hidden="true">b.</span><strong>baton<span>WORKSPACE / STUDIO</span></strong>';
+brand.innerHTML = '<span class="baton-mark studio-mark" aria-hidden="true"></span><strong>baton<span>WORKSPACE / STUDIO</span></strong>';
 const foot = document.createElement('div');
 foot.className = 'studio-foot';
 foot.innerHTML = `<span>MAKE SOMETHING GOOD.</span><a href="/preview.html">${copy('화면 비교', 'Compare layouts')} ↗</a><a href="/original.html">${copy('기존 화면으로', 'Original layout')} ↗</a>`;

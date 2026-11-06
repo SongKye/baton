@@ -1,22 +1,5 @@
 /* Main entry loads this at 760px and above; studio.html previews all sizes. */
-:root {
-  --bg: #f6f5f0; --surface: #fffefa; --surface-2: #eeeee6; --surface-3: #e0e3d7;
-  --text: #243b32; --text-2: #5c6b62; --text-3: #718076; --border: #243b3219;
-  --accent: #38674f; --accent-ink: #fffefa; --accent-soft: #38674f12;
-  --shadow: none; --radius: 14px;
-}
-:root[data-theme="dark"] {
-  --bg: #151e19; --surface: #1d2922; --surface-2: #26352b; --surface-3: #36473b;
-  --text: #e5eadb; --text-2: #b8c5b8; --text-3: #93a894; --border: #dce9d51c;
-  --accent: #bdd590; --accent-ink: #203728; --accent-soft: #bdd59015;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #151e19; --surface: #1d2922; --surface-2: #26352b; --surface-3: #36473b;
-    --text: #e5eadb; --text-2: #b8c5b8; --text-3: #93a894; --border: #dce9d51c;
-    --accent: #bdd590; --accent-ink: #203728; --accent-soft: #bdd59015;
-  }
-}
+/* Studio layout shares the default colors in style.css at every screen size. */
 .studio-brand, .studio-foot { display: none; }
 .studio-intro { padding: 24px 0 20px; }
 .studio-eyebrow { display: flex; justify-content: space-between; gap: 16px; font-size: 10px; letter-spacing: .13em; font-weight: 700; color: var(--text-3); }
@@ -51,20 +34,20 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 @media (min-width: 760px) {
   :root { --side-w: 208px; }
   body { padding-left: var(--side-w); }
-  .tabbar { top: 0; bottom: 0; right: auto; width: var(--side-w); height: 100dvh; padding: 32px 18px 24px; display: flex; flex-direction: column; gap: 8px; background: #203c30; color: #e9efdf; border: 0; }
+  .tabbar { top: 0; bottom: 0; right: auto; width: var(--side-w); height: 100dvh; padding: 32px 18px 24px; display: flex; flex-direction: column; gap: 8px; background: #292b28; color: #f1efe9; border: 0; }
   .tabbar::before { display: none; }
   .studio-brand { display: flex; align-items: center; gap: 11px; margin: 0 6px 54px; }
-  .studio-mark { display: grid; place-items: center; width: 39px; height: 42px; background: #d4e5b4; color: #203c30; border-radius: 12px; font: italic 700 31px Georgia, serif; }
+  .studio-mark { display: block; width: 42px; height: 42px; flex: none; border-radius: 10px; }
   .studio-brand strong { font-size: 25px; font-weight: 600; letter-spacing: -.04em; }
-  .studio-brand strong span { display: block; font-size: 7px; letter-spacing: .12em; color: #afc3b5; margin-top: 1px; }
-  .tabbar > a { min-height: 46px; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 0 14px; font-size: 13px; color: #bdcec2; border-radius: 9px; }
-  .tabbar > a.on { color: #eff5e7; background: #ffffff12; }
-  .tabbar > a.on svg { stroke: #d4e5b4; }
+  .studio-brand strong span { display: block; font-size: 7px; letter-spacing: .12em; color: #a8aaa4; margin-top: 1px; }
+  .tabbar > a { min-height: 46px; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 0 14px; font-size: 13px; color: #c2c3bd; border-radius: 9px; }
+  .tabbar > a.on { color: #f8f7f2; background: #ffffff12; }
+  .tabbar > a.on svg { stroke: #adc5ad; }
   .tabbar > a:hover { background: #ffffff1c; }
   .tabbar .tab-badge { position: static; margin-left: auto; }
   .studio-foot { margin-top: auto; padding: 22px 12px 0; border-top: 1px solid #ffffff20; display: flex; flex-direction: column; gap: 16px; }
-  .studio-foot > span { font-size: 8px; letter-spacing: .12em; color: #a9c0b1; }
-  .studio-foot a { font-size: 12px; color: #d9e5d9; }
+  .studio-foot > span { font-size: 8px; letter-spacing: .12em; color: #a8aaa4; }
+  .studio-foot a { font-size: 12px; color: #e2e4dd; }
   main.view { max-width: 1360px; padding: 6px 38px 100px; }
   .topbar { max-width: 1360px; padding: 24px 38px 16px; width: 100%; margin: auto; border-bottom: 1px solid var(--border); }
   .topbar h1 { font-size: 16px; letter-spacing: -.02em; }
