@@ -1,6 +1,6 @@
 // Baton service worker: app-shell cache + web push.
-const CACHE = 'baton-v11';
-const SHELL = ['/', '/style.css?v=9', '/app.js?v=11', '/theme.js?v=3', '/palettes.css?v=1', '/studio.css?v=2', '/studio.js?v=2', '/vendor/marked.js', '/vendor/purify.js', '/icon.svg', '/manifest.webmanifest'];
+const CACHE = 'baton-v12';
+const SHELL = ['/', '/style.css?v=10', '/app.js?v=12', '/theme.js?v=3', '/palettes.css?v=1', '/studio.css?v=2', '/studio.js?v=2', '/vendor/marked.js', '/vendor/purify.js', '/icon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

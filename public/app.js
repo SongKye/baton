@@ -101,11 +101,15 @@ function sheet({ title, body, footer, onMount }) {
       resolve(v);
     };
     scrim.onclick = () => close(undefined);
-    // swipe down to dismiss
+    // swipe down to dismiss — but never from inside a text field (selecting / scrolling text) or a scrolled area
     let y0 = null;
-    el.addEventListener('touchstart', (e) => { if (el.querySelector('.sb').scrollTop <= 0) y0 = e.touches[0].clientY; }, { passive: true });
-    el.addEventListener('touchmove', (e) => { if (y0 != null) { const dy = e.touches[0].clientY - y0; if (dy > 0) el.style.transform = `translateY(${dy}px)`; } }, { passive: true });
-    el.addEventListener('touchend', (e) => { if (y0 != null) { const dy = e.changedTouches[0].clientY - y0; el.style.transform = ''; if (dy > 90) close(undefined); } y0 = null; });
+    const scrolled = (t) => { for (let n = t; n && n !== el; n = n.parentElement) if (n.scrollTop > 0) return true; return false; };
+    el.addEventListener('touchstart', (e) => {
+      const tg = e.target;
+      y0 = tg.closest?.('input, textarea, select, [contenteditable]') || scrolled(tg) ? null : e.touches[0].clientY;
+    }, { passive: true });
+    el.addEventListener('touchmove', (e) => { if (y0 != null) { const dy = e.touches[0].clientY - y0; el.style.transform = dy > 12 ? `translateY(${dy - 12}px)` : ''; } }, { passive: true });
+    el.addEventListener('touchend', (e) => { if (y0 != null) { const dy = e.changedTouches[0].clientY - y0; el.style.transform = ''; if (dy > 100) close(undefined); } y0 = null; });
     onMount?.(el, close);
   });
 }
@@ -227,7 +231,7 @@ async function deskCardsPoll(lastId) {
       // Already looking at that session, or the OS notification covered it while this tab was in the background.
       if (ev.url && ev.url !== '/#/' && location.hash && ev.url.endsWith(location.hash)) continue;
       if (desk.pushOn && ev.ts < desk.focusedSince) continue;
-      if (Date.now() - ev.ts > 10 * 60 * 1000) continue;
+      if (Date.now() - ev.ts > 10 * 60 * 1000 || ev.quiet) continue; // muted session/project: inbox only
       deskCard(ev);
     }
     desk.floor = Math.max(desk.floor, lastId);
@@ -335,7 +339,7 @@ function sessionRow(s, { showProject = true } = {}) {
   if (s.running) flags.push(`<span class="flag run">${t('응답 중')}</span>`);
   else if (s.terminal) flags.push(`<span class="flag warn">${s.terminal === 'busy' ? t('PC에서 작업 중') : t('PC에서 열림')}</span>`);
   if (s.automated) flags.push(`<span class="flag">${t('자동')}</span>`);
-  if (s.notify) flags.push('<span class="flag bell">🔔</span>');
+  if (s.notify < 0) flags.push(`<span class="flag bell" title="${t('알림 꺼짐')}">🔕</span>`);
   const preview = s.lastReply || s.lastPrompt || s.firstPrompt || '';
   return `<a class="srow" href="#/s/${s.tool}/${encodeURIComponent(s.id)}">
     <div class="tool-avatar ${s.tool}">${TOOL[s.tool].short}${s.live ? `<i class="live-dot ${s.running || s.terminal === 'busy' ? 'busy' : ''}"></i>` : ''}</div>
@@ -521,10 +525,11 @@ async function viewProject([id]) {
   const head = $('.topbar');
   head.insertAdjacentHTML('afterbegin', `<a class="icon-btn" href="#/projects" style="margin-left:-10px">${ICON.back}</a>`);
   v.innerHTML = '<div class="skeleton" style="height:160px;margin-top:10px"></div>';
-  let showAuto = false, selecting = false;
+  let showAuto = false, selecting = false, noteEditing = false, reloadAfterNote = false;
   const sel = new Set();
   G.cleanup = () => document.body.classList.remove('selecting');
   const load = async () => {
+    if (noteEditing) { reloadAfterNote = true; return; } // don't wipe a memo that's being typed
     const d = await api(`/api/projects/${encodeURIComponent(id)}${showAuto ? '?automated=1' : ''}`);
     const p = d.project;
     $('.topbar h1').textContent = p.name;
@@ -567,7 +572,10 @@ async function viewProject([id]) {
         ${p.snoozeUntil && p.snoozeUntil > Date.now() ? `<div class="banner" style="margin-top:8px">⏰ ${t('{date}까지 알림을 쉬어요', { date: new Date(p.snoozeUntil).toLocaleDateString(LOCALE) })}</div>` : ''}
       </div>
       <div class="section" id="briefbox">${d.briefPending ? `<div class="card brief"><div class="phase"><div class="spinner"></div>${t('정리하는 중이에요…')}</div></div>` : briefHtml}</div>
-      ${p.note ? `<div class="section"><div class="section-h"><h2>${t('메모')}</h2></div><div class="card" style="padding:12px 14px;white-space:pre-wrap;font-size:14px">${esc(p.note)}</div></div>` : ''}
+      ${p.muted ? `<div class="section"><div class="banner">🔕 ${t('이 프로젝트는 알림이 꺼져 있어요')} <button class="btn sm" id="punmute">${t('다시 켜기')}</button></div></div>` : ''}
+      <div class="section" id="pnote"><div class="section-h"><h2>${t('메모')}</h2></div>
+        ${p.note ? `<button class="card memo" id="pnotecard" title="${t('눌러서 고치기')}">${esc(p.note)}</button>`
+          : `<button class="memo-empty" id="pnotecard">📝 ${t('메모 남기기')}<span>${t('다음에 돌아왔을 때 볼 메모')}</span></button>`}</div>
       <div class="section"><div class="section-h"><h2>${t('세션')}</h2><span class="count">${human.length}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span>
         <button class="more" id="autotoggle">${showAuto ? t('자동 실행 숨기기') : (p.autoSessions ? t('자동 실행 보기') : '')}</button>
         ${d.sessions.length ? `<button class="more" id="pselbtn">${selecting ? t('완료') : t('선택')}</button>` : ''}</div>
@@ -581,6 +589,34 @@ async function viewProject([id]) {
       ${gitHtml}
       <div class="bulkbar" id="pbar" ${selecting ? '' : 'hidden'}><button class="btn sm ghost" id="pall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="pcount">0</b>' })}</span><button class="btn primary danger-fill" id="ptrash">${t('휴지통으로')}</button></div>`;
     loadProjectMcp($('#pmcp'), p.path);
+    // memo: tap it to edit right there
+    const editNote = () => {
+      if (noteEditing) return;
+      noteEditing = true;
+      const box = $('#pnote');
+      box.innerHTML = `<div class="section-h"><h2>${t('메모')}</h2></div>
+        <div class="card memo-edit"><textarea id="pnotetxt" placeholder="${t('예) 결제 붙이기 전에 약관 먼저 정리')}" maxlength="2000">${esc(p.note || '')}</textarea>
+          <div class="memo-act"><span class="small muted">${t('Ctrl+Enter로 저장')}</span><button class="btn sm ghost" data-nx>${t('취소')}</button><button class="btn sm primary" data-nok>${t('저장')}</button></div></div>`;
+      const ta = $('#pnotetxt', box);
+      const fit = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight + 2, innerHeight * 0.6)}px`; };
+      fit(); ta.oninput = fit;
+      ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+      const finish = async (save) => {
+        if (save && ta.value !== (p.note || '')) {
+          try { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { note: ta.value } }); toast(t('메모를 저장했어요')); }
+          catch (e) { toast(e.message, true); return; }
+        }
+        noteEditing = false; reloadAfterNote = false; load();
+      };
+      $('[data-nok]', box).onclick = () => finish(true);
+      $('[data-nx]', box).onclick = () => finish(false);
+      ta.onkeydown = (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); finish(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      };
+    };
+    $('#pnotecard').onclick = editNote;
+    $('#punmute') && ($('#punmute').onclick = async () => { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { muted: false } }); toast(t('알림을 다시 켰어요')); load(); });
     // session list: ⋯ / long-press menu, or checkboxes for bulk trash
     const shown = d.sessions.slice(0, 40);
     const drawBar = () => { $('#pcount').textContent = sel.size; $('#ptrash').disabled = !sel.size; };
@@ -624,12 +660,14 @@ async function viewProject([id]) {
       const act = await pick(p.name, [
         { value: 'pin', label: p.pinned ? t('고정 해제') : t('📌 상단 고정') },
         { value: 'rename', label: t('이름 바꾸기') },
-        { value: 'note', label: t('메모 남기기'), desc: t('다음에 돌아왔을 때 볼 메모') },
+        { value: 'note', label: p.note ? t('메모 고치기') : t('메모 남기기'), desc: t('다음에 돌아왔을 때 볼 메모 (메모를 눌러도 고칠 수 있어요)') },
+        { value: 'mute', label: p.muted ? t('🔔 이 프로젝트 알림 다시 켜기') : t('🔕 이 프로젝트 알림 끄기'), desc: p.muted ? t('세션 응답이 끝날 때마다 다시 알려줘요') : t('이 프로젝트의 모든 세션은 끝나도 알리지 않아요 (알림함에는 남아요)') },
         { value: 'snooze', label: t('알림 미루기 / 상태 정리') },
       ]);
       if (act === 'pin') await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { pinned: !p.pinned } });
       else if (act === 'rename') { const n = await promptSheet(t('프로젝트 이름'), p.name); if (n !== undefined) await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { name: n } }); }
-      else if (act === 'note') { const n = await promptSheet(t('메모'), p.note || '', { multiline: true, placeholder: t('예) 결제 붙이기 전에 약관 먼저 정리') }); if (n !== undefined) await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { note: n } }); }
+      else if (act === 'note') { $('#pnote').scrollIntoView({ behavior: 'smooth', block: 'center' }); return editNote(); }
+      else if (act === 'mute') { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { muted: !p.muted } }); toast(p.muted ? t('알림을 다시 켰어요') : t('이 프로젝트 알림을 껐어요')); }
       else if (act === 'snooze') return snoozeFlow(id, load);
       else return;
       load();
@@ -712,7 +750,7 @@ async function sessionMenuFromHref(href) {
 }
 async function sessionMenu(s, after, { onTrashed } = {}) {
   const act = await pick(s.title, [
-    { value: 'notify', label: s.notify ? `${t('🔔 끝나면 알림')} · ${s.notify === 2 ? t('매번') : t('한 번')}` : t('🔔 끝나면 폰으로 알림'), desc: t('PC 터미널에서 돌리는 중이어도 알려줘요') },
+    { value: 'notify', label: s.notify < 0 ? t('🔔 이 세션 알림 다시 켜기') : t('🔕 이 세션 알림 끄기'), desc: s.notify < 0 ? t('응답이 끝날 때마다 다시 알려줘요') : t('응답이 끝나도 폰·PC로 알리지 않아요 (알림함에는 남아요)') },
     { value: 'schedule', label: t('⏰ 메시지 예약'), desc: t('한도가 풀리면 바로, 또는 정한 시각에 이 세션으로 보내요') },
     { value: 'newhere', label: t('➕ 이 프로젝트에서 새 세션'), desc: t('같은 폴더에서 원하는 CLI로 새 작업을 시작해요 (맥락은 넘기지 않아요)') },
     { value: 'mcp', label: t('🔌 MCP 서버 보기'), desc: t('이 세션이 불러오는 MCP와 실제로 호출한 도구') },
@@ -729,7 +767,7 @@ async function sessionMenu(s, after, { onTrashed } = {}) {
   else if (act === 'hide') { await meta({ hidden: !s.hidden }); toast(s.hidden ? t('다시 보이게 했어요') : t('숨겼어요 (세션 탭 「숨긴 세션」에서 볼 수 있어요)')); }
   else if (act === 'rename') { const n = await promptSheet(t('세션 이름 (Baton에서만 보여요)'), s.title); if (n === undefined) return; await meta({ title: n || null }); }
   else if (act === 'project') { if (s.project) location.hash = `#/p/${encodeURIComponent(s.project)}`; return; }
-  else if (act === 'notify') { await notifyMenu(s); }
+  else if (act === 'notify') { await meta({ notify: s.notify < 0 ? 0 : -1 }); toast(s.notify < 0 ? t('알림을 다시 켰어요') : t('이 세션 알림을 껐어요')); }
   else if (act === 'newhere') { await newSessionHere(s); return; }
   else if (act === 'schedule') { if (await scheduleSheet(s)) after?.(); return; }
   else if (act === 'mcp') { await mcpSessionSheet(s); return; }
@@ -1266,7 +1304,7 @@ async function viewChat([tool, id]) {
     const d = await api(`/api/sessions/${tool}/${encodeURIComponent(id)}`);
     session = d.session; start = d.start; links = d.links || links;
     $('#ctitle').textContent = session.title;
-    $('#csub').innerHTML = `<span class="tool-badge ${tool}">${TOOL[tool].name}</span><span>${esc(projectName(session.project || session.cwd))}</span>${session.model ? `<span>· ${esc(session.model)}</span>` : ''}${session.notify ? `<span class="flag bell">${t('🔔 끝나면 알림')}</span>` : ''}<span id="cmcp"></span>`;
+    $('#csub').innerHTML = `<span class="tool-badge ${tool}">${TOOL[tool].name}</span><span>${esc(projectName(session.project || session.cwd))}</span>${session.model ? `<span>· ${esc(session.model)}</span>` : ''}${session.notify < 0 ? `<span class="flag bell">${t('🔕 알림 꺼짐')}</span>` : ''}<span id="cmcp"></span>`;
     mcpChip(session);
     $('#back').setAttribute('href', session.project ? `#/p/${encodeURIComponent(session.project)}` : '#/sessions');
     const banner = session.terminal ? `<div class="banner warn" style="margin-bottom:4px">${t('⚠️ 이 세션은 PC 터미널에서도 열려 있어요. 여기서 보내면 기록이 갈라질 수 있으니 PC 쪽이 쉬고 있을 때 보내세요.')}</div>` : '';
@@ -1554,7 +1592,7 @@ async function viewSettings() {
       ${!ps.supported || (isIOS && !standalone) ? `<div class="setting"><div class="l"><b>${t('홈 화면에 추가해야 알림을 받을 수 있어요')}</b><span>${t('Safari 공유 버튼 → 「홈 화면에 추가」 → 추가된 Baton 앱에서 이 화면을 다시 열어주세요')}</span></div></div>`
         : `<div class="setting"><div class="l"><b>${t('푸시 알림')}</b><span>${ps.sub ? t('이 기기에서 켜져 있어요') : t('응답 완료·잠자는 프로젝트 알림을 받아요')}</span></div>
             ${ps.sub ? `<button class="btn sm" id="ptest">${t('테스트')}</button><button class="btn sm ghost" id="poff">${t('끄기')}</button>` : `<button class="btn sm primary" id="pon">${t('켜기')}</button>`}</div>`}
-      <div class="setting"><div class="l"><b>${t('응답 완료 알림')}</b><span>${t('보고 있지 않은 세션의 응답이 끝나면 알려줘요')}</span></div>${sw('notifyOnRunDone')}</div>
+      <div class="setting"><div class="l"><b>${t('응답 완료 알림')}</b><span>${t('세션 응답이 끝날 때마다 알려줘요 (PC 터미널 포함). 세션·프로젝트 ⋯ 메뉴에서 따로 끌 수 있어요')}</span></div>${sw('notifyOnRunDone')}</div>
       <div class="setting"><div class="l"><b>${t('새 버전 알림')}</b><span>${t('Baton 새 버전이 나오면 한 번 알려줘요 (GitHub에서 하루 몇 번 확인)')}</span></div>${sw('updateCheck')}</div>
       ${DESK_MQ.matches ? `<div class="setting"><div class="l"><b>${t('데스크톱 화면 알림')}</b><span>${t('이 PC에서 Baton을 보고 있으면 화면 우측 하단에 알림 카드를 띄워요')}</span></div><label class="switch"><input type="checkbox" id="deskcards-sw" ${deskCardsOn() ? 'checked' : ''}><i></i></label></div>` : ''}
     </div></div>
@@ -2198,17 +2236,6 @@ async function viewTrash() {
   });
 }
 
-async function notifyMenu(s, after) {
-  const v = await pick(t('응답이 끝나면 폰으로 알림'), [
-    { value: 1, label: t('🔔 다음 한 번만'), desc: t('이번 작업이 끝나면 알려주고 꺼져요') },
-    { value: 2, label: t('🔔 끝날 때마다'), desc: t('PC 터미널에서 돌려도 매번 알려줘요') },
-    { value: 0, label: t('알림 끄기') },
-  ], s.notify || 0);
-  if (v === undefined) return;
-  await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}/meta`, { body: { notify: v } });
-  toast(v ? t('끝나면 알려드릴게요') : t('알림을 껐어요'));
-  after?.();
-}
 async function trashOne(s, after) {
   const ok = await pick(t('「{title}」을(를) 휴지통으로 옮길까요?', { title: s.title }), [{ value: true, label: t('휴지통으로'), desc: t('30일 안에는 되살릴 수 있어요'), danger: true }, { value: false, label: t('취소') }]);
   if (!ok) return false;

@@ -231,7 +231,7 @@ route('POST', '/api/sessions/:tool/:id/meta', async (req, url, { tool, id }) => 
   if ('pinned' in b) patch.pinned = Boolean(b.pinned);
   if ('hidden' in b) patch.hidden = Boolean(b.hidden);
   if ('title' in b) patch.title = b.title ? String(b.title).slice(0, 200) : null;
-  if ('notify' in b) patch.notify = [0, 1, 2].includes(Number(b.notify)) ? Number(b.notify) : 0;
+  if ('notify' in b) patch.notify = Number(b.notify) < 0 ? -1 : 0; // -1 = muted, 0 = default (notify)
   return store.patchSessionMeta(`${tool}:${decodeURIComponent(id)}`, patch);
 });
 
@@ -313,6 +313,7 @@ route('POST', '/api/projects/:pid/meta', async (req, url, { pid }) => {
   if ('name' in b) patch.name = b.name ? String(b.name).slice(0, 80) : null;
   if ('pinned' in b) patch.pinned = Boolean(b.pinned);
   if ('note' in b) patch.note = b.note ? String(b.note).slice(0, 2000) : null;
+  if ('muted' in b) patch.muted = Boolean(b.muted);
   if ('snoozeDays' in b) patch.snooze_until = b.snoozeDays ? Date.now() + Number(b.snoozeDays) * DAY : null;
   if (b.status === 'active') patch.snooze_until = patch.snooze_until ?? null;
   return store.patchProjectMeta(id, patch);
@@ -554,8 +555,13 @@ function streamRun(req, res, id, from) {
 }
 
 // ---------- the agent asked a question: ping the phone if nobody is looking ----------
+/** Muted session / project? (the session may be too new for the index: fall back to the run's folder) */
+const runNotifies = (run) => {
+  const key = run.sessionId ? `${run.tool}:${run.sessionId}` : null;
+  return store.notifyAllowed(key, { cwd: run.cwd });
+};
 bus.on('run_ask', (run) => {
-  if (run.listeners.size > 0) return;
+  if (run.listeners.size > 0 || !runNotifies(run)) return;
   const q = run.pendingAsk?.input?.questions?.[0]?.question || '';
   const url = run.sessionId ? `/#/s/${run.tool}/${encodeURIComponent(run.sessionId)}` : '/#/';
   notify({ kind: 'ask', title: fromLine(run.tool, run.model), body: `❓ ${clip(run.title || run.prompt, 40)}\n${clip(q, 140)}`, url, tag: `ask-${run.sessionId || run.id}` }).catch(() => {});
@@ -572,8 +578,8 @@ bus.on('run_end', (run) => {
   const title = fromLine(run.tool, run.model);
   const res = run.events.findLast?.((e) => e.t === 'done');
   const bodyText = `${ok ? '✅' : '⚠️'} ${label}\n${ok ? clip((res?.result || tr('응답이 끝났어요')).replace(/\s+/g, ' '), 140) : clip(run.error || tr('실패했어요'), 140)}`;
-  if (settings.notifyOnRunDone && !watching) notify({ kind: ok ? 'run_done' : 'run_error', title, body: bodyText, url, tag: `run-${run.sessionId || run.id}` }).catch(() => {});
-  else store.addEvent(ok ? 'run_done' : 'run_error', title, bodyText, url);
+  if (settings.notifyOnRunDone && !watching && runNotifies(run)) notify({ kind: ok ? 'run_done' : 'run_error', title, body: bodyText, url, tag: `run-${run.sessionId || run.id}` }).catch(() => {});
+  else store.addEvent(ok ? 'run_done' : 'run_error', title, bodyText, url, { quiet: !watching }); // muted / alerts off: inbox only
   forceRefresh().catch(() => {});
   observeRun(run);
 });

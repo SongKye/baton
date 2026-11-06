@@ -70,6 +70,7 @@ export function groupProjects(sessions, metaMap, briefs) {
         snoozeUntil: meta?.snooze_until || null,
         lastNudged: meta?.last_nudged || null,
         note: meta?.note || null,
+        muted: Boolean(meta?.muted),
         sessions: 0,
         autoSessions: 0,
         tools: {},
