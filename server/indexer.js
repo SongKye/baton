@@ -54,7 +54,7 @@ export async function forceRefresh() {
 export async function decoratedSessions({ includeAutomated, includeHidden } = {}) {
   const snap = await getSnapshot();
   const meta = allSessionMeta();
-  const live = await liveSessions(snap.byFile);
+  const liveMap = await liveSessions(snap.byFile);
   const settings = getSettings();
   const showAuto = includeAutomated ?? settings.showAutomated;
   const trashed = trashedKeys();
@@ -64,9 +64,12 @@ export async function decoratedSessions({ includeAutomated, includeHidden } = {}
     const m = meta.get(s.key);
     const hidden = Boolean(m?.hidden);
     if (hidden && !includeHidden) continue;
-    if (s.automated && !showAuto && !m?.pinned) continue;
-    const lv = live.get(s.key);
-    const terminal = lv && !childPids.has(lv.pid) ? lv : null;
+    const lv = liveMap.get(s.key);
+    const terminal = lv && !childPids.has(lv.pid) ? lv : null; // Baton's own child processes are shown as runs instead
+    // Automated runs (another tool's `claude -p`, `codex exec`, scripts) are noise once they finish, but while one
+    // is running it belongs in "Live now" so you can follow it. Subagents stay inside their parent session.
+    const runningOutside = Boolean(terminal) && !s.sub && s.source !== 'subagent';
+    if (s.automated && !showAuto && !m?.pinned && !runningOutside) continue;
     const run = activeRunFor(s.key);
     out.push({
       ...s,

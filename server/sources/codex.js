@@ -98,6 +98,7 @@ async function summarize(file, st, batonIds) {
     lastReply: clip(oneLine(lastReply), 400),
     model,
     automated,
+    background: source === 'exec' && !batonIds.has(id),
     source,
     file,
     size: st.size,
