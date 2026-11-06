@@ -12,6 +12,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Show more on the project page**: projects with more than 40 sessions now page through all of them; *Select all* covers every row on screen.
 - **OpenCode and Cursor filters** on the Sessions and Skills tabs (every installed tool gets a chip).
 
+### Changed
+- **Automated sessions are listed like any other** (tagged *Auto*) instead of being hidden by default — scripts, `codex exec`, another tool's `claude -p`, subagents. Hide what you don't want: *Select* → **Hide** on the Sessions tab or a project page (hides many at once; *Unhide* from the *Hidden* filter), or *Cleanup* → tick *Automated* → **Hide** to clear them all in one go. The *Show automated sessions* setting, the *Include automated* chip and the project page's *Show automated* button are gone.
+
 ### Fixed
 - **Background runs show up while they're running**: when another tool hands work to a CLI in the background (e.g. Antigravity running `claude -p`, or a script running `codex exec`), the session now appears in *Running now* with a *Working in background* tag, and its page follows along live. Once it finishes, a delegated Claude session that actually did work (used tools) stays in your list tagged *Delegated*; one-shot script calls are still hidden as automated.
 - Desktop home: the update banner stays at the top instead of dropping to the bottom of the side column; the duplicate *New session* button and logo are gone; the usage card shows every installed tool without overflowing; sleeping projects stack as cards instead of a hidden-scrollbar strip.

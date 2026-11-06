@@ -15,7 +15,7 @@ function fmtDate(ts) {
 }
 
 async function buildContext(root) {
-  const all = await decoratedSessions({ includeAutomated: true, includeHidden: true });
+  const all = await decoratedSessions({ includeHidden: true });
   const sessions = sessionsOfProject(all, root).sort((a, b) => b.updated - a.updated);
   const human = sessions.filter((s) => !s.automated);
   const picked = (human.length ? human : sessions).slice(0, 4);
