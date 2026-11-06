@@ -101,15 +101,51 @@ function sheet({ title, body, footer, onMount }) {
       resolve(v);
     };
     scrim.onclick = () => close(undefined);
-    // swipe down to dismiss — but never from inside a text field (selecting / scrolling text) or a scrolled area
-    let y0 = null;
+    // swipe down to dismiss — but never from inside a text field (selecting / scrolling text) or a scrolled area.
+    // touchmove is non-passive so a drag on the sheet (or scrim) never scroll-chains into the page behind it.
+    let y0 = null, yLast = 0, dragging = false;
+    const field = (t) => t.closest?.('input, textarea, select, [contenteditable]');
     const scrolled = (t) => { for (let n = t; n && n !== el; n = n.parentElement) if (n.scrollTop > 0) return true; return false; };
+    const canScroll = (t, up) => {
+      for (let n = t; n && n !== el; n = n.parentElement) {
+        if (n.scrollHeight <= n.clientHeight + 1 || !/(auto|scroll)/.test(getComputedStyle(n).overflowY)) continue;
+        if (up ? n.scrollTop + n.clientHeight < n.scrollHeight - 1 : n.scrollTop > 0) return true;
+      }
+      return false;
+    };
+    scrim.addEventListener('touchmove', (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
     el.addEventListener('touchstart', (e) => {
       const tg = e.target;
-      y0 = tg.closest?.('input, textarea, select, [contenteditable]') || scrolled(tg) ? null : e.touches[0].clientY;
+      yLast = e.touches[0].clientY;
+      y0 = field(tg) || scrolled(tg) ? null : yLast;
+      dragging = false;
     }, { passive: true });
-    el.addEventListener('touchmove', (e) => { if (y0 != null) { const dy = e.touches[0].clientY - y0; el.style.transform = dy > 12 ? `translateY(${dy - 12}px)` : ''; } }, { passive: true });
-    el.addEventListener('touchend', (e) => { if (y0 != null) { const dy = e.changedTouches[0].clientY - y0; el.style.transform = ''; if (dy > 100) close(undefined); } y0 = null; });
+    el.addEventListener('touchmove', (e) => {
+      const y = e.touches[0].clientY, step = y - yLast; yLast = y;
+      if (y0 != null) {
+        const dy = y - y0;
+        if (!dragging && dy < -6) y0 = null; // moved up first → it's a content scroll, not a dismiss
+        else if (dragging || dy > 12) {
+          if (!dragging) { dragging = true; el.style.transition = 'none'; }
+          if (e.cancelable) e.preventDefault();
+          el.style.transform = `translateY(${Math.max(0, dy - 12)}px)`;
+          return;
+        }
+      }
+      // not dragging: let inner scrollers / text fields scroll, but never chain the gesture to the page behind
+      if (e.cancelable && !field(e.target) && !canScroll(e.target, step < 0)) e.preventDefault();
+    }, { passive: false });
+    const endDrag = (e) => {
+      if (y0 != null && dragging) {
+        const dy = e.changedTouches[0].clientY - y0;
+        el.style.transition = '';
+        el.style.transform = '';
+        if (dy > 100) close(undefined);
+      }
+      y0 = null; dragging = false;
+    };
+    el.addEventListener('touchend', endDrag);
+    el.addEventListener('touchcancel', endDrag);
     onMount?.(el, close);
   });
 }
@@ -244,7 +280,7 @@ function deskCard(ev) {
   const el = document.createElement('a');
   el.className = `deskcard k-${esc(ev.kind || '')}`;
   el.href = ev.url || '#/';
-  el.innerHTML = `<img src="/icon-192.png" alt=""><div class="b"><div class="tt">${esc(ev.title || 'Baton')}</div>${ev.body ? `<div class="bd">${esc(ev.body)}</div>` : ''}</div><button class="x" aria-label="${t('닫기')}">${ICON.x}</button>`;
+  el.innerHTML = `<img src="/icon-192.png?v=2" alt=""><div class="b"><div class="tt">${esc(ev.title || 'Baton')}</div>${ev.body ? `<div class="bd">${esc(ev.body)}</div>` : ''}</div><button class="x" aria-label="${t('닫기')}">${ICON.x}</button>`;
   const close = () => { el.classList.add('out'); setTimeout(() => el.remove(), 220); };
   el.querySelector('.x').onclick = (e) => { e.preventDefault(); e.stopPropagation(); close(); };
   el.addEventListener('click', () => setTimeout(close, 50));
@@ -412,6 +448,8 @@ async function viewHome(_, params) {
   const hour = new Date().getHours();
   const greet = hour < 6 ? t('늦은 밤이에요 🌙') : hour < 12 ? t('좋은 아침이에요 ☀️') : hour < 18 ? t('오후도 힘내요 🏃') : t('오늘 하루 수고했어요 🌆');
   const v = shell({ title: 'Baton', sub: greet });
+  $('.topbar h1').classList.add('home-brand');
+  $('.topbar h1').insertAdjacentHTML('afterbegin', '<span class="baton-mark" aria-hidden="true"></span>');
   v.innerHTML = '<div class="section"><div class="skeleton" style="height:70px"></div></div><div class="section"><div class="skeleton" style="height:200px"></div></div>';
   const d = await api('/api/home');
   const badge = $('#doze-badge'); badge.hidden = !d.dozing.length; badge.textContent = d.dozing.length;
@@ -1560,7 +1598,7 @@ async function viewSettings() {
         <h3 class="theme-group-title" id="palette-title">${t('색상 테마')}</h3>
         <div class="palette-options" role="group" aria-labelledby="palette-title">
           ${[
-            ['default', t('기본'), t('Baton의 원래 색감')],
+            ['default', t('기본'), t('따뜻한 중성색과 차분한 녹색')],
             ['forest', 'Forest', t('종이 위의 차분한 숲')],
             ['nord', 'Nord', t('시원한 북유럽 블루')],
             ['dracula', 'Dracula', t('보랏빛으로 선명하게')],
