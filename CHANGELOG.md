@@ -5,8 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-07
+
 ### Added
 - **Pull to refresh**: on a phone, pull down from the top of any screen (or the top of a chat) to reload it.
+
+### Changed
+- Updated DOMPurify from 3.2.6 to 3.4.17 and marked from 15.0.12 to 18.1.3 for security hardening and Markdown fixes.
+- Updated the CI and release workflows to actions/checkout v7 and actions/setup-node v7.
 
 ### Fixed
 - **Claude chat image history**: attached photos remain visible after replies, refreshes and reopening a chat. Images load lazily from the session transcript; tap a preview to open the full image.
