@@ -27,7 +27,7 @@ Baton reads the session files your CLIs already write, puts them in one place, a
 - 📊 **Limits & usage** — live subscription limits and token usage per CLI and model
 - 🔌 **MCP servers** — add popular servers to every CLI in one tap, and see which ones each CLI loads in each folder, whether they connect, and which tools agents actually call
 - 🖥 **Served ports · 🧩 skills · 🧹 cleanup** — what's running where, which skills agents actually use, and one-tap cleanup of throwaway sessions
-- 🔔 **Notifications** — your phone buzzes when a reply finishes or the agent has a question; on a desktop, cards pop up in the corner
+- 🔔 **Notifications** — your phone buzzes whenever a session finishes (Baton or PC terminal) or the agent has a question; on a desktop, cards pop up in the corner. Mute a session or a whole project from its ⋯ menu
 - 🏢 **Any backend** — subscriptions, API keys, Amazon Bedrock, Google Vertex, LLM gateways and self-hosted models
 
 ## Quick start
@@ -151,8 +151,8 @@ There is no password: Baton trusts the Tailscale identity of the request. To all
 
 When an agent needs you to choose, you answer in the chat:
 
-- **Claude Code** — its question tool (AskUserQuestion) shows up as a card with the options, multi-select and your own text. Tap to answer and the reply continues. If you're not looking, your phone gets a notification.
-- **Every CLI** — when a reply ends with a question and a short list of choices, the choices become buttons. Tapping one sends it as your next message.
+- **Claude Code** — its question tool (AskUserQuestion) shows up as a card with the options, multi-select and your own text — one question per page, then a review page and Submit. The reply continues once you answer. If you're not looking, your phone gets a notification.
+- **Every CLI** — when a reply ends with a question and a short list of choices, the choices become buttons. Tapping one sends it as your next message. Several numbered questions with choices get the same one-per-page card, and your answers go back as one message.
 
 ## Working folders
 

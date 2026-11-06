@@ -8,10 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Added
 - **Session menu from any list**: every session row (Home, Sessions, project page) has a ⋯ button that opens the session menu — rename, pin, move, trash… — without opening the chat. Long-press / right-click now works on the project page too.
 - **Bulk trash on the project page**: *Select* next to the session list, tick sessions (or *Select all*), then *Move to trash*.
+- **Mute a session or a project**: ⋯ → *Mute this session* / *Mute this project*. Muted sessions still show up in the inbox, just without a phone or desktop alert. 🔕 marks them in lists.
+- **Edit the project note in place**: tap the note to edit it right there (Ctrl+Enter saves, Esc cancels); an empty project shows a *Leave a note* button.
 
 ### Changed
 - **Agent questions, one per page**: when an agent asks several questions, you now see one at a time — tap a choice (single-choice questions turn the page by themselves) or type your own, step back with *Back*, check everything on a review page and *Submit*. A single single-choice question is still one tap.
+- **Notifications are on for every session by default**: you get a ping each time any session finishes, whether it ran in Baton or in a PC terminal (sessions active in the last 3 hours are followed; automated runs are skipped). The old per-session "notify me once / every time" opt-in is gone; mute instead. The *Reply finished* switch in Settings still turns all of it off.
 - Codex, Antigravity, OpenCode and Cursor ask in plain text (their question tools don't reach Baton): a reply that ends with several numbered questions, each with options, now gets the same paged card, and your answers go back as one message.
+
+### Fixed
+- Bottom sheets (note, rename, …) no longer slide down when you drag inside a text field to select or scroll text; swipe down from the handle or title still closes them.
 
 ## [0.2.1] - 2026-11-06
 
