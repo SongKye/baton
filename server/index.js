@@ -36,6 +36,7 @@ import { dozingProjects, sendNudge, startNudgeScheduler } from './nudge.js';
 import { pageMessages, slimMessage } from './sources/common.js';
 import { usageReport, startUsageScheduler } from './usage.js';
 import { observeRun, seedDefaults } from './observe.js';
+import { readClaudeImage } from './sources/claude-images.js';
 
 const PORT = Number(process.env.BATON_PORT || 7420);
 const HOST = process.env.BATON_HOST || '127.0.0.1';
@@ -222,7 +223,10 @@ route('GET', '/api/sessions/:tool/:id', async (req, url, { tool, id }) => {
   const lk = linksOf(s.key);
   const describe = (l) => { const x = byKey.get(l.key); const [tool, ...rest] = l.key.split(':'); return { key: l.key, tool, id: rest.join(':'), title: x?.title || null, created: l.created }; };
   const links = { from: lk.from.map(describe), to: lk.to.map(describe) };
-  return { session: sessionView(view), ...page, messages: page.messages.map(slimMessage), run: run ? publicRun(run) : null, links };
+  return { session: sessionView(view), ...page, messages: page.messages.map((message) => {
+    const { imageRefs, ...m } = slimMessage(message);
+    return { ...m, ...(imageRefs?.length ? { imageUrls: imageRefs.map((ref) => `/api/sessions/claude/${encodeURIComponent(s.id)}/images/${ref}`) } : {}) };
+  }), run: run ? publicRun(run) : null, links };
 });
 
 route('POST', '/api/sessions/:tool/:id/meta', async (req, url, { tool, id }) => {
@@ -647,6 +651,16 @@ const server = http.createServer(async (req, res) => {
   if (req.headers['tailscale-user-login'] && req.headers.host) setPublicOrigin(`https://${req.headers['x-forwarded-host'] || req.headers.host}`);
   const url = new URL(req.url, 'http://x');
   try {
+    const image = url.pathname.match(/^\/api\/sessions\/claude\/([^/]+)\/images\/([^/]+)$/);
+    if (image && req.method === 'GET') {
+      const session = await findSession('claude', decodeURIComponent(image[1]));
+      const result = session?.file ? await readClaudeImage(session.file, image[2]) : null;
+      if (!result) return send(res, 404, { error: 'image not found' });
+      res.writeHead(200, { 'content-type': result.mime, 'content-length': result.data.length,
+        'cache-control': 'private, max-age=3600', 'x-content-type-options': 'nosniff',
+        'content-security-policy': "default-src 'none'; sandbox" });
+      return res.end(result.data);
+    }
     const m = url.pathname.match(/^\/api\/runs\/([^/]+)\/stream$/);
     if (m && req.method === 'GET') return streamRun(req, res, m[1], Number(url.searchParams.get('from') || 0));
     const mj = url.pathname.match(/^\/api\/setup\/jobs\/([^/]+)\/stream$/);
