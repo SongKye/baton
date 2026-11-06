@@ -361,6 +361,7 @@ async function render() {
   const params = new URLSearchParams(qs || '');
   if (G.cleanup) { try { G.cleanup(); } catch { /* ignore */ } G.cleanup = null; }
   G.navCount = (G.navCount || 0) + 1;
+  const navCount = G.navCount;
   for (const [re, fn, tab, sideTab] of routes) {
     const m = hash.match(re);
     if (!m) continue;
@@ -369,7 +370,7 @@ async function render() {
     $$('#tabbar a').forEach((a) => a.classList.toggle('on', a.dataset.tab === (tab ?? sideTab)));
     window.scrollTo(0, 0);
     try { await fn(m.slice(1).map(decodeURIComponent), params); drawRunPill(); }
-    catch (e) { console.error(e); app.innerHTML = `<div class="empty" style="padding-top:30vh"><b>${t('불러오지 못했어요')}</b>${esc(e.message)}<br><br><button class="btn" onclick="location.reload()">${t('다시 시도')}</button></div>`; }
+    catch (e) { console.error(e); if (navCount === G.navCount) app.innerHTML = `<div class="empty" style="padding-top:30vh"><b>${t('불러오지 못했어요')}</b>${esc(e.message)}<br><br><button class="btn" onclick="location.reload()">${t('다시 시도')}</button></div>`; }
     return;
   }
   location.hash = '#/';
@@ -1438,6 +1439,7 @@ function wireComposer(tool, onSend, draftKey) {
 async function viewChat([tool, id]) {
   const cleanVV = setupViewport();
   const key = `${tool}:${id}`;
+  const navCount = G.navCount;
   chatLayout({ backHref: '#/', title: t('불러오는 중…'), subHtml: `<span class="tool-badge ${tool}">${TOOL[tool].name}</span>`, tool, extraHead: `<button class="icon-btn" id="cmore">${ICON.more}</button>` });
   let live = null, session = null, start = 0, busy = false, links = { from: [], to: [] };
   const msgsEl = $('#msgs'), scroll = $('#scroll');
@@ -1445,6 +1447,7 @@ async function viewChat([tool, id]) {
 
   const load = async ({ keepScroll = false } = {}) => {
     const d = await api(`/api/sessions/${tool}/${encodeURIComponent(id)}`);
+    if (navCount !== G.navCount || !msgsEl.isConnected) return;
     session = d.session; start = d.start; links = d.links || links;
     $('#ctitle').textContent = session.title;
     $('#csub').innerHTML = `<span class="tool-badge ${tool}">${TOOL[tool].name}</span><span>${esc(projectName(session.project || session.cwd))}</span>${session.model ? `<span>· ${esc(session.model)}</span>` : ''}${session.notify < 0 ? `<span class="flag bell">${t('🔕 알림 꺼짐')}</span>` : ''}<span id="cmcp"></span>`;
@@ -1539,6 +1542,7 @@ async function viewChat([tool, id]) {
   const comp = wireComposer(tool, send, `draft:${key}`);
   $('#cmore').onclick = () => session && sessionMenu(session, () => load({ keepScroll: true }), { onTrashed: () => { if (G.navCount > 1) history.back(); else location.hash = '#/sessions'; } });
   await load();
+  if (navCount !== G.navCount || !msgsEl.isConnected) return;
   const onVis = () => { if (document.visibilityState === 'visible' && !live) load({ keepScroll: true }); };
   document.addEventListener('visibilitychange', onVis);
   // Another tool is running this session in the background: follow along (stops once that process exits).
