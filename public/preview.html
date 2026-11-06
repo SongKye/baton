@@ -19,12 +19,14 @@
     #stage { margin: 16px 16px 30px; position: relative; }
     #device { position: relative; margin: auto; overflow: hidden; border-radius: 12px; box-shadow: 0 18px 70px #0005; background: #f6f5f0; }
     iframe { display: block; border: 0; transform-origin: top left; background: #f6f5f0; }
+    .back { border: 1px solid #ffffff20; }
+    .back:hover { background: #ffffff14; }
     footer { text-align: center; padding: 0 24px 24px; color: #9fb3a4; font-size: 11px; }
     @media (max-width: 600px) { header { padding: 16px; gap: 14px; } .controls { margin-left: 0; gap: 6px; } button { padding: 8px 10px; } .caption { padding-inline: 16px; font-size: 11px; } }
   </style>
 </head>
 <body>
-  <header><h1>baton<span>DESIGN STUDY / 01</span></h1><div class="controls">
+  <header><a class="back" href="/">← 기본 화면</a><h1>baton<span>DESIGN STUDY / 01</span></h1><div class="controls">
     <div class="group" aria-label="화면 디자인"><button data-design="studio" aria-pressed="true">Codex Studio</button><button data-design="original" aria-pressed="false">기존 화면</button></div>
     <div class="group" aria-label="기기 크기"><button data-size="desktop" aria-pressed="true">데스크톱</button><button data-size="tablet" aria-pressed="false">태블릿</button><button data-size="phone" aria-pressed="false">모바일</button></div>
   </div></header>

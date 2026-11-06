@@ -63,7 +63,7 @@ async function body(req) {
 function sessionView(s) {
   return {
     key: s.key, tool: s.tool, id: s.id, title: s.title, cwd: shortHome(s.cwd), project: s.project, created: s.created, updated: s.updated,
-    lastPrompt: s.lastPrompt, lastReply: s.lastReply, firstPrompt: s.firstPrompt, model: s.model, automated: s.automated,
+    lastPrompt: s.lastPrompt, lastReply: s.lastReply, firstPrompt: s.firstPrompt, model: s.model, automated: s.automated, delegated: s.delegated,
     origCwd: s.moved ? shortHome(s.origCwd) : null, moved: Boolean(s.moved),
     pinned: s.pinned, hidden: s.hidden, terminal: s.terminal, running: s.running, live: s.live, unseen: s.unseen, agentName: s.agentName, notify: s.notify || 0,
   };
@@ -616,7 +616,14 @@ async function serveStatic(req, res, pathname) {
     });
     res.end(data);
   } catch {
-    // SPA fallback
+    // SPA fallback only for page-like paths (no extension or .html). A missing asset such as
+    // /app.js?v=99 or /icon-x.png must 404, or the browser/service worker caches index.html in its place.
+    const ext = path.extname(pathname).toLowerCase();
+    if (ext && ext !== '.html') {
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+      res.end('not found');
+      return;
+    }
     const data = await fsp.readFile(path.join(PUBLIC, 'index.html'));
     res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-cache' });
     res.end(data);

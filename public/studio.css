@@ -25,11 +25,15 @@
 .studio-home .tool-avatar { border-radius: 50%; }
 .studio-home .prow { padding: 18px; }
 .studio-home .usage-mini { padding: 20px; }
-.studio-home .usage-mini .row { flex-wrap: wrap; gap: 20px; }
-.studio-home .usage-mini .row > div { min-width: 100px; }
-.studio-home .hscroll { margin: 0; padding: 0 0 8px; }
-.studio-home .doze { width: 90%; }
-.studio-home .fab { display: none; }
+.studio-home .usage-mini .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 16px 20px; }
+.studio-home .usage-mini .row > div { min-width: 0; }
+.studio-home .usage-mini .row .small { overflow-wrap: anywhere; }
+.studio-home .hscroll { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; overflow: visible; scroll-snap-type: none; margin: 0; padding: 0; }
+.studio-home .doze { width: auto; max-width: none; min-width: 0; }
+/* 2-2: the FAB is a sibling of main.view (#app > .fab); the intro's 「새로운 작업 시작」 replaces it here. */
+.studio-home ~ .fab { display: none; }
+/* 2-1: update banner stays full width at the top. */
+.studio-update { margin: 18px 0 0; }
 a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 @media (min-width: 760px) {
   :root { --side-w: 208px; }
@@ -58,16 +62,20 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
   body.chat-mode .tabbar { display: flex; }
   .studio-intro { padding: 26px 0 34px; }
   .tool-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* 2-6: the sidebar already carries the brand — the home top bar keeps just the greeting. */
+  .topbar h1.home-brand { display: none; }
+  .topbar h1.home-brand + .sub { font-size: 14px; font-weight: 650; color: var(--text-2); margin: 0; }
 }
 @media (min-width: 1180px) {
   :root { --side-w: 232px; }
   main.view { padding-inline: 48px; }
   .topbar { padding-inline: 48px; }
   .studio-home { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(290px, 1fr); column-gap: 30px; align-content: start; }
-  .studio-intro, .studio-home > .stats { grid-column: 1 / -1; }
+  .studio-intro, .studio-update, .studio-home > .stats { grid-column: 1 / -1; }
   .studio-primary, .studio-secondary { min-width: 0; }
   .studio-home .stat { display: flex; align-items: center; gap: 20px; }
   .studio-home .stat .v { margin: 0; }
+  .studio-secondary .hscroll { grid-template-columns: 1fr; }
 }
 @media (max-width: 759px) {
   .studio-heading { align-items: flex-start; flex-direction: column; gap: 18px; }

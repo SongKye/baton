@@ -33,6 +33,8 @@ function decorate() {
   secondary.className = 'studio-secondary';
   secondary.setAttribute('aria-label', copy('프로젝트와 사용량', 'Projects and usage'));
   for (const section of sections) {
+    // The "new version" banner spans the full width above the intro instead of sinking into the side column.
+    if (section.querySelector('.update-banner')) { section.classList.add('studio-update'); view.prepend(section); continue; }
     (section.querySelector('.srow') || section.querySelector('a[href="#/sessions"]') ? primary : secondary).append(section);
   }
   const usage = view.querySelector('#home-usage');
@@ -55,6 +57,7 @@ function syncLayout() {
       if (view.contains(child)) view.append(child);
     }
     view.querySelectorAll(':scope > .studio-intro, :scope > .studio-primary, :scope > .studio-secondary').forEach(el => el.remove());
+    view.querySelector(':scope > .studio-update')?.classList.remove('studio-update');
     view.classList.remove('studio-home');
     originalChildren.delete(view);
   }
