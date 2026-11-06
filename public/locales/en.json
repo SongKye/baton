@@ -35,6 +35,8 @@
  "새 세션": "New session",
  "PC에서 작업 중": "Busy on PC",
  "PC에서 열림": "Open on PC",
+ "백그라운드에서 작업 중": "Working in background",
+ "⏳ 다른 도구가 백그라운드에서 이 세션을 실행 중이에요. 진행 상황은 여기서 볼 수 있고, 끝난 뒤에 보내면 이어서 작업할 수 있어요.": "⏳ Another tool is running this session in the background. Follow along here, and send once it finishes to keep going.",
  "세션 {n}": "{n} sessions",
  "자동 {n}": "{n} automated",
  "{n}일": "{n}d",

@@ -80,6 +80,8 @@ export async function listAgy() {
         lastReply: null,
         model: null,
         automated,
+        sub: isSub,
+        background: automated && !isSub,
         agentName: r.agent_name || null,
         runStatus: r.status,
         steps: r.step_count,

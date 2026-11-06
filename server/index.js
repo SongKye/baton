@@ -63,7 +63,7 @@ async function body(req) {
 function sessionView(s) {
   return {
     key: s.key, tool: s.tool, id: s.id, title: s.title, cwd: shortHome(s.cwd), project: s.project, created: s.created, updated: s.updated,
-    lastPrompt: s.lastPrompt, lastReply: s.lastReply, firstPrompt: s.firstPrompt, model: s.model, automated: s.automated, delegated: s.delegated,
+    lastPrompt: s.lastPrompt, lastReply: s.lastReply, firstPrompt: s.firstPrompt, model: s.model, automated: s.automated, delegated: s.delegated, background: Boolean(s.background),
     origCwd: s.moved ? shortHome(s.origCwd) : null, moved: Boolean(s.moved),
     pinned: s.pinned, hidden: s.hidden, terminal: s.terminal, running: s.running, live: s.live, unseen: s.unseen, agentName: s.agentName, notify: s.notify || 0,
   };

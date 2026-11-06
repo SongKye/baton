@@ -393,6 +393,7 @@ function shell({ title, sub = '', right = '', fab = true }) {
 function sessionRow(s, { showProject = true } = {}) {
   const flags = [];
   if (s.running) flags.push(`<span class="flag run">${t('응답 중')}</span>`);
+  else if (s.terminal && s.background) flags.push(`<span class="flag warn">${t('백그라운드에서 작업 중')}</span>`);
   else if (s.terminal) flags.push(`<span class="flag warn">${s.terminal === 'busy' ? t('PC에서 작업 중') : t('PC에서 열림')}</span>`);
   if (s.automated) flags.push(`<span class="flag">${t('자동')}</span>`);
   else if (s.delegated) flags.push(`<span class="flag" title="${t('다른 도구가 백그라운드로 실행한 세션')}">${t('위임됨')}</span>`);
@@ -1437,7 +1438,9 @@ async function viewChat([tool, id]) {
     $('#csub').innerHTML = `<span class="tool-badge ${tool}">${TOOL[tool].name}</span><span>${esc(projectName(session.project || session.cwd))}</span>${session.model ? `<span>· ${esc(session.model)}</span>` : ''}${session.notify < 0 ? `<span class="flag bell">${t('🔕 알림 꺼짐')}</span>` : ''}<span id="cmcp"></span>`;
     mcpChip(session);
     $('#back').setAttribute('href', session.project ? `#/p/${encodeURIComponent(session.project)}` : '#/sessions');
-    const banner = session.terminal ? `<div class="banner warn" style="margin-bottom:4px">${t('⚠️ 이 세션은 PC 터미널에서도 열려 있어요. 여기서 보내면 기록이 갈라질 수 있으니 PC 쪽이 쉬고 있을 때 보내세요.')}</div>` : '';
+    const banner = !session.terminal ? ''
+      : session.background ? `<div class="banner warn" style="margin-bottom:4px">${t('⏳ 다른 도구가 백그라운드에서 이 세션을 실행 중이에요. 진행 상황은 여기서 볼 수 있고, 끝난 뒤에 보내면 이어서 작업할 수 있어요.')}</div>`
+      : `<div class="banner warn" style="margin-bottom:4px">${t('⚠️ 이 세션은 PC 터미널에서도 열려 있어요. 여기서 보내면 기록이 갈라질 수 있으니 PC 쪽이 쉬고 있을 때 보내세요.')}</div>`;
     msgsEl.innerHTML = `${start > 0 ? `<button class="btn sm ghost load-older" id="older">${t('이전 대화 더 보기')}</button>` : ''}${banner}<div id="hobanners"></div>${msgsHtml(d.messages)}<div id="schedbanners"></div>`;
     api('/api/limits').catch(() => ({})).then((lim) => {
       const hb = $('#hobanners'); if (!hb) return;
@@ -1526,7 +1529,15 @@ async function viewChat([tool, id]) {
   await load();
   const onVis = () => { if (document.visibilityState === 'visible' && !live) load({ keepScroll: true }); };
   document.addEventListener('visibilitychange', onVis);
-  const prev = G.cleanup; G.cleanup = () => { prev(); document.removeEventListener('visibilitychange', onVis); };
+  // Another tool is running this session in the background: follow along (stops once that process exits).
+  let following = false;
+  const follow = setInterval(async () => {
+    if (following || live || document.visibilityState !== 'visible' || !session?.terminal || !session.background) return;
+    following = true;
+    const atBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
+    try { await load({ keepScroll: true }); if (atBottom) scroll.scrollTop = scroll.scrollHeight; } catch { /* next tick */ } finally { following = false; }
+  }, 5000);
+  const prev = G.cleanup; G.cleanup = () => { prev(); clearInterval(follow); document.removeEventListener('visibilitychange', onVis); };
 }
 
 /** Small "🔌 MCP n" chip in the chat header: how many servers this CLI loads here; red when one failed. */
