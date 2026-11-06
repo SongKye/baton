@@ -5,8 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-07
+
 ### Added
 - **Pull to refresh**: on a phone, pull down from the top of any screen (or the top of a chat) to reload it.
+
+### Changed
+- Updated DOMPurify from 3.2.6 to 3.4.17 and marked from 15.0.12 to 18.1.3 for security hardening and Markdown fixes.
+- Updated the CI and release workflows to actions/checkout v7 and actions/setup-node v7.
 
 ### Fixed
 - **Claude chat image history**: attached photos remain visible after replies, refreshes and reopening a chat. Images load lazily from the session transcript; tap a preview to open the full image.
@@ -116,7 +122,8 @@ First public preview.
 ### Security
 - Listens on `127.0.0.1` only. Other devices need a password once (default `0000` — change it) and are remembered for 30 days; failed attempts are rate-limited.
 
-[Unreleased]: https://github.com/SongKye/baton/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/SongKye/baton/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/SongKye/baton/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/SongKye/baton/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SongKye/baton/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/SongKye/baton/compare/v0.2.0...v0.2.1
