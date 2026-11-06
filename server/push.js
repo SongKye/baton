@@ -26,14 +26,28 @@ export async function notify({ kind, title, body, url, tag }) {
   const payload = JSON.stringify({ title, body, url, tag: tag || kind });
   const subs = listPushSubs();
   webpush.setVapidDetails(vapidSubject(), keys.publicKey, keys.privateKey);
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || undefined;
+  const opts = { TTL: 6 * 3600, urgency: kind === 'nudge' ? 'low' : 'normal', ...(proxy ? { proxy } : {}) };
   await Promise.all(subs.map(async (s) => {
-    try {
-      const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || undefined;
-      await webpush.sendNotification(s, payload, { TTL: 6 * 3600, urgency: kind === 'nudge' ? 'low' : 'normal', ...(proxy ? { proxy } : {}) });
-    } catch (e) {
-      if (e.statusCode === 404 || e.statusCode === 410) removePushSub(s.endpoint);
-      else console.warn('[push] failed', e.statusCode || e.message, e.body || '');
+    // Network errors (no HTTP status) are usually transient — retry a few times before giving up.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const r = await webpush.sendNotification(s, payload, opts);
+        console.log('[push] sent', kind, r.statusCode, new URL(s.endpoint).host);
+        return;
+      } catch (e) {
+        if (e.statusCode === 404 || e.statusCode === 410) { removePushSub(s.endpoint); return; }
+        if (!e.statusCode && attempt < 2) { await new Promise((r) => setTimeout(r, 2000 * (attempt + 1))); continue; }
+        console.warn('[push] failed', e.statusCode || describeError(e), e.body || '');
+        return;
+      }
     }
   }));
   return subs.length;
+}
+
+// AggregateError (e.g. IPv4+IPv6 connect both failing) has an empty message — surface the inner codes.
+function describeError(e) {
+  const inner = Array.isArray(e.errors) ? e.errors.map((x) => x.code || x.message).join(',') : '';
+  return [e.code || e.name, e.message, inner].filter(Boolean).join(' ');
 }

@@ -59,10 +59,19 @@ async function summarize(file, st) {
   };
   scan(head);
   if (tail !== head) scan(tail);
-  if (!aiTitle && !customTitle && st.size < 8 * 1024 * 1024 && tail !== head) {
+  // A first prompt with pasted images can be one JSONL line far bigger than the head window, so the head
+  // holds no prompt (and no cwd). Stream the file until it shows up instead of dropping the session.
+  const needTitle = !aiTitle && !customTitle && st.size < 8 * 1024 * 1024 && tail !== head;
+  if (needTitle || !firstPrompt || !cwd) {
     await eachJsonl(file, (e) => {
       if (e.type === 'ai-title' && e.aiTitle) aiTitle = e.aiTitle;
       if (e.type === 'custom-title' && e.customTitle) customTitle = e.customTitle;
+      if (!cwd && e.cwd) cwd = e.cwd;
+      if (!created && e.timestamp) created = Date.parse(e.timestamp);
+      if (!entrypoint && e.entrypoint) entrypoint = e.entrypoint;
+      if (!gitBranch && e.gitBranch) gitBranch = e.gitBranch;
+      if (!firstPrompt && isRealUserPrompt(e)) firstPrompt = cleanPrompt(textOf(e.message.content));
+      if (!needTitle && firstPrompt && cwd) return false; // got what was missing; stop early
     });
   }
   if (!firstPrompt && !lastPrompt && !aiTitle) return null; // empty / metadata-only file
