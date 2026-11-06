@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-06
+
 ### Added
 - **Desktop chat input**: on a mouse + keyboard computer, Enter sends and Shift+Enter starts a new line (Ctrl/Cmd+Enter still works; phones keep Enter as a new line). Paste an image or drag it onto the chat to attach it.
 - **Open a local server in one click**: on *Serving ports*, web servers get an *Open ↗* button (`http://localhost:port`) when you're using Baton on that PC.
@@ -16,6 +18,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Automated sessions are listed like any other** (tagged *Auto*) instead of being hidden by default — scripts, `codex exec`, another tool's `claude -p`, subagents. Hide what you don't want: *Select* → **Hide** on the Sessions tab or a project page (hides many at once; *Unhide* from the *Hidden* filter), or *Cleanup* → tick *Automated* → **Hide** to clear them all in one go. The *Show automated sessions* setting, the *Include automated* chip and the project page's *Show automated* button are gone.
 
 ### Fixed
+- Leaving a chat before it finished loading no longer lets the old session's late reply overwrite the screen you moved to (or show a stray "Couldn't load" error).
 - **Background runs show up while they're running**: when another tool hands work to a CLI in the background (e.g. Antigravity running `claude -p`, or a script running `codex exec`), the session now appears in *Running now* with a *Working in background* tag, and its page follows along live. Once it finishes, a delegated Claude session that actually did work (used tools) stays in your list tagged *Delegated*; one-shot script calls are still hidden as automated.
 - Desktop home: the update banner stays at the top instead of dropping to the bottom of the side column; the duplicate *New session* button and logo are gone; the usage card shows every installed tool without overflowing; sleeping projects stack as cards instead of a hidden-scrollbar strip.
 - Desktop chat: header, new-session bar, messages and input share one width; the sidebar keeps *Sessions* highlighted; the running-reply pill for other sessions stays visible.
@@ -104,7 +107,9 @@ First public preview.
 ### Security
 - Listens on `127.0.0.1` only. Other devices need a password once (default `0000` — change it) and are remembered for 30 days; failed attempts are rate-limited.
 
-[Unreleased]: https://github.com/SongKye/baton/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/SongKye/baton/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/SongKye/baton/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/SongKye/baton/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/SongKye/baton/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/SongKye/baton/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SongKye/baton/releases/tag/v0.1.0
