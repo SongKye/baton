@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Session menu from any list**: every session row (Home, Sessions, project page) has a ⋯ button that opens the session menu — rename, pin, move, trash… — without opening the chat. Long-press / right-click now works on the project page too.
+- **Bulk trash on the project page**: *Select* next to the session list, tick sessions (or *Select all*), then *Move to trash*.
+
+### Changed
+- **Agent questions, one per page**: when an agent asks several questions, you now see one at a time — tap a choice (single-choice questions turn the page by themselves) or type your own, step back with *Back*, check everything on a review page and *Submit*. A single single-choice question is still one tap.
+- Codex, Antigravity, OpenCode and Cursor ask in plain text (their question tools don't reach Baton): a reply that ends with several numbered questions, each with options, now gets the same paged card, and your answers go back as one message.
+
 ## [0.2.1] - 2026-11-06
 
 ### Added

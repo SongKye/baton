@@ -861,5 +861,11 @@
  "Baton 새 버전이 나오면 한 번 알려줘요 (GitHub에서 하루 몇 번 확인)": "Tells you once when a new Baton version is out (checks GitHub a few times a day)",
  "Baton 업데이트": "Baton update",
  "🎉 Baton v{v}이 나왔어요": "🎉 Baton v{v} is out",
- "지금 쓰는 버전은 v{c}이에요. 눌러서 바뀐 점을 보고 업데이트하세요.": "You're on v{c}. Tap to see what's new and update."
+ "지금 쓰는 버전은 v{c}이에요. 눌러서 바뀐 점을 보고 업데이트하세요.": "You're on v{c}. Tap to see what's new and update.",
+ "세션 메뉴": "Session menu",
+ "답 확인": "Review",
+ "고칠 답을 누르면 그 질문으로 돌아가요": "Tap an answer to go back and change it",
+ "이전": "Back",
+ "제출": "Submit",
+ "확인": "Review"
 }

@@ -241,6 +241,10 @@ main.view { flex: 1; padding: 4px 16px calc(var(--tabbar-h) + var(--safe-b) + 84
 .srow .flag.run { background: var(--accent-soft); color: var(--accent); }
 .srow .unseen { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
 .srow:active { background: var(--surface-2); }
+.srow-more { flex: none; width: 32px; height: 32px; margin: -5px -8px -5px -4px; display: grid; place-items: center; border-radius: 10px; color: var(--text-3); cursor: pointer; }
+.srow-more:hover { background: var(--surface-2); color: var(--text); }
+.srow-more:active { background: var(--border); }
+.srow-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .list.card { gap: 0; overflow: hidden; }
 
 /* ---------- home ---------- */
@@ -831,6 +835,16 @@ details.card.env[open] > summary { border-bottom: 1px solid var(--border); }
 .ask-other:focus { border-color: var(--accent); }
 .ask-act { display: flex; justify-content: flex-end; gap: 6px; }
 .ask-act [hidden] { display: none; }
+.ask-act .sp { flex: 1; }
+.ask-steps { display: flex; align-items: center; gap: 6px; margin-top: -4px; }
+.ask-steps > span { margin-left: auto; font-size: 12px; font-weight: 650; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.ask-dot { width: 22px; height: 6px; padding: 0; border: 0; border-radius: 999px; background: var(--border); cursor: pointer; transition: background .15s, width .15s; }
+.ask-dot.ok { background: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.ask-dot.on { background: var(--accent); width: 34px; }
+.ask-dot:disabled { cursor: default; }
+.ask-review { display: flex; flex-direction: column; gap: 6px; }
+.ask-review .ask-ans { text-align: left; padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; font: inherit; }
+.ask-review .ask-ans:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
 .ask-ans { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .ask-ans span { color: var(--text-3); }
 
