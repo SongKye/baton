@@ -32,7 +32,8 @@ export async function notify({ kind, title, body, url, tag }) {
     // Network errors (no HTTP status) are usually transient — retry a few times before giving up.
     for (let attempt = 0; ; attempt++) {
       try {
-        await webpush.sendNotification(s, payload, opts);
+        const r = await webpush.sendNotification(s, payload, opts);
+        console.log('[push] sent', kind, r.statusCode, new URL(s.endpoint).host);
         return;
       } catch (e) {
         if (e.statusCode === 404 || e.statusCode === 410) { removePushSub(s.endpoint); return; }

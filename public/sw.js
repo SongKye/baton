@@ -1,5 +1,5 @@
 // Baton service worker: app-shell cache + web push.
-const CACHE = 'baton-v21';
+const CACHE = 'baton-v22';
 const SHELL = ['/', '/style.css?v=15', '/app.js?v=20', '/theme.js?v=5', '/palettes.css?v=3', '/studio.css?v=5', '/studio.js?v=5', '/vendor/marked.js', '/vendor/purify.js', '/icon.svg?v=2', '/baton-mark.svg', '/icon-handoff-180-v1.png', '/icon-handoff-192-v1.png', '/icon-handoff-512-v1.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
@@ -25,7 +25,9 @@ self.addEventListener('push', (e) => {
   try { d = e.data.json(); } catch { d = { title: 'Baton', body: e.data?.text() }; }
   e.waitUntil((async () => {
     // A focused desktop Baton tab shows its own bottom-right card — skip the duplicate OS notification.
-    if (await focusedTabShowsCards()) return;
+    // Phones never show those cards, so don't ask: on iOS a locked/suspended PWA can still look
+    // "focused + visible", and any push that ends without a notification counts against the subscription.
+    if (!IS_MOBILE && await focusedTabShowsCards().catch(() => false)) return;
     await self.registration.showNotification(d.title || 'Baton', {
       body: d.body || '',
       tag: d.tag,
@@ -36,6 +38,8 @@ self.addEventListener('push', (e) => {
     });
   })());
 });
+
+const IS_MOBILE = /iPhone|iPad|iPod|Android|Mobile/i.test(self.navigator.userAgent) || (/Macintosh/.test(self.navigator.userAgent) && self.navigator.maxTouchPoints > 1);
 
 async function focusedTabShowsCards() {
   const all = await self.clients.matchAll({ type: 'window' });
