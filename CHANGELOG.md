@@ -5,6 +5,88 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Pull to refresh**: on a phone, pull down from the top of any screen (or the top of a chat) to reload it.
+
+### Fixed
+- **Sessions no longer vanish when the first message has a large screenshot**: Baton could treat such a Claude session as empty, drop it from the list, and show "Session not found" when you opened it.
+- **Phone notifications no longer get dropped on a network hiccup**: if sending a push fails because of a brief connection problem, Baton retries twice before giving up, and logs the real error instead of an empty `[push] failed`.
+- **Notifications show on a locked iPhone**: the app no longer waits on a suspended Baton window before showing a push notification on phones.
+
+## [0.4.0] - 2026-11-06
+
+### Added
+- **Desktop chat input**: on a mouse + keyboard computer, Enter sends and Shift+Enter starts a new line (Ctrl/Cmd+Enter still works; phones keep Enter as a new line). Paste an image or drag it onto the chat to attach it.
+- **Open a local server in one click**: on *Serving ports*, web servers get an *Open ↗* button (`http://localhost:port`) when you're using Baton on that PC.
+- **Esc closes sheets** (only the top one when several are open).
+- **Show more on the project page**: projects with more than 40 sessions now page through all of them; *Select all* covers every row on screen.
+- **OpenCode and Cursor filters** on the Sessions and Skills tabs (every installed tool gets a chip).
+
+### Changed
+- **Automated sessions are listed like any other** (tagged *Auto*) instead of being hidden by default — scripts, `codex exec`, another tool's `claude -p`, subagents. Hide what you don't want: *Select* → **Hide** on the Sessions tab or a project page (hides many at once; *Unhide* from the *Hidden* filter), or *Cleanup* → tick *Automated* → **Hide** to clear them all in one go. The *Show automated sessions* setting, the *Include automated* chip and the project page's *Show automated* button are gone.
+
+### Fixed
+- Leaving a chat before it finished loading no longer lets the old session's late reply overwrite the screen you moved to (or show a stray "Couldn't load" error).
+- **Background runs show up while they're running**: when another tool hands work to a CLI in the background (e.g. Antigravity running `claude -p`, or a script running `codex exec`), the session now appears in *Running now* with a *Working in background* tag, and its page follows along live. Once it finishes, a delegated Claude session that actually did work (used tools) stays in your list tagged *Delegated*; one-shot script calls are still hidden as automated.
+- Desktop home: the update banner stays at the top instead of dropping to the bottom of the side column; the duplicate *New session* button and logo are gone; the usage card shows every installed tool without overflowing; sleeping projects stack as cards instead of a hidden-scrollbar strip.
+- Desktop chat: header, new-session bar, messages and input share one width; the sidebar keeps *Sessions* highlighted; the running-reply pill for other sessions stays visible.
+- Two-column port cards on wide screens no longer sit 10px out of line or overflow.
+- Desktop notification cards and their setting now work from 760px, matching the desktop layout.
+- *Original layout* and *Compare layouts* pages have a link back to the default screen.
+- A missing script, style or image now returns 404 instead of the app page, and notifications use the new Baton icon.
+
+## [0.3.0] - 2026-11-06
+
+### Added
+- **Session menu from any list**: every session row (Home, Sessions, project page) has a ⋯ button that opens the session menu — rename, pin, move, trash… — without opening the chat. Long-press / right-click now works on the project page too.
+- **Bulk trash on the project page**: *Select* next to the session list, tick sessions (or *Select all*), then *Move to trash*.
+- **Mute a session or a project**: ⋯ → *Mute this session* / *Mute this project*. Muted sessions still show up in the inbox, just without a phone or desktop alert. 🔕 marks them in lists.
+- **Edit the project note in place**: tap the note to edit it right there (Ctrl+Enter saves, Esc cancels); an empty project shows a *Leave a note* button.
+
+### Changed
+- **New icon and calmer default colors**: a new Baton mark (two hand-off strokes on warm paper) for the app icon, home-screen icon, notifications, the Home title and the desktop sidebar. The default theme moves from orange to warm neutrals with a muted green accent; the desktop sidebar is now charcoal. Reinstall or re-add Baton to your home screen if the old icon sticks around.
+- **Agent questions, one per page**: when an agent asks several questions, you now see one at a time — tap a choice (single-choice questions turn the page by themselves) or type your own, step back with *Back*, check everything on a review page and *Submit*. A single single-choice question is still one tap.
+- **Notifications are on for every session by default**: you get a ping each time any session finishes, whether it ran in Baton or in a PC terminal (sessions active in the last 3 hours are followed; automated runs are skipped). The old per-session "notify me once / every time" opt-in is gone; mute instead. The *Reply finished* switch in Settings still turns all of it off.
+- Codex, Antigravity, OpenCode and Cursor ask in plain text (their question tools don't reach Baton): a reply that ends with several numbered questions, each with options, now gets the same paged card, and your answers go back as one message.
+
+### Fixed
+- Dragging inside a bottom sheet no longer scrolls the page behind it on phones.
+- Bottom sheets (note, rename, …) no longer slide down when you drag inside a text field to select or scroll text; swipe down from the handle or title still closes them.
+
+## [0.2.1] - 2026-11-06
+
+### Added
+- **Update notices**: Baton checks GitHub Releases a few times a day (falling back to `git ls-remote --tags` for private forks or rate limits) and tells you once per new version — a banner on Home, the inbox and a push notification. **Update now** runs `git pull --ff-only` and `npm ci --omit=dev`, then restarts Baton (systemd / launchd / plain process) and reloads the page. Zip installs and git checkouts with local changes or another branch get instructions instead. Turn it off in Settings → Notifications (*New version alerts*).
+
+### Fixed
+- Project page: the folder path under the title no longer repeats after each edit, and pins, renames, notes and status changes show up right away.
+
+## [0.2.0] - 2026-11-05
+
+### Added
+- **Guided setup**: Get started is now five numbered steps with a progress bar (computer → connect AI → add tools → phone → auto-start), and adapts when opened from a phone.
+  - **Connect AI by how you use it**: subscription, API key, company account, or models on your own computer. Paste an API key and Baton recognizes it (Anthropic, OpenAI, OpenRouter, Groq) and connects the right CLI. Model servers running locally (Ollama, LM Studio, vLLM, LiteLLM, llama.cpp, Jan) are found automatically. Gateway / server forms load the model list from the address you enter.
+  - **Phone, step by step**: Tailscale on the computer, Tailscale on the phone (detected on your tailnet), share, then scan a QR code instead of typing the address. QR codes are generated locally.
+- **MCP servers** (Tools → MCP servers): every MCP server Claude Code, Codex, Antigravity, OpenCode and Cursor can see, by scope (global / project / local / plugin / managed / claude.ai connectors). Shows on/off, approval and override state, call counts and tools from Claude Code and Codex transcripts, and connection status (`claude mcp list`, plus status recorded by Baton-started runs). Project pages and a 🔌 chip in chat show what each CLI loads in that folder. Secrets are never shown.
+- **MCP quick setup**: one-tap presets (Context7, Playwright, Chrome DevTools, GitHub, Filesystem, Memory, Sequential Thinking, Fetch, Notion, Linear, Sentry, Supabase, Figma) or your own command / URL, added to several CLIs at once. On a server's page: **Add to other CLIs** (copies the config, secrets included, server-side) and **Delete**. Each CLI's own config is written, with a `.baton-backup` copy.
+- **The agent can ask you questions in chat** (Claude Code): AskUserQuestion shows up as a card with the options, multi-select and free text. Tap to answer and the reply continues; Skip lets it decide. If you're not looking, your phone gets a notification.
+- **Quick replies** (every CLI): when a reply ends with a question and a short list of choices, the choices become buttons; tapping one sends it as your next message. Covers Codex and Antigravity, whose question tools don't reach headless runs.
+- **Scheduled messages**: queue a message for a session to be sent as soon as its CLI's usage limit resets (re-checked live, postponed if still exhausted, retried if it hits the limit again) or at a chosen time. From the limit-reached card, the chat ⋯ menu, and Tools → Scheduled messages.
+- **Desktop notification cards**: on a desktop browser, new notifications (reply finished, watched session done, scheduled message sent, nudges) pop up as cards in the bottom-right corner. Click to open the session; hover to keep them. When push is on and the Baton tab is focused, the card replaces the OS notification so you don't get both. Toggle per computer in Settings → Notifications.
+- **Studio layout and themes**: wide screens get a sidebar layout; color palettes (Default, Forest, Nord, Dracula, Tokyo Night, Monokai, Rosé Pine) with light / dark / system brightness in Settings → Appearance & language.
+- **Folder browsing**: browse subfolders when starting a session or moving its working folder, search projects by name or path, and choose a default working folder (Settings → Working folders).
+- MIT license.
+
+### Changed
+- **Remote access uses your Tailscale identity** instead of a Baton password and device cookies. Restrict it to specific accounts with `BATON_ALLOWED_LOGINS`. Requests that don't come through the local Tailscale proxy with an identity are rejected. See SECURITY.md.
+- Notifications say who answered: the title is "From Claude Code - Opus 5.5" (CLI and model), the body shows the session and the reply.
+- Claude Code runs use the CLI's control protocol (`--input-format stream-json --permission-prompt-tool stdio`) so questions reach Baton; other approval prompts are still declined, as before.
+- Settings are grouped (Appearance & language, Workspace & sessions, Notifications & reminders, AI briefs, Advanced).
+- Antigravity models are grouped by model with their effort levels instead of one entry per variant.
+
+### Fixed
+- Codex sessions whose first message sits far into the transcript (large images, long setup messages) no longer disappear from the list.
+
 ## [0.1.0] - 2026-11-05
 
 First public preview.
@@ -33,5 +115,9 @@ First public preview.
 ### Security
 - Listens on `127.0.0.1` only. Other devices need a password once (default `0000` — change it) and are remembered for 30 days; failed attempts are rate-limited.
 
-[Unreleased]: https://github.com/SongKye/baton/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/SongKye/baton/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/SongKye/baton/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/SongKye/baton/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/SongKye/baton/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/SongKye/baton/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SongKye/baton/releases/tag/v0.1.0

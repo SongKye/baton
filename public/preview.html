@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Baton · 화면 비교</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.5 system-ui, sans-serif; color: #e9efdf; background: #18271f; }
+    header { padding: 22px 24px; border-bottom: 1px solid #ffffff20; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+    h1 { font-size: 20px; margin: 0; letter-spacing: -.04em; }
+    h1 span { color: #b8c4b9; font-size: 12px; font-weight: 400; margin-left: 10px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 12px; margin-left: auto; }
+    .group { display: flex; gap: 3px; padding: 4px; border: 1px solid #ffffff20; border-radius: 10px; }
+    button, a { font: inherit; font-size: 12px; border: 0; border-radius: 6px; padding: 8px 12px; background: none; color: #c3d1c6; cursor: pointer; text-decoration: none; }
+    button[aria-pressed="true"] { background: #d4e5b4; color: #203c30; }
+    button:focus-visible, a:focus-visible { outline: 2px solid #d4e5b4; outline-offset: 3px; }
+    .caption { padding: 16px 24px 0; display: flex; align-items: center; justify-content: space-between; color: #b8c4b9; font-size: 12px; gap: 12px; }
+    #stage { margin: 16px 16px 30px; position: relative; }
+    #device { position: relative; margin: auto; overflow: hidden; border-radius: 12px; box-shadow: 0 18px 70px #0005; background: #f6f5f0; }
+    iframe { display: block; border: 0; transform-origin: top left; background: #f6f5f0; }
+    .back { border: 1px solid #ffffff20; }
+    .back:hover { background: #ffffff14; }
+    footer { text-align: center; padding: 0 24px 24px; color: #9fb3a4; font-size: 11px; }
+    @media (max-width: 600px) { header { padding: 16px; gap: 14px; } .controls { margin-left: 0; gap: 6px; } button { padding: 8px 10px; } .caption { padding-inline: 16px; font-size: 11px; } }
+  </style>
+</head>
+<body>
+  <header><a class="back" href="/">← 기본 화면</a><h1>baton<span>DESIGN STUDY / 01</span></h1><div class="controls">
+    <div class="group" aria-label="화면 디자인"><button data-design="studio" aria-pressed="true">Codex Studio</button><button data-design="original" aria-pressed="false">기존 화면</button></div>
+    <div class="group" aria-label="기기 크기"><button data-size="desktop" aria-pressed="true">데스크톱</button><button data-size="tablet" aria-pressed="false">태블릿</button><button data-size="phone" aria-pressed="false">모바일</button></div>
+  </div></header>
+  <div class="caption"><span id="dimensions" aria-live="polite"></span><a id="open" href="/studio.html" target="_blank" rel="noopener">실제 크기로 열기 ↗</a></div>
+  <main id="stage"><div id="device"><iframe title="Baton 기기별 화면 미리보기" src="/studio.html"></iframe></div></main>
+  <footer>현재 Baton 데이터를 표시합니다. 축소 화면에서도 스크롤과 탐색이 가능하며, 실행·변경 작업은 실제로 반영됩니다.</footer>
+  <script type="module" src="/preview.js?v=2"></script>
+</body>
+</html>

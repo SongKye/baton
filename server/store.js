@@ -50,13 +50,17 @@ const q = (sql) => db.prepare(sql);
 // migrations
 try { db.exec('ALTER TABLE session_meta ADD COLUMN notify INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ }
 try { db.exec('ALTER TABLE session_meta ADD COLUMN cwd_override TEXT'); } catch { /* exists */ }
+try { db.exec('ALTER TABLE project_meta ADD COLUMN muted INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ }
+try { db.exec('ALTER TABLE events ADD COLUMN quiet INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ } // inbox only, no pop-up
+// Notifications are on for every session by default now: session_meta.notify -1 = muted, 0 = default.
+// The old opt-in values (1 = next time only, 2 = every time) mean "on", which is the default.
+if (!getKVRaw('notify_v2')) { db.exec('UPDATE session_meta SET notify = 0 WHERE notify > 0'); db.prepare("INSERT OR REPLACE INTO kv (k, v) VALUES ('notify_v2', 'true')").run(); }
+function getKVRaw(k) { return db.prepare('SELECT v FROM kv WHERE k = ?').get(k); }
 
 // ---------- kv / settings ----------
 const DEFAULT_SETTINGS = {
   lang: 'en',                   // UI language: 'en' (default) or 'ko'
   setupDone: false,             // onboarding finished or skipped
-  trustDays: 30,                // a signed-in device stays trusted this many days after its last visit
-  showAutomated: false,         // codex exec / agy subagent / tmp sessions
   nudgeEnabled: true,
   nudgeHour: 21,                // local hour to send the daily nudge
   staleDays: 5,                 // a project is "dozing" after N idle days
@@ -66,7 +70,9 @@ const DEFAULT_SETTINGS = {
   briefModel: 'haiku',
   defaultPerm: 'auto',
   notifyOnRunDone: true,
+  updateCheck: true,            // look for new Baton releases and announce them
   workspaceRoots: ['~/workspace'],
+  defaultCwd: '',
 };
 
 export function getKV(k, fallback = null) {
@@ -95,6 +101,11 @@ export function allSessionMeta() {
   for (const r of q('SELECT * FROM session_meta').all()) map.set(r.key, r);
   return map;
 }
+/** Same patch for many sessions in one transaction (bulk hide from the list or the cleanup page). */
+export function patchSessionMetaMany(keys, patch) {
+  db.exec('BEGIN');
+  try { for (const key of keys) patchSessionMeta(key, patch); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
+}
 export function patchSessionMeta(key, patch) {
   const cur = q('SELECT * FROM session_meta WHERE key = ?').get(key) || { key, pinned: 0, hidden: 0, title: null, last_seen: null, notify: 0, cwd_override: null };
   const next = { ...cur, ...patch };
@@ -114,12 +125,12 @@ export function getProjectMeta(id) {
   return q('SELECT * FROM project_meta WHERE id = ?').get(id) || null;
 }
 export function patchProjectMeta(id, patch) {
-  const cur = getProjectMeta(id) || { id, name: null, status: 'active', pinned: 0, snooze_until: null, last_nudged: null, note: null };
+  const cur = getProjectMeta(id) || { id, name: null, status: 'active', pinned: 0, snooze_until: null, last_nudged: null, note: null, muted: 0 };
   const next = { ...cur, ...patch };
-  q(`INSERT INTO project_meta (id, name, status, pinned, snooze_until, last_nudged, note) VALUES (?, ?, ?, ?, ?, ?, ?)
+  q(`INSERT INTO project_meta (id, name, status, pinned, snooze_until, last_nudged, note, muted) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, status=excluded.status, pinned=excluded.pinned,
-       snooze_until=excluded.snooze_until, last_nudged=excluded.last_nudged, note=excluded.note`)
-    .run(id, next.name ?? null, next.status || 'active', next.pinned ? 1 : 0, next.snooze_until ?? null, next.last_nudged ?? null, next.note ?? null);
+       snooze_until=excluded.snooze_until, last_nudged=excluded.last_nudged, note=excluded.note, muted=excluded.muted`)
+    .run(id, next.name ?? null, next.status || 'active', next.pinned ? 1 : 0, next.snooze_until ?? null, next.last_nudged ?? null, next.note ?? null, next.muted ? 1 : 0);
   return next;
 }
 
@@ -155,8 +166,8 @@ export function removePushSub(endpoint) {
 }
 
 // ---------- notification inbox ----------
-export function addEvent(kind, title, body, url) {
-  q('INSERT INTO events (ts, kind, title, body, url) VALUES (?, ?, ?, ?, ?)').run(Date.now(), kind, title, body || null, url || null);
+export function addEvent(kind, title, body, url, { quiet = false } = {}) {
+  q('INSERT INTO events (ts, kind, title, body, url, quiet) VALUES (?, ?, ?, ?, ?, ?)').run(Date.now(), kind, title, body || null, url || null, quiet ? 1 : 0);
   q('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 200)').run();
 }
 export function listEvents(limit = 50) {
@@ -164,6 +175,12 @@ export function listEvents(limit = 50) {
 }
 export function markEventsRead() {
   q('UPDATE events SET read = 1 WHERE read = 0').run();
+}
+export function lastEventId() {
+  return q('SELECT MAX(id) AS id FROM events').get().id || 0;
+}
+export function eventsAfter(id, limit = 10) {
+  return q('SELECT * FROM events WHERE id > ? ORDER BY id ASC LIMIT ?').all(id, limit);
 }
 export function unreadCount() {
   return q('SELECT COUNT(*) AS n FROM events WHERE read = 0').get().n;
@@ -176,7 +193,12 @@ export function cwdOverrides() {
   return map;
 }
 
-/** Sessions the user asked to be pinged about when the agent finishes (1 = once, 2 = every time). */
-export function watchedSessions() {
-  return q('SELECT key, notify FROM session_meta WHERE notify > 0').all();
+/** Should a "finished" / "asks you" ping go out for this session? On by default; muted per session or per project. */
+export function notifyAllowed(key, { project, cwd } = {}) {
+  if (getSettings().notifyOnRunDone === false) return false;
+  if (key && (q('SELECT notify FROM session_meta WHERE key = ?').get(key)?.notify || 0) < 0) return false;
+  for (const { id } of q('SELECT id FROM project_meta WHERE muted = 1').all()) {
+    if (project === id || (cwd && (cwd === id || cwd.startsWith(id.endsWith('/') ? id : `${id}/`)))) return false;
+  }
+  return true;
 }

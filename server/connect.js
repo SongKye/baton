@@ -160,3 +160,64 @@ export async function testConnection(tool) {
     return { ok: false, error: String(e.message || e).slice(0, 600), ms: Date.now() - t0 };
   }
 }
+
+// ---------------------------------------------------------------- model discovery
+async function getJson(url, headers = {}, ms = 4000) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(url, { headers, signal: ctl.signal });
+    const text = await r.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* not json */ }
+    return { status: r.status, json };
+  } catch (e) { return { status: 0, error: e.name === 'AbortError' ? 'timeout' : e.cause?.code || e.message }; }
+  finally { clearTimeout(timer); }
+}
+const modelIds = (j) => [...new Set([
+  ...(Array.isArray(j?.data) ? j.data.map((m) => m.id || m.name) : []),
+  ...(Array.isArray(j?.models) ? j.models.map((m) => m.model || m.name || m.id) : []),
+].filter(Boolean).map(String))].sort();
+
+/**
+ * "Which models does this server offer?" — tries <base>/models and <base>/v1/models (OpenAI-style),
+ * which LiteLLM, vLLM, Ollama, LM Studio, OpenRouter, Azure-style gateways and Anthropic all answer.
+ */
+export async function probeModels(baseUrl, apiKey) {
+  const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(base)) throw new Error(tr('http:// 또는 https://로 시작하는 주소를 넣어주세요'));
+  const headers = apiKey ? { Authorization: `Bearer ${apiKey}`, 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : {};
+  const urls = /\/v\d+$/.test(base) ? [`${base}/models`] : [`${base}/v1/models`, `${base}/models`];
+  let last = null;
+  for (const u of urls) {
+    const r = await getJson(u, headers);
+    last = r;
+    const models = modelIds(r.json);
+    if (r.status >= 200 && r.status < 300 && models.length) return { ok: true, models: models.slice(0, 500), url: u };
+  }
+  const why = !last || last.status === 0 ? tr('서버에 연결하지 못했어요 ({e})', { e: last?.error || '?' })
+    : last.status === 401 || last.status === 403 ? tr('키가 필요하거나 맞지 않아요 (HTTP {s})', { s: last.status })
+      : tr('모델 목록을 받지 못했어요 (HTTP {s}). 모델 이름을 직접 입력해주세요', { s: last.status });
+  return { ok: false, error: why, models: [] };
+}
+
+const LOCAL = [
+  { id: 'ollama', name: 'Ollama', port: 11434 },
+  { id: 'lmstudio', name: 'LM Studio', port: 1234 },
+  { id: 'vllm', name: 'vLLM', port: 8000 },
+  { id: 'litellm', name: 'LiteLLM', port: 4000 },
+  { id: 'llamacpp', name: 'llama.cpp', port: 8080 },
+  { id: 'jan', name: 'Jan', port: 1337 },
+];
+/** Model servers running on this computer right now. */
+export async function findLocalLlms() {
+  const found = await Promise.all(LOCAL.map(async (s) => {
+    const base = `http://127.0.0.1:${s.port}`;
+    const r = await getJson(`${base}/v1/models`, {}, 1500);
+    let models = r.status === 200 ? modelIds(r.json) : [];
+    if (!models.length && s.id === 'ollama') { const t = await getJson(`${base}/api/tags`, {}, 1500); models = modelIds(t.json); }
+    if (!models.length && !(s.id === 'litellm' && r.status === 401)) return null;
+    return { ...s, baseUrl: `${base}/v1`, models: models.slice(0, 200), needsKey: r.status === 401 };
+  }));
+  return { servers: found.filter(Boolean) };
+}

@@ -1,6 +1,6 @@
 // Baton service worker: app-shell cache + web push.
-const CACHE = 'baton-v1';
-const SHELL = ['/', '/style.css', '/app.js', '/vendor/marked.js', '/vendor/purify.js', '/icon.svg', '/manifest.webmanifest'];
+const CACHE = 'baton-v23';
+const SHELL = ['/', '/style.css?v=16', '/app.js?v=21', '/theme.js?v=5', '/palettes.css?v=3', '/studio.css?v=5', '/studio.js?v=5', '/vendor/marked.js', '/vendor/purify.js', '/icon.svg?v=2', '/baton-mark.svg', '/icon-handoff-180-v1.png', '/icon-handoff-192-v1.png', '/icon-handoff-512-v1.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -23,15 +23,35 @@ self.addEventListener('fetch', (e) => {
 self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data.json(); } catch { d = { title: 'Baton', body: e.data?.text() }; }
-  e.waitUntil(self.registration.showNotification(d.title || 'Baton', {
-    body: d.body || '',
-    tag: d.tag,
-    renotify: Boolean(d.tag),
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
-    data: { url: d.url || '/#/' },
-  }));
+  e.waitUntil((async () => {
+    // A focused desktop Baton tab shows its own bottom-right card — skip the duplicate OS notification.
+    // Phones never show those cards, so don't ask: on iOS a locked/suspended PWA can still look
+    // "focused + visible", and any push that ends without a notification counts against the subscription.
+    if (!IS_MOBILE && await focusedTabShowsCards().catch(() => false)) return;
+    await self.registration.showNotification(d.title || 'Baton', {
+      body: d.body || '',
+      tag: d.tag,
+      renotify: Boolean(d.tag),
+      icon: '/icon-handoff-192-v1.png',
+      badge: '/icon-handoff-192-v1.png',
+      data: { url: d.url || '/#/' },
+    });
+  })());
 });
+
+const IS_MOBILE = /iPhone|iPad|iPod|Android|Mobile/i.test(self.navigator.userAgent) || (/Macintosh/.test(self.navigator.userAgent) && self.navigator.maxTouchPoints > 1);
+
+async function focusedTabShowsCards() {
+  const all = await self.clients.matchAll({ type: 'window' });
+  const tab = all.find((c) => c.focused && c.visibilityState === 'visible');
+  if (!tab) return false;
+  return new Promise((resolve) => {
+    const ch = new MessageChannel();
+    const timer = setTimeout(() => resolve(false), 400);
+    ch.port1.onmessage = (m) => { clearTimeout(timer); resolve(Boolean(m.data?.cards)); };
+    tab.postMessage({ type: 'desk-cards?' }, [ch.port2]);
+  });
+}
 
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();

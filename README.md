@@ -9,6 +9,7 @@ Claude Code · Codex · Antigravity · OpenCode · Cursor — on your desktop an
 [![Release](https://img.shields.io/github/v/release/SongKye/baton?include_prereleases)](https://github.com/SongKye/baton/releases)
 ![Node](https://img.shields.io/badge/node-%E2%89%A5%2022.13-339933)
 ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows%20%7C%20WSL-555)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 English · [한국어](README.ko.md)
 
@@ -20,12 +21,13 @@ Vibe coding means juggling many projects across many agents — and forgetting w
 Baton reads the session files your CLIs already write, puts them in one place, and lets you pick any of them back up from a browser — or your phone.
 
 - 🗂 **Every session, one list** — titles, previews, search, pins, and which ones are running right now (even in a terminal)
-- 💬 **Continue anywhere** — streaming chat, tool calls, photos; choose model, reasoning effort and permissions per message
+- 💬 **Continue anywhere** — streaming chat, tool calls, photos; choose model, reasoning effort and permissions per message; answer the agent's questions with a tap
 - 🧭 **"Where was I?"** — AI briefs per project (done / next / ready-to-send prompts) and a daily nudge for forgotten projects
 - 🔀 **Spread the load** — open a new session in the same project with another CLI, or hand a session over when one runs out of tokens
 - 📊 **Limits & usage** — live subscription limits and token usage per CLI and model
+- 🔌 **MCP servers** — add popular servers to every CLI in one tap, and see which ones each CLI loads in each folder, whether they connect, and which tools agents actually call
 - 🖥 **Served ports · 🧩 skills · 🧹 cleanup** — what's running where, which skills agents actually use, and one-tap cleanup of throwaway sessions
-- 🔔 **Notifications** — your phone buzzes when a reply finishes
+- 🔔 **Notifications** — your phone buzzes whenever a session finishes (Baton or PC terminal) or the agent has a question; on a desktop, cards pop up in the corner. Mute a session or a whole project from its ⋯ menu
 - 🏢 **Any backend** — subscriptions, API keys, Amazon Bedrock, Google Vertex, LLM gateways and self-hosted models
 
 ## Quick start
@@ -58,10 +60,16 @@ No Git? Download the zip from [Releases](https://github.com/SongKye/baton/releas
 Baton opens **http://localhost:7420** with a **Get started** screen that walks you through:
 
 1. **Your computer** — OS, Node.js, Git (one-click Git install on Windows/macOS)
-2. **AI coding tools** — one-click install of each CLI with its vendor's official installer, then sign in (sign-in link, device code and code paste are handled in the page)
-3. **Connect without a subscription** — API key, Bedrock, Vertex, gateway or your own server, plus a **Test connection** button
-4. **Phone access** (optional) — share Baton to your own devices with Tailscale
+2. **Connect AI** — pick how you use AI:
+   - *Subscription* — one-click install of each CLI with its vendor's official installer, then sign in (sign-in link, device code and code paste are handled in the page)
+   - *API key* — paste it; Baton recognizes Anthropic, OpenAI, OpenRouter and Groq keys and connects the right CLI
+   - *Company account* — Bedrock, Vertex, Azure OpenAI or a company gateway
+   - *Models on your computer* — Ollama, LM Studio, vLLM, LiteLLM, llama.cpp and Jan are found automatically
+3. **Add tools (MCP)** (optional) — one tap adds a server to all your CLIs
+4. **Phone** (optional) — step by step with Tailscale, then scan a QR code
 5. **Start on login** (optional) — systemd / launchd / Windows Startup
+
+Every step shows whether it's done, and each connection can be checked with **Test connection**.
 
 Existing sessions show up as soon as a CLI is installed. Later: `npm start` (or `npm run open`).
 
@@ -79,7 +87,7 @@ Existing sessions show up as soon as a CLI is installed. Later: `npm start` (or 
 
 ## Bring your own model
 
-Not everyone uses a subscription. In **Get started → Connect via API / company / own server**:
+Not everyone uses a subscription. In **Get started → Connect AI**, choose *API key*, *Company account* or *Models on your computer*:
 
 | You have… | Use | Baton writes |
 |---|---|---|
@@ -92,7 +100,7 @@ Not everyone uses a subscription. In **Get started → Connect via API / company
 | Ollama, vLLM, LM Studio… (**chat completions** only) | OpenCode → *OpenAI-compatible server* | `opencode.json` provider |
 
 Every write backs up the existing file first, and the CLI behaves the same in your terminal.
-Then press **Test connection** to send a one-line prompt through it.
+Forms that take a server address load its model list (`/v1/models`) so you can pick a model instead of typing it. After connecting, Baton sends a one-line prompt through it to test.
 
 > Codex only speaks the Responses API (`wire_api = "chat"` was removed). For chat-only servers use OpenCode, or put a Responses-capable proxy such as LiteLLM in front.
 
@@ -102,11 +110,61 @@ Then press **Test connection** to send a one-line prompt through it.
 - Relocated configs (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) are followed.
 - Bedrock / API / gateway setups show "no subscription limits" instead of errors, the model picker offers what that backend understands, and every picker accepts a free-form model id.
 
+## MCP servers
+
+### Add one in a tap
+
+In **Get started → Add tools** or with **＋** on **Tools → MCP servers**, pick a server and the CLIs to add it to:
+Context7, Playwright, Chrome DevTools, GitHub, Filesystem, Memory, Sequential Thinking, Fetch, Notion, Linear, Sentry, Supabase, Figma — or your own command / URL.
+Baton writes each CLI's own global config (`claude mcp add-json -s user`, `~/.codex/config.toml`, `mcp_config.json`, `opencode.json`, `~/.cursor/mcp.json`) and keeps a `.baton-backup` of the previous file.
+On a server's page, **Add to other CLIs** copies it (keys included — they stay on your computer) and **Delete** removes it.
+
+### See what's loaded and used
+
+**Tools → MCP servers** lists every MCP server your CLIs can see, grouped by where it's configured:
+
+| CLI | Global | Per project |
+|---|---|---|
+| Claude Code | `~/.claude.json` (user), plugins, `managed-mcp.json`, claude.ai connectors | `.mcp.json` (shared, needs approval) · `~/.claude.json` → `projects` (local, just you) |
+| Codex | `~/.codex/config.toml` `[mcp_servers.*]` | `.codex/config.toml` |
+| Antigravity | `~/.gemini/config/mcp_config.json`, plugins | `.agents/plugins/*/mcp_config.json` |
+| OpenCode | `~/.config/opencode/opencode.json` `mcp` | `opencode.json` |
+| Cursor | `~/.cursor/mcp.json` | `.cursor/mcp.json` |
+
+- **What does the agent load here?** A project page and the 🔌 chip in a chat show the servers that apply in that folder. The closest scope wins (local > project > global), and servers that are off, not yet approved, or overridden are marked.
+- **What did it actually use?** Calls are read from Claude Code and Codex transcripts: count, tools, last used, and which sessions used them. Servers nobody calls just cost context.
+- **Is it connected?** ↻ / *Check connections* runs `claude mcp list` in that folder. Sessions started from Baton also record each server's status, and a failed or unauthenticated server is flagged while the reply streams.
+- Environment variables and header values are never shown in the browser, and token-looking arguments and URL parameters are masked.
+
 ## Use it from your phone
 
-Baton listens on `127.0.0.1` only. Install [Tailscale](https://tailscale.com/download) on your computer and phone, then press **Share to my devices** in Get started — it's reachable only inside your own tailnet, never the public internet. Open the link on your phone, **Add to Home Screen**, and turn on notifications in Settings (iOS allows web push only for home-screen apps).
+Baton listens on `127.0.0.1` only. **Get started → Phone** walks you through it:
 
-New devices enter a password once (default **`0000`** — change it in **Settings → Security**) and are remembered for 30 days. See [SECURITY.md](SECURITY.md).
+1. Install [Tailscale](https://tailscale.com/download) on your computer and sign in.
+2. Install Tailscale on your phone (scan the QR code) and sign in with the same account. Baton notices when your phone joins.
+3. Press **Share to my devices**, then scan the QR code with your phone camera. It's reachable only inside your own tailnet, never the public internet.
+4. **Add to Home Screen** and turn on notifications in Settings (iOS allows web push only for home-screen apps).
+
+There is no password: Baton trusts the Tailscale identity of the request. To allow only specific accounts, start Baton with `BATON_ALLOWED_LOGINS=me@example.com`. See [SECURITY.md](SECURITY.md).
+
+## Questions from the agent
+
+When an agent needs you to choose, you answer in the chat:
+
+- **Claude Code** — its question tool (AskUserQuestion) shows up as a card with the options, multi-select and your own text — one question per page, then a review page and Submit. The reply continues once you answer. If you're not looking, your phone gets a notification.
+- **Every CLI** — when a reply ends with a question and a short list of choices, the choices become buttons. Tapping one sends it as your next message. Several numbered questions with choices get the same one-per-page card, and your answers go back as one message.
+
+## Working folders
+
+Browse subfolders when starting a session or moving its working folder, and search projects by name or path. The default working folder is `workspace` under the **home of the account running Baton**, if that directory exists; otherwise it is the home folder. Baton does not create `workspace` automatically. Choose a different folder in **Settings → Working folders → Default working folder → Change** to use it for new sessions. On a phone, the browser still shows folders inside the home directory of the computer running Baton.
+
+## Look and feel
+
+Wide screens get a studio layout with a sidebar; phones keep the compact one. Pick a color palette (Default, Forest, Nord, Dracula, Tokyo Night, Monokai, Rosé Pine) and light / dark / system brightness in **Settings → Appearance & language**.
+
+## Updates
+
+Baton checks for a new release a few times a day and tells you once: a banner on Home and a notification. **Update now** pulls the new version (`git pull --ff-only`), installs its packages and restarts Baton — sessions and settings stay. If you installed from a zip, or your checkout has local changes, you get the steps instead. Check any time from the version line at the bottom of Settings; turn the alerts off in **Settings → Notifications**.
 
 ## How it works
 
@@ -131,3 +189,7 @@ Baton is a small Node.js server with no build step. It never stores your convers
 ## Contributing
 
 Issues and PRs are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+[MIT](LICENSE) — free to use, modify and share; keep the copyright notice.

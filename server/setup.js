@@ -13,6 +13,7 @@ import { childEnv } from './runner.js';
 import { tr, lang } from './i18n.js';
 import { claudeProvider, codexProvider } from './providers.js';
 import { envInfo } from './env.js';
+import { updateCommand } from './update.js';
 
 const HOME = os.homedir();
 const PORT = Number(process.env.BATON_PORT || 7420);
@@ -31,8 +32,14 @@ async function tailscaleStatus() {
   const bin = which('tailscale');
   if (!bin) return { installed: false };
   const out = await sh(bin, ['status', '--json'], 6000);
-  let host = null, online = false;
-  try { const j = JSON.parse(out); host = j.Self?.DNSName?.replace(/\.$/, '') || null; online = j.BackendState === 'Running'; } catch { /* logged out */ }
+  let host = null, online = false, phones = [];
+  try {
+    const j = JSON.parse(out);
+    host = j.Self?.DNSName?.replace(/\.$/, '') || null;
+    online = j.BackendState === 'Running';
+    // phones/tablets on the same tailnet: proves step "install Tailscale on your phone" is done
+    phones = Object.values(j.Peer || {}).filter((p) => /^(ios|android)$/i.test(p.OS || '')).map((p) => ({ name: p.HostName, os: p.OS, online: Boolean(p.Online) }));
+  } catch { /* logged out */ }
   const serve = await sh(bin, ['serve', 'status', '--json'], 6000);
   let url = null;
   try {
@@ -41,7 +48,7 @@ async function tailscaleStatus() {
       for (const h of Object.values(cfg.Handlers || {})) if (String(h.Proxy || '').endsWith(`:${PORT}`)) url = `https://${hp.replace(/:443$/, '')}`;
     }
   } catch { /* none */ }
-  return { installed: true, online, host, url };
+  return { installed: true, online, host, url, phones };
 }
 
 function autostartPath() {
@@ -184,7 +191,7 @@ async function removeAutostart() {
   await fsp.rm(autostartPath(), { force: true });
 }
 
-/** action: install | login | git | tailscale-share | tailscale-unshare | autostart-on | autostart-off */
+/** action: install | login | git | tailscale-share | tailscale-unshare | autostart-on | autostart-off | update */
 export async function startJob(action, tool) {
   const t = tool ? TOOLS[tool] : null;
   if (tool && !t) throw new Error('unknown tool');
@@ -220,6 +227,13 @@ export async function startJob(action, tool) {
     const job = newJob('Tailscale');
     job.emit({ t: 'line', stream: 'cmd', text: `$ tailscale ${args.join(' ')}` });
     attach(job, spawnCli(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] }));
+    return job;
+  }
+  if (action === 'update') {
+    const cmd = updateCommand();
+    const job = newJob(tr('Baton 업데이트'));
+    job.emit({ t: 'line', stream: 'cmd', text: `$ ${cmd}` });
+    attach(job, shellSpawn(cmd));
     return job;
   }
   if (action === 'autostart-on' || action === 'autostart-off') {

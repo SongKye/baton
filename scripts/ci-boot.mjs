@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 7499;
 const BASE = `http://127.0.0.1:${PORT}`;
-const ENDPOINTS = ['/api/state', '/api/home', '/api/sessions', '/api/projects', '/api/setup', '/api/ports', '/api/ports?again=1', '/api/skills', '/api/usage', '/api/limits', '/api/settings', '/api/env', '/api/trash', '/api/cleanup', '/i18n.js', '/'];
+const ENDPOINTS = ['/api/state', '/api/home', '/api/sessions', '/api/projects', '/api/setup', '/api/ports', '/api/ports?again=1', '/api/skills', '/api/mcp', '/api/mcp/effective?cwd=~', '/api/usage', '/api/limits', '/api/settings', '/api/env', '/api/trash', '/api/cleanup', '/api/events/after/0', '/i18n.js', '/'];
 
 const server = spawn(process.execPath, ['--no-warnings', 'server/index.js'], {
   cwd: ROOT, env: { ...process.env, BATON_PORT: String(PORT), BATON_NO_SHELL_ENV: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
@@ -24,7 +24,7 @@ try {
   let up = false;
   for (let i = 0; i < 60 && !up; i++) {
     await sleep(500);
-    try { up = (await fetch(`${BASE}/api/auth/status`)).ok; } catch { /* not yet */ }
+    try { up = (await fetch(`${BASE}/api/settings`)).ok; } catch { /* not yet */ }
   }
   if (!up) throw new Error('server did not start');
   for (const ep of ENDPOINTS) {

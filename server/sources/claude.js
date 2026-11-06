@@ -40,7 +40,7 @@ async function summarize(file, st) {
     if (!gitBranch && e.gitBranch) gitBranch = e.gitBranch;
     if (!firstPrompt && isRealUserPrompt(e)) firstPrompt = cleanPrompt(textOf(e.message.content));
   }
-  let aiTitle = null, customTitle = null, summaryTitle = null, lastPrompt = null, lastReply = null, updated = null, model = null, sidechainOnly = true;
+  let aiTitle = null, customTitle = null, summaryTitle = null, lastPrompt = null, lastReply = null, updated = null, model = null, sidechainOnly = true, usedTools = false;
   const scan = (arr) => {
     for (const e of arr) {
       if (e.type === 'ai-title' && e.aiTitle) aiTitle = e.aiTitle;
@@ -52,20 +52,33 @@ async function summarize(file, st) {
       if (e.type === 'assistant' && !e.isSidechain) {
         const t = textOf(e.message?.content);
         if (t && t.trim()) lastReply = t;
+        if (Array.isArray(e.message?.content) && e.message.content.some((p) => p?.type === 'tool_use')) usedTools = true;
         if (e.message?.model && !e.message.model.startsWith('<')) model = e.message.model;
       }
     }
   };
   scan(head);
   if (tail !== head) scan(tail);
-  if (!aiTitle && !customTitle && st.size < 8 * 1024 * 1024 && tail !== head) {
+  // A first prompt with pasted images can be one JSONL line far bigger than the head window, so the head
+  // holds no prompt (and no cwd). Stream the file until it shows up instead of dropping the session.
+  const needTitle = !aiTitle && !customTitle && st.size < 8 * 1024 * 1024 && tail !== head;
+  if (needTitle || !firstPrompt || !cwd) {
     await eachJsonl(file, (e) => {
       if (e.type === 'ai-title' && e.aiTitle) aiTitle = e.aiTitle;
       if (e.type === 'custom-title' && e.customTitle) customTitle = e.customTitle;
+      if (!cwd && e.cwd) cwd = e.cwd;
+      if (!created && e.timestamp) created = Date.parse(e.timestamp);
+      if (!entrypoint && e.entrypoint) entrypoint = e.entrypoint;
+      if (!gitBranch && e.gitBranch) gitBranch = e.gitBranch;
+      if (!firstPrompt && isRealUserPrompt(e)) firstPrompt = cleanPrompt(textOf(e.message.content));
+      if (!needTitle && firstPrompt && cwd) return false; // got what was missing; stop early
     });
   }
   if (!firstPrompt && !lastPrompt && !aiTitle) return null; // empty / metadata-only file
   const isTmp = cwd?.startsWith('/tmp');
+  // Headless (`claude -p` / Agent SDK) runs that Baton didn't start: a one-shot script call (no tools) is noise,
+  // but one that actually worked with tools was delegated by a person — e.g. another CLI handing off a task.
+  const external = /^sdk/.test(entrypoint || '') && !batonIds().has(id);
   return {
     tool: 'claude',
     id,
@@ -78,7 +91,9 @@ async function summarize(file, st) {
     lastReply: clip(oneLine(lastReply), 400),
     model,
     gitBranch,
-    automated: Boolean(isTmp || sidechainOnly || (/^sdk/.test(entrypoint || '') && !batonIds().has(id))),
+    automated: Boolean(isTmp || sidechainOnly || (external && !usedTools)),
+    delegated: Boolean(external && usedTools && !isTmp && !sidechainOnly),
+    background: external,
     entrypoint,
     file,
     size: st.size,

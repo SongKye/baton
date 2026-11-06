@@ -70,6 +70,16 @@ async function summarize(file, st, batonIds) {
     if (e.type === 'event_msg' && e.payload?.type === 'task_complete' && e.payload.last_agent_message) lastReply = e.payload.last_agent_message;
     if (e.type === 'turn_context' && e.payload?.model) model = e.payload.model;
   }
+  // Images and long setup messages can push the first user event beyond the
+  // head window. Once the transcript grows, it also falls outside the tail.
+  // Stream to the first user event before treating the session as empty.
+  if (!firstPrompt) {
+    await eachJsonl(file, (e) => {
+      const u = userText(e);
+      if (u) firstPrompt = cleanPrompt(u);
+      if (firstPrompt) return false;
+    });
+  }
   if (!firstPrompt && !lastPrompt) return null;
   const id = meta.id || meta.session_id;
   const source = typeof meta.source === 'string' ? meta.source : (meta.source ? 'subagent' : '');
@@ -88,6 +98,7 @@ async function summarize(file, st, batonIds) {
     lastReply: clip(oneLine(lastReply), 400),
     model,
     automated,
+    background: source === 'exec' && !batonIds.has(id),
     source,
     file,
     size: st.size,

@@ -1,0 +1,88 @@
+/* Main entry loads this at 760px and above; studio.html previews all sizes. */
+/* Studio layout shares the default colors in style.css at every screen size. */
+.studio-brand, .studio-foot { display: none; }
+.studio-intro { padding: 24px 0 20px; }
+.studio-eyebrow { display: flex; justify-content: space-between; gap: 16px; font-size: 10px; letter-spacing: .13em; font-weight: 700; color: var(--text-3); }
+.studio-eyebrow span { letter-spacing: 0; font-weight: 500; }
+.studio-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding-top: 26px; }
+.studio-heading h2 { font-size: clamp(32px, 3.5vw, 54px); line-height: 1.2; letter-spacing: -.055em; margin: 0; font-weight: 600; }
+.studio-heading h2 em { font-style: normal; color: var(--accent); }
+.studio-heading p { font-size: 13px; color: var(--text-2); margin: 20px 0 0; }
+.studio-start { flex: none; display: flex; align-items: center; gap: 13px; padding: 12px 17px; border: 1px solid var(--border); border-radius: 50px; font-size: 12px; font-weight: 650; background: var(--surface); }
+.studio-start > span { font-size: 22px; }
+.studio-home .stat { padding: 22px 24px; background: transparent; border-radius: 0; border: 0; border-right: 1px solid var(--border); }
+.studio-home .stat:last-child { border-right: 0; }
+.studio-home .stats { border-block: 1px solid var(--border); gap: 0; margin: 0 0 14px; }
+.studio-home .stat .v { font-family: ui-serif, Georgia, serif; font-size: 40px; font-weight: 400; line-height: 1.15; margin-bottom: 7px; }
+.studio-home .section { margin: 10px 0 26px; }
+.studio-home .section-h { margin-bottom: 14px; }
+.studio-home .section-h h2 { font-size: 15px; }
+.studio-home .section-h .more { font-size: 11px; }
+.studio-home .srow { padding: 19px 18px; transition: background .16s; }
+.studio-home .srow:hover { background: var(--accent-soft); }
+.studio-home .card.list { overflow: hidden; gap: 0; }
+.studio-home .srow .t { font-size: 14px; }
+.studio-home .tool-avatar { border-radius: 50%; }
+.studio-home .prow { padding: 18px; }
+.studio-home .usage-mini { padding: 20px; }
+.studio-home .usage-mini .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 16px 20px; }
+.studio-home .usage-mini .row > div { min-width: 0; }
+.studio-home .usage-mini .row .small { overflow-wrap: anywhere; }
+.studio-home .hscroll { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; overflow: visible; scroll-snap-type: none; margin: 0; padding: 0; }
+.studio-home .doze { width: auto; max-width: none; min-width: 0; }
+/* 2-2: the FAB is a sibling of main.view (#app > .fab); the intro's 「새로운 작업 시작」 replaces it here. */
+.studio-home ~ .fab { display: none; }
+/* 2-1: update banner stays full width at the top. */
+.studio-update { margin: 18px 0 0; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+@media (min-width: 760px) {
+  :root { --side-w: 208px; }
+  body { padding-left: var(--side-w); }
+  .tabbar { top: 0; bottom: 0; right: auto; width: var(--side-w); height: 100dvh; padding: 32px 18px 24px; display: flex; flex-direction: column; gap: 8px; background: #292b28; color: #f1efe9; border: 0; }
+  .tabbar::before { display: none; }
+  .studio-brand { display: flex; align-items: center; gap: 11px; margin: 0 6px 54px; }
+  .studio-mark { display: block; width: 42px; height: 42px; flex: none; border-radius: 10px; }
+  .studio-brand strong { font-size: 25px; font-weight: 600; letter-spacing: -.04em; }
+  .studio-brand strong span { display: block; font-size: 7px; letter-spacing: .12em; color: #a8aaa4; margin-top: 1px; }
+  .tabbar > a { min-height: 46px; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 0 14px; font-size: 13px; color: #c2c3bd; border-radius: 9px; }
+  .tabbar > a.on { color: #f8f7f2; background: #ffffff12; }
+  .tabbar > a.on svg { stroke: #adc5ad; }
+  .tabbar > a:hover { background: #ffffff1c; }
+  .tabbar .tab-badge { position: static; margin-left: auto; }
+  .studio-foot { margin-top: auto; padding: 22px 12px 0; border-top: 1px solid #ffffff20; display: flex; flex-direction: column; gap: 16px; }
+  .studio-foot > span { font-size: 8px; letter-spacing: .12em; color: #a8aaa4; }
+  .studio-foot a { font-size: 12px; color: #e2e4dd; }
+  main.view { max-width: 1360px; padding: 6px 38px 100px; }
+  .topbar { max-width: 1360px; padding: 24px 38px 16px; width: 100%; margin: auto; border-bottom: 1px solid var(--border); }
+  .topbar h1 { font-size: 16px; letter-spacing: -.02em; }
+  .topbar .sub { font-size: 11px; margin-top: 2px; }
+  .fab { bottom: 24px; right: 32px; height: 46px; font-size: 13px; box-shadow: none; }
+  .runpill { bottom: 24px; left: calc(var(--side-w) + 24px); }
+  .sheet, .bulkbar { left: var(--side-w); }
+  body.chat-mode .tabbar { display: flex; }
+  .studio-intro { padding: 26px 0 34px; }
+  .tool-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* 2-6: the sidebar already carries the brand — the home top bar keeps just the greeting. */
+  .topbar h1.home-brand { display: none; }
+  .topbar h1.home-brand + .sub { font-size: 14px; font-weight: 650; color: var(--text-2); margin: 0; }
+}
+@media (min-width: 1180px) {
+  :root { --side-w: 232px; }
+  main.view { padding-inline: 48px; }
+  .topbar { padding-inline: 48px; }
+  .studio-home { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(290px, 1fr); column-gap: 30px; align-content: start; }
+  .studio-intro, .studio-update, .studio-home > .stats { grid-column: 1 / -1; }
+  .studio-primary, .studio-secondary { min-width: 0; }
+  .studio-home .stat { display: flex; align-items: center; gap: 20px; }
+  .studio-home .stat .v { margin: 0; }
+  .studio-secondary .hscroll { grid-template-columns: 1fr; }
+}
+@media (max-width: 759px) {
+  .studio-heading { align-items: flex-start; flex-direction: column; gap: 18px; }
+  .studio-intro { padding-top: 16px; }
+  .studio-eyebrow { font-size: 8px; gap: 8px; }
+  .studio-home .stat { padding: 18px 12px; }
+  .studio-home .stat .v { font-size: 32px; }
+  .studio-home .stat .l { font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .studio-home .srow { transition: none; } }

@@ -7,7 +7,7 @@ import { listOpencode, readOpencode } from './sources/opencode.js';
 import { listCursor, readCursor, noteCursorDirs } from './sources/cursor.js';
 import { liveSessions } from './live.js';
 import { projectRoot, groupProjects } from './projects.js';
-import { allSessionMeta, allProjectMeta, allBriefs, getSettings, cwdOverrides } from './store.js';
+import { allSessionMeta, allProjectMeta, allBriefs, cwdOverrides } from './store.js';
 import { activeRunFor, childPids } from './runner.js';
 import { trashedKeys } from './trash.js';
 
@@ -51,12 +51,10 @@ export async function forceRefresh() {
 }
 
 /** Sessions decorated with user meta, live/terminal state and running Baton runs. */
-export async function decoratedSessions({ includeAutomated, includeHidden } = {}) {
+export async function decoratedSessions({ includeHidden } = {}) {
   const snap = await getSnapshot();
   const meta = allSessionMeta();
-  const live = await liveSessions(snap.byFile);
-  const settings = getSettings();
-  const showAuto = includeAutomated ?? settings.showAutomated;
+  const liveMap = await liveSessions(snap.byFile);
   const trashed = trashedKeys();
   const out = [];
   for (const s of snap.sessions) {
@@ -64,9 +62,10 @@ export async function decoratedSessions({ includeAutomated, includeHidden } = {}
     const m = meta.get(s.key);
     const hidden = Boolean(m?.hidden);
     if (hidden && !includeHidden) continue;
-    if (s.automated && !showAuto && !m?.pinned) continue;
-    const lv = live.get(s.key);
-    const terminal = lv && !childPids.has(lv.pid) ? lv : null;
+    // Automated sessions (scripts, `codex exec`, another tool's `claude -p`) are listed like any other, tagged
+    // "Auto"; the user hides the ones they don't want (one by one or in bulk).
+    const lv = liveMap.get(s.key);
+    const terminal = lv && !childPids.has(lv.pid) ? lv : null; // Baton's own child processes are shown as runs instead
     const run = activeRunFor(s.key);
     out.push({
       ...s,
@@ -87,7 +86,7 @@ export async function decoratedSessions({ includeAutomated, includeHidden } = {}
 }
 
 export async function projectsList() {
-  const sessions = await decoratedSessions({ includeAutomated: true });
+  const sessions = await decoratedSessions();
   return groupProjects(sessions, allProjectMeta(), allBriefs());
 }
 
