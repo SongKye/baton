@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- **Phone notifications no longer get dropped on a network hiccup**: if sending a push fails because of a brief connection problem, Baton retries twice before giving up, and logs the real error instead of an empty `[push] failed`.
+
 ## [0.4.0] - 2026-11-06
 
 ### Added
