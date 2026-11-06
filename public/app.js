@@ -440,6 +440,12 @@ async function trashMany(keys) {
   toast(t('{n}개를 휴지통으로 옮겼어요', { n: r.moved }));
   return true;
 }
+async function hideMany(keys, hidden = true) {
+  if (!keys.length) return false;
+  await api('/api/sessions/hide', { body: { keys, hidden } });
+  toast(hidden ? t('{n}개를 숨겼어요 (세션 탭 「숨긴 세션」에서 볼 수 있어요)', { n: keys.length }) : t('{n}개를 다시 보이게 했어요', { n: keys.length }));
+  return true;
+}
 function toolDots(tools) { return `<span class="tooldots">${Object.keys(tools || {}).map((k) => `<i class="${k}"></i>`).join('')}</span>`; }
 function projectRow(p) {
   const line = p.brief?.oneLiner || p.lastSession?.title || '';
@@ -595,14 +601,14 @@ async function viewProject([id]) {
   const head = $('.topbar');
   head.insertAdjacentHTML('afterbegin', `<a class="icon-btn" href="#/projects" style="margin-left:-10px">${ICON.back}</a>`);
   v.innerHTML = '<div class="skeleton" style="height:160px;margin-top:10px"></div>';
-  let showAuto = false, selecting = false, noteEditing = false, reloadAfterNote = false;
+  let selecting = false, noteEditing = false, reloadAfterNote = false;
   const PAGE = 40;
   let limit = PAGE; // grows with 「더 보기」 and survives reloads (status change, memo save…)
   const sel = new Set();
   G.cleanup = () => document.body.classList.remove('selecting');
   const load = async () => {
     if (noteEditing) { reloadAfterNote = true; return; } // don't wipe a memo that's being typed
-    const d = await api(`/api/projects/${encodeURIComponent(id)}${showAuto ? '?automated=1' : ''}`);
+    const d = await api(`/api/projects/${encodeURIComponent(id)}`);
     const p = d.project;
     $('.topbar h1').textContent = p.name;
     // load() re-runs after every edit — update the header in place instead of appending again.
@@ -650,8 +656,7 @@ async function viewProject([id]) {
       <div class="section" id="pnote"><div class="section-h"><h2>${t('메모')}</h2></div>
         ${p.note ? `<button class="card memo" id="pnotecard" title="${t('눌러서 고치기')}">${esc(p.note)}</button>`
           : `<button class="memo-empty" id="pnotecard">📝 ${t('메모 남기기')}<span>${t('다음에 돌아왔을 때 볼 메모')}</span></button>`}</div>
-      <div class="section"><div class="section-h"><h2>${t('세션')}</h2><span class="count">${human.length}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span>
-        <button class="more" id="autotoggle">${showAuto ? t('자동 실행 숨기기') : (p.autoSessions ? t('자동 실행 보기') : '')}</button>
+      <div class="section"><div class="section-h"><h2>${t('세션')}</h2><span class="count">${d.sessions.length}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span>
         ${d.sessions.length ? `<button class="more" id="pselbtn">${selecting ? t('완료') : t('선택')}</button>` : ''}</div>
         <div class="card list" id="plist">${listHtml()}</div>
         <button class="btn block ghost" id="psmore" style="margin-top:10px;${d.sessions.length > limit ? '' : 'display:none'}">${moreLabel()}</button>
@@ -662,7 +667,7 @@ async function viewProject([id]) {
       </div>
       <div class="section" id="pmcp"></div>
       ${gitHtml}
-      <div class="bulkbar" id="pbar" ${selecting ? '' : 'hidden'}><button class="btn sm ghost" id="pall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="pcount">0</b>' })}</span><button class="btn primary danger-fill" id="ptrash">${t('휴지통으로')}</button></div>`;
+      <div class="bulkbar" id="pbar" ${selecting ? '' : 'hidden'}><button class="btn sm ghost" id="pall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="pcount">0</b>' })}</span><button class="btn sm" id="phide">${t('숨기기')}</button><button class="btn primary danger-fill" id="ptrash">${t('휴지통으로')}</button></div>`;
     loadProjectMcp($('#pmcp'), p.path);
     // memo: tap it to edit right there
     const editNote = () => {
@@ -694,7 +699,7 @@ async function viewProject([id]) {
     $('#punmute') && ($('#punmute').onclick = async () => { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { muted: false } }); toast(t('알림을 다시 켰어요')); load(); });
     // session list: ⋯ / long-press menu, or checkboxes for bulk trash
     const shown = () => d.sessions.slice(0, limit);
-    const drawBar = () => { $('#pcount').textContent = sel.size; $('#ptrash').disabled = !sel.size; };
+    const drawBar = () => { $('#pcount').textContent = sel.size; $('#ptrash').disabled = !sel.size; $('#phide').disabled = !sel.size; };
     if (!selecting) attachLongPress($('#plist'));
     const bindChecks = () => $$('#plist [data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); c.onchange = () => { c.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); drawBar(); }; });
     bindChecks();
@@ -715,6 +720,10 @@ async function viewProject([id]) {
     };
     $('#ptrash').onclick = async () => {
       if (!(await trashMany([...sel]))) return;
+      sel.clear(); selecting = false; document.body.classList.remove('selecting'); load();
+    };
+    $('#phide').onclick = async () => {
+      if (!(await hideMany([...sel]))) return;
       sel.clear(); selecting = false; document.body.classList.remove('selecting'); load();
     };
     $$('[data-st]', v).forEach((btn) => (btn.onclick = async () => {
@@ -738,7 +747,6 @@ async function viewProject([id]) {
       if (where === 'latest') { sessionStorage.setItem(`draft:${latest.tool}:${latest.id}`, text); location.hash = `#/s/${latest.tool}/${encodeURIComponent(latest.id)}`; }
       else { sessionStorage.setItem('draft:new', text); location.hash = `#/new?cwd=${encodeURIComponent(p.path)}&tool=${where}`; }
     }));
-    $('#autotoggle').onclick = () => { showAuto = !showAuto; load(); };
     $('#pmore').onclick = async () => {
       const act = await pick(p.name, [
         { value: 'pin', label: p.pinned ? t('고정 해제') : t('📌 상단 고정') },
@@ -766,7 +774,8 @@ async function viewSessions() {
   const v = shell({ title: t('세션'), right: `<button class="btn sm ghost" id="selbtn">${t('선택')}</button>` });
   let selecting = false;
   const sel = new Set();
-  const f = store.get('sfilter', { tool: '', automated: false, hidden: false });
+  const f = { tool: '', hidden: false, ...store.get('sfilter', {}) };
+  delete f.automated; // automated sessions are always listed now
   const seenTools = new Set();
   let q = sessionStorage.getItem('sq') || '';
   let offset = 0, items = [], total = 0;
@@ -774,11 +783,11 @@ async function viewSessions() {
     <label class="search">${ICON.search}<input id="sq" type="search" placeholder="${t('제목·대화 내용·폴더 검색')}" value="${esc(q)}" autocomplete="off"></label>
     <div class="chips" id="sf"></div>
     <div id="slist" style="margin-top:12px"></div>
-    <div class="bulkbar" id="sbar" hidden><button class="btn sm ghost" id="sall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="scount">0</b>' })}</span><button class="btn primary danger-fill" id="strash">${t('휴지통으로')}</button></div>`;
+    <div class="bulkbar" id="sbar" hidden><button class="btn sm ghost" id="sall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="scount">0</b>' })}</span><button class="btn sm" id="shide"></button><button class="btn primary danger-fill" id="strash">${t('휴지통으로')}</button></div>`;
   const drawChips = () => {
     $('#sf').innerHTML = [['', t('전체')], ...TOOL_IDS().filter((k) => k === f.tool || seenTools.has(k) || INSTALLED().includes(k)).map((k) => [k, TOOL[k].name])]
       .map(([k, l]) => `<button class="chip ${f.tool === k ? 'on' : ''}" data-tool="${k}">${l}</button>`).join('')
-      + `<button class="chip ${f.automated ? 'on' : ''}" data-tg="automated">${t('자동 실행 포함')}</button><button class="chip ${f.hidden ? 'on' : ''}" data-tg="hidden">${t('숨긴 세션')}</button><a class="chip" href="#/cleanup">${t('🧹 정리하기')}</a>`;
+      + `<button class="chip ${f.hidden ? 'on' : ''}" data-tg="hidden">${t('숨긴 세션')}</button><a class="chip" href="#/cleanup">${t('🧹 정리하기')}</a>`;
     $$('[data-tool]', v).forEach((b) => (b.onclick = () => { f.tool = b.dataset.tool; reload(); }));
     $$('[data-tg]', v).forEach((b) => (b.onclick = () => { f[b.dataset.tg] = !f[b.dataset.tg]; reload(); }));
   };
@@ -786,7 +795,6 @@ async function viewSessions() {
     const sp = new URLSearchParams({ offset, limit: 50 });
     if (q) sp.set('q', q);
     if (f.tool) sp.set('tool', f.tool);
-    if (f.automated) sp.set('automated', '1');
     if (f.hidden) sp.set('hidden', '1');
     const d = await api('/api/sessions?' + sp);
     total = d.total; items = offset ? items.concat(d.items) : d.items;
@@ -796,17 +804,21 @@ async function viewSessions() {
     $('#slist').innerHTML = items.length
       ? `<div class="small muted" style="margin:0 2px 8px">${t('{n}개', { n: total })}</div><div class="card list">${items.map((s) => (selecting ? selRow(s) : sessionRow(s))).join('')}</div>
          ${items.length < total ? `<button class="btn block ghost" id="smore" style="margin-top:10px">${t('더 보기')}</button>` : ''}`
-      : `<div class="empty"><b>${q ? t('검색 결과가 없어요') : t('세션이 없어요')}</b>${f.automated ? '' : t('자동 실행 세션은 「자동 실행 포함」을 켜면 보여요')}</div>`;
+      : `<div class="empty"><b>${q ? t('검색 결과가 없어요') : f.hidden ? t('숨긴 세션이 없어요') : t('세션이 없어요')}</b></div>`;
     const more = $('#smore'); if (more) more.onclick = async () => { offset += 50; await fetchPage(); draw(); };
     if (!selecting) attachLongPress($('#slist'));
     $$('[data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); c.onchange = () => { c.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); drawBar(); }; });
     drawBar();
   };
-  const drawBar = () => { $('#sbar').hidden = !selecting; $('#scount').textContent = sel.size; $('#strash').disabled = !sel.size; };
+  const drawBar = () => { $('#sbar').hidden = !selecting; $('#scount').textContent = sel.size; $('#strash').disabled = !sel.size; $('#shide').disabled = !sel.size; $('#shide').textContent = f.hidden ? t('다시 보이기') : t('숨기기'); };
   $('#selbtn').onclick = () => { selecting = !selecting; sel.clear(); $('#selbtn').textContent = selecting ? t('완료') : t('선택'); document.body.classList.toggle('selecting', selecting); draw(); };
   $('#sall').onclick = () => { const all = items.filter((s) => !s.live).every((s) => sel.has(s.key)); for (const s of items) if (!s.live) all ? sel.delete(s.key) : sel.add(s.key); draw(); };
   $('#strash').onclick = async () => {
     if (!(await trashMany([...sel]))) return;
+    sel.clear(); await reload();
+  };
+  $('#shide').onclick = async () => {
+    if (!(await hideMany([...sel], !f.hidden))) return;
     sel.clear(); await reload();
   };
   G.cleanup = () => document.body.classList.remove('selecting');
@@ -1750,7 +1762,6 @@ async function viewSettings() {
       <div class="setting"><div class="l"><b>${t('모델')}</b></div><select data-k="briefModel">${briefModels}</select></div>
     </div></div>
     <div class="section" data-settings="sessions"><div class="section-h"><h2>${t('세션')}</h2></div><div class="card">
-      <div class="setting"><div class="l"><b>${t('자동 실행 세션도 보기')}</b><span>${t('스크립트·서브에이전트가 만든 세션 (codex exec, agy -p 등)')}</span></div>${sw('showAutomated')}</div>
       <div class="setting"><div class="l"><b>${t('기본 권한')}</b></div><select data-k="defaultPerm">${Object.entries(PERM).map(([k, p]) => `<option value="${k}" ${s.defaultPerm === k ? 'selected' : ''}>${p.label}</option>`).join('')}</select></div>
       <a class="setting" href="#/usage"><div class="l"><b>${t('사용량 · 한도')}</b><span>${t('CLI별 남은 한도와 토큰 사용량')}</span></div><span class="muted">›</span></a>
       <div class="setting"><div class="l"><b>${t('목록 새로고침')}</b><span>${t('세션 파일을 다시 읽어요')}</span></div><button class="btn sm" id="reindex">${ICON.refresh}</button></div>
@@ -2340,7 +2351,7 @@ async function viewCleanup() {
       const n = shown[r] || 30;
       const all = list.every((s) => sel.has(s.key));
       return `<div class="section"><div class="section-h"><label class="ck"><input type="checkbox" data-all="${r}" ${all ? 'checked' : ''}><h2>${t(r)}</h2></label><span class="count">${list.length}</span></div>
-        <p class="small muted" style="margin:-4px 2px 8px">${REASON[r]}${r === t('자동 실행') ? t(' · 지우면 프로젝트 활동 기록에서도 빠져요') : ''}</p>
+        <p class="small muted" style="margin:-4px 2px 8px">${REASON[r]}${r === t('자동 실행') ? t(' · 목록에서만 빼려면 「숨기기」, 지우면 프로젝트 활동 기록에서도 빠져요') : ''}</p>
         <div class="card list">${list.slice(0, n).map((s) => `<label class="srow ckrow"><input type="checkbox" data-k="${esc(s.key)}" ${sel.has(s.key) ? 'checked' : ''}>
           <div class="body"><div class="t"><span class="tt">${esc(s.title)}</span></div><div class="m"><span class="tool-badge ${s.tool}">${TOOL[s.tool].name}</span><span>${esc(projectName(s.project || s.cwd))}</span><span>· ${ago(s.updated)}</span></div></div></label>`).join('')}
         ${list.length > n ? `<button class="btn block ghost" data-more="${r}">${t('{n}개 더 보기', { n: list.length - n })}</button>` : ''}</div></div>`;
@@ -2351,8 +2362,13 @@ async function viewCleanup() {
     $$('[data-all]', v).forEach((c) => (c.onchange = () => { for (const s of d.items.filter((x) => x.reason === c.dataset.all)) c.checked ? sel.add(s.key) : sel.delete(s.key); draw(); }));
     $$('[data-more]', v).forEach((b) => (b.onclick = () => { shown[b.dataset.more] = (shown[b.dataset.more] || 30) + 200; draw(); }));
   };
-  v.innerHTML = `<div id="cl"></div><div class="bulkbar" id="clbar" hidden><span>${t('{n}개 선택', { n: '<b id="clcount">0</b>' })}</span><button class="btn primary danger-fill" id="cldo">${t('휴지통으로')}</button></div>`;
+  v.innerHTML = `<div id="cl"></div><div class="bulkbar" id="clbar" hidden><span>${t('{n}개 선택', { n: '<b id="clcount">0</b>' })}</span><button class="btn sm" id="clhide">${t('숨기기')}</button><button class="btn primary danger-fill" id="cldo">${t('휴지통으로')}</button></div>`;
   draw();
+  $('#clhide').onclick = async () => {
+    $('#clhide').disabled = true;
+    if (await hideMany([...sel])) render();
+    else $('#clhide').disabled = false;
+  };
   $('#cldo').onclick = async () => {
     const keys = [...sel];
     const ok = await pick(t('{n}개 세션을 휴지통으로 옮길까요?', { n: keys.length }), [{ value: true, label: t('옮기기'), desc: t('30일 안에는 휴지통에서 되살릴 수 있어요'), danger: true }, { value: false, label: t('취소') }]);

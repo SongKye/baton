@@ -195,7 +195,7 @@ route('GET', '/api/home', async () => {
 
 route('GET', '/api/sessions', async (req, url) => {
   const sp = url.searchParams;
-  let list = await decoratedSessions({ includeAutomated: sp.get('automated') === '1' ? true : undefined, includeHidden: sp.get('hidden') === '1' });
+  let list = await decoratedSessions({ includeHidden: sp.get('hidden') === '1' });
   const tool = sp.get('tool');
   if (tool) list = list.filter((s) => s.tool === tool);
   const project = sp.get('project');
@@ -214,7 +214,7 @@ route('GET', '/api/sessions/:tool/:id', async (req, url, { tool, id }) => {
   const before = url.searchParams.has('before') ? Number(url.searchParams.get('before')) : null;
   const msgs = await readMessages(s);
   const page = pageMessages(msgs, before, Number(url.searchParams.get('limit') || 80));
-  const list = await decoratedSessions({ includeAutomated: true, includeHidden: true });
+  const list = await decoratedSessions({ includeHidden: true });
   const view = list.find((x) => x.key === s.key) || s;
   if (url.searchParams.get('seen') !== '0') store.patchSessionMeta(s.key, { last_seen: Math.max(Date.now(), s.updated) });
   const run = activeRunFor(s.key);
@@ -299,7 +299,7 @@ route('GET', '/api/projects/:pid', async (req, url, { pid }) => {
   const projects = await projectsList();
   const p = projects.find((x) => x.id === id);
   if (!p) return [404, { error: tr('프로젝트를 찾을 수 없어요') }];
-  const all = await decoratedSessions({ includeAutomated: url.searchParams.get('automated') === '1' });
+  const all = await decoratedSessions();
   const sessions = all.filter((s) => s.project === id).map(sessionView);
   const brief = store.getBrief(id);
   return { project: p, sessions, git: await gitInfo(id), brief, briefStale: !brief || brief.fingerprint !== projectFingerprint(p), briefPending: briefPending(id) };
@@ -402,7 +402,7 @@ route('GET', '/api/sessions/:tool/:id/folders', async (req, url, { tool, id }) =
 route('POST', '/api/sessions/:tool/:id/move', async (req, url, { tool, id }) => {
   const b = await body(req);
   const sid = decodeURIComponent(id);
-  const d = (await decoratedSessions({ includeAutomated: true, includeHidden: true })).find((x) => x.key === `${tool}:${sid}`);
+  const d = (await decoratedSessions({ includeHidden: true })).find((x) => x.key === `${tool}:${sid}`);
   try { return await moveSession({ tool, id: sid, cwd: b.cwd, live: Boolean(d?.live || d?.running) }); }
   catch (e) { return [400, { error: e.message }]; }
 });
@@ -438,16 +438,24 @@ route('GET', '/api/handoff/preview/:tool/:id', async (req, url, { tool, id }) =>
 
 // ---------- cleanup / trash ----------
 route('GET', '/api/cleanup', async () => {
-  const all = await decoratedSessions({ includeAutomated: true, includeHidden: true });
+  const all = await decoratedSessions({ includeHidden: true });
   const items = [];
-  for (const s of all) { const reason = cleanupReason(s); if (reason) items.push({ ...s, reason }); }
+  for (const s of all) { if (s.hidden) continue; const reason = cleanupReason(s); if (reason) items.push({ ...s, reason }); }
   return { items };
+});
+route('POST', '/api/sessions/hide', async (req) => {
+  const b = await body(req);
+  const keys = Array.isArray(b.keys) ? b.keys.filter((k) => typeof k === 'string').slice(0, 5000) : [];
+  const hidden = b.hidden !== false;
+  store.patchSessionMetaMany(keys, { hidden });
+  await forceRefresh();
+  return { changed: keys.length };
 });
 route('POST', '/api/sessions/trash', async (req) => {
   const b = await body(req);
   const keys = Array.isArray(b.keys) ? b.keys.slice(0, 2000) : [];
   const snap = await getSnapshot(0);
-  const all = new Map((await decoratedSessions({ includeAutomated: true, includeHidden: true })).map((s) => [s.key, s]));
+  const all = new Map((await decoratedSessions({ includeHidden: true })).map((s) => [s.key, s]));
   let moved = 0; const errors = [];
   for (const key of keys) {
     const s = snap.byKey.get(key);
@@ -686,7 +694,7 @@ server.listen(PORT, HOST, async () => {
   startWatcher();
   startTrashPurge();
   startPendingMoves(async (key) => {
-    const d = (await decoratedSessions({ includeAutomated: true, includeHidden: true })).find((x) => x.key === key);
+    const d = (await decoratedSessions({ includeHidden: true })).find((x) => x.key === key);
     return Boolean(d?.live || d?.running);
   });
   startUsageScheduler();

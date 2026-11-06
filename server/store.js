@@ -61,7 +61,6 @@ function getKVRaw(k) { return db.prepare('SELECT v FROM kv WHERE k = ?').get(k);
 const DEFAULT_SETTINGS = {
   lang: 'en',                   // UI language: 'en' (default) or 'ko'
   setupDone: false,             // onboarding finished or skipped
-  showAutomated: false,         // codex exec / agy subagent / tmp sessions
   nudgeEnabled: true,
   nudgeHour: 21,                // local hour to send the daily nudge
   staleDays: 5,                 // a project is "dozing" after N idle days
@@ -101,6 +100,11 @@ export function allSessionMeta() {
   const map = new Map();
   for (const r of q('SELECT * FROM session_meta').all()) map.set(r.key, r);
   return map;
+}
+/** Same patch for many sessions in one transaction (bulk hide from the list or the cleanup page). */
+export function patchSessionMetaMany(keys, patch) {
+  db.exec('BEGIN');
+  try { for (const key of keys) patchSessionMeta(key, patch); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
 }
 export function patchSessionMeta(key, patch) {
   const cur = q('SELECT * FROM session_meta WHERE key = ?').get(key) || { key, pinned: 0, hidden: 0, title: null, last_seen: null, notify: 0, cwd_override: null };
