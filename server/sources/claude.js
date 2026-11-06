@@ -5,6 +5,7 @@ import { getKV } from '../store.js';
 import { HOME, eachJsonl, headJsonl, tailJsonl, cleanPrompt, clip, oneLine, pidAlive, statSafe } from '../util.js';
 import { summarizeTool, toolOutputText } from './common.js';
 import { tr } from '../i18n.js';
+import { eachClaudeRecord, claudeImageRefs } from './claude-images.js';
 import { CLAUDE_HOME } from '../env.js';
 
 const PROJECTS = path.join(CLAUDE_HOME, 'projects');
@@ -148,7 +149,7 @@ export async function liveClaude() {
 export async function readClaude(file) {
   const msgs = [];
   const toolById = new Map();
-  await eachJsonl(file, (e) => {
+  await eachClaudeRecord(file, (e, record) => {
     if (e.isSidechain) return;
     const ts = e.timestamp ? Date.parse(e.timestamp) : null;
     if (e.type === 'system' && e.subtype === 'compact_boundary') {
@@ -166,16 +167,17 @@ export async function readClaude(file) {
         }
       }
       if (e.isMeta || e.isCompactSummary) return;
+      const images = Array.isArray(c) ? c.filter((p) => p?.type === 'image').length : 0;
       const raw = textOf(c);
-      if (!raw) return;
+      if (!raw && !images) return;
       if (/<local-command-stdout>/.test(raw)) {
         const out = raw.replace(/[\s\S]*<local-command-stdout>([\s\S]*?)<\/local-command-stdout>[\s\S]*/, '$1').trim();
         if (out) msgs.push({ role: 'system', text: clip(out, 2000), ts });
         return;
       }
       const t = cleanPrompt(raw);
-      if (!t || t.startsWith('Caveat:')) return;
-      msgs.push({ role: 'user', text: t, ts, images: Array.isArray(c) ? c.filter((p) => p?.type === 'image').length : 0 });
+      if ((!t && !images) || t.startsWith('Caveat:')) return;
+      msgs.push({ role: 'user', text: t, ts, images, imageRefs: claudeImageRefs(e, record) });
       return;
     }
     if (e.type === 'assistant') {

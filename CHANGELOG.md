@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Pull to refresh**: on a phone, pull down from the top of any screen (or the top of a chat) to reload it.
 
 ### Fixed
+- **Claude chat image history**: attached photos remain visible after replies, refreshes and reopening a chat. Images load lazily from the session transcript; tap a preview to open the full image.
 - **Sessions no longer vanish when the first message has a large screenshot**: Baton could treat such a Claude session as empty, drop it from the list, and show "Session not found" when you opened it.
 - **Phone notifications no longer get dropped on a network hiccup**: if sending a push fails because of a brief connection problem, Baton retries twice before giving up, and logs the real error instead of an empty `[push] failed`.
 - **Notifications show on a locked iPhone**: the app no longer waits on a suspended Baton window before showing a push notification on phones.

@@ -2,6 +2,9 @@
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const app = $('#app');
+app.addEventListener('error', (event) => {
+  if (event.target.matches?.('.uimgs a img')) event.target.closest('a').hidden = true;
+}, true);
 
 // ---------------------------------------------------------------- utils
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -971,8 +974,9 @@ function msgsHtml(msgs) {
     if (m.role === 'user') {
       // Baton handoff prompts: show a compact marker + the user's actual request
       const h = String(m.text).match(/^(?:You are continuing a session handed over from (.+?) \(|While you were paused, this work continued in another agent \((.+?)\))[\s\S]*?`([^`]+)`[\s\S]*?User's request: ([\s\S]*)$/);
-      if (h) return `<div class="handoff-mark">🔀 ${t('{name}에서 넘겨받음', { name: esc(h[1] || h[2]) })} · <code>${esc(h[3])}</code></div><div class="msg-user">${esc(h[4].trim())}</div>`;
-      return `<div class="msg-user">${esc(m.text)}${m.images ? `<div class="imgs">${t('🖼 사진 {n}장', { n: m.images })}</div>` : ''}</div>`;
+      const handoff = h ? `<div class="handoff-mark">🔀 ${t('{name}에서 넘겨받음', { name: esc(h[1] || h[2]) })} · <code>${esc(h[3])}</code></div>` : '';
+      const photos = (m.imageUrls || []).filter((url) => /^\/api\/sessions\/claude\/[^/]+\/images\/[\d.a-f]+$/.test(url));
+      return `${handoff}<div class="msg-user">${photos.length ? `<div class="uimgs">${photos.map((url) => `<a href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" loading="lazy" decoding="async" width="84" height="84" alt="${t('첨부 이미지')}"></a>`).join('')}</div>` : ''}${esc(h ? h[4].trim() : m.text)}${m.images ? `<div class="imgs">${t('🖼 사진 {n}장', { n: m.images })}</div>` : ''}</div>`;
     }
     if (m.role === 'assistant') return `<div class="msg-ai">${md(m.text)}</div>`;
     return `<div class="msg-sys">${esc(m.text)}</div>`;
