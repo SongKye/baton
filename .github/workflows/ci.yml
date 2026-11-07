@@ -31,5 +31,8 @@ jobs:
         run: npm run i18n:check
       - name: Chat image regression checks
         run: node scripts/chat-images-check.mjs
+      - name: Composer @ picker checks
+        if: runner.os != 'Windows' # creates symlinks, which need admin rights there
+        run: node scripts/mention-check.mjs
       - name: Boot the server and hit every endpoint
         run: node scripts/ci-boot.mjs

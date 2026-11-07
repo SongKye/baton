@@ -934,5 +934,11 @@
  "GitHub CLI(gh)에 로그인하면 내 저장소와 외부 저장소를 구분해서 보여줘요": "Sign in to the GitHub CLI (gh) to tell your repos apart from external ones",
  "기타 프로그램 {n}개": "{n} other programs",
  "개발 서버가 아닌, 이 PC에서 포트를 연 프로그램": "programs on this PC with an open port that aren't dev servers",
- "주소가 올바르지 않아요": "That URL doesn't look right"
+ "주소가 올바르지 않아요": "That URL doesn't look right",
+ "「{name}」 스킬을 써서": "Using the \"{name}\" skill,",
+ "이 폴더는 너무 커서 파일 목록을 보여주지 않아요": "This folder is too big to list its files",
+ "찾는 파일·폴더·스킬·MCP가 없어요": "No matching files, folders, skills or MCP servers",
+ "「{name}」 MCP를 써서": "Using the \"{name}\" MCP server,",
+ "`{path}` 스킬 파일을 읽고 그대로 따라서": "Read the skill file `{path}` and follow it:",
+ "{name} 스킬": "{name} skill"
 }

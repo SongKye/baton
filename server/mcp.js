@@ -576,6 +576,24 @@ export async function mcpEffective({ cwd, tools, session }) {
   return { cwd, root, tools: out };
 }
 
+/** Names of the MCP servers `tool` loads in `cwd` (global + every parent folder's config), for the @ picker.
+ *  Same rules as mcpEffective but without the usage scan, so it answers instantly. */
+export function mcpForPicker(tool, cwd) {
+  const dirs = [];
+  for (let d = path.resolve(cwd); ; d = path.dirname(d)) {
+    dirs.push(d);
+    if (path.dirname(d) === d || d === HOME || d === os.homedir()) break;
+  }
+  const rank = { local: 0, project: 1, user: 2, plugin: 3, managed: 4, cloud: 5, builtin: 6 };
+  const mine = [...dirs.flatMap((d) => folderServers(d, path.basename(d))).filter((s) => s.scope !== 'local' || s.project === cwd), ...globalServers()]
+    .filter((s) => s.tool === tool)
+    .sort((a, b) => (rank[a.scope] - rank[b.scope]) || (dirs.indexOf(a.project) - dirs.indexOf(b.project)));
+  const byName = new Map();
+  for (const s of mine) if (!byName.has(s.name)) byName.set(s.name, s); // closest config wins, like the CLI
+  for (const [name] of statusMapFor(tool, cwd)) if (!byName.has(name)) byName.set(name, { name, scope: /^claude\.ai /.test(name) ? 'cloud' : 'unlisted', enabled: true });
+  return [...byName.values()].filter((s) => s.enabled === true).map((s) => ({ name: s.name, scope: s.scope })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function invalidateMcp() { invCache.at = 0; }
 
 /**
