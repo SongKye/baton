@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-07
+
 ### Added
 - **Dev servers stay listed and come back**: Baton remembers each project's dev servers (folder, command, port). Servers that agents or terminals start are added automatically. Turn one off and it stays in the list so you can start it again with one tap; remove it to drop it from the list. Servers left on are started again after a reboot or a Baton restart. See **Tools → Served ports** and each project page. Other programs with an open port (remote desktop, adb…) are collapsed under **Other programs**.
 - **Linked services on project pages**: Baton shows the GitHub repo and hosting and backend services a project is set up for, such as Vercel, Firebase, Supabase, Netlify, Cloudflare, Fly.io and itch.io. Each has a link to its dashboard. Baton only reads the project's config files and never reads secret values.
@@ -135,7 +137,8 @@ First public preview.
 ### Security
 - Listens on `127.0.0.1` only. Other devices need a password once (default `0000` — change it) and are remembered for 30 days; failed attempts are rate-limited.
 
-[Unreleased]: https://github.com/SongKye/baton/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/SongKye/baton/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/SongKye/baton/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/SongKye/baton/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/SongKye/baton/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SongKye/baton/compare/v0.2.1...v0.3.0
