@@ -15,7 +15,9 @@ import { vapidPublicKey, notify, setPublicOrigin } from './push.js';
 import { allLimits } from './limits.js';
 import { trashSession, restoreSession, listTrash, emptyTrash, startTrashPurge, cleanupReason } from './trash.js';
 import { startWatcher } from './watch.js';
-import { listPorts, shareToPhone, unshare, stopPort } from './ports.js';
+import { listPorts, listPortsCached, invalidatePorts, shareToPhone, unshare, stopPort } from './ports.js';
+import { listServers, startServer, stopServer, removeServer, addServer, serverLogs, observe as observeServers, startServerWatch } from './servers.js';
+import { projectServices, reposReport, addLink, removeLink } from './links.js';
 import { skillsReport, skillDetail } from './skills.js';
 import { mcpReport, mcpDetail, mcpEffective, checkMcp, invalidateMcp } from './mcp.js';
 import { setupStatus, startJob, getJob, jobInput, stopJob, publicJob } from './setup.js';
@@ -306,7 +308,8 @@ route('GET', '/api/projects/:pid', async (req, url, { pid }) => {
   const all = await decoratedSessions();
   const sessions = all.filter((s) => s.project === id).map(sessionView);
   const brief = store.getBrief(id);
-  return { project: p, sessions, git: await gitInfo(id), brief, briefStale: !brief || brief.fingerprint !== projectFingerprint(p), briefPending: briefPending(id) };
+  const [git, services, servers] = await Promise.all([gitInfo(id), projectServices(id).catch(() => []), listServers({ project: id }).catch(() => [])]);
+  return { project: p, sessions, git, services, servers, brief, briefStale: !brief || brief.fingerprint !== projectFingerprint(p), briefPending: briefPending(id) };
 });
 
 route('POST', '/api/projects/:pid/meta', async (req, url, { pid }) => {
@@ -481,7 +484,27 @@ route('POST', '/api/trash/restore', async (req) => {
 route('POST', '/api/trash/empty', async () => ({ removed: await emptyTrash(0) }));
 
 // ---------- ports / skills ----------
-route('GET', '/api/ports', async () => listPorts());
+route('GET', '/api/ports', async () => {
+  invalidatePorts();
+  const d = await listPortsCached();
+  await observeServers(d.ports).catch(() => {});
+  return { ...d, ports: d.ports.map(({ argv, dir, ...p }) => p), servers: await listServers() };
+});
+route('GET', '/api/servers', async (req, url) => ({ items: await listServers({ project: url.searchParams.get('project') || undefined }) }));
+route('POST', '/api/servers', async (req) => {
+  const b = await body(req);
+  try { const s = addServer(b || {}); if (s.enabled) await startServer(s.id).catch(() => {}); return { ok: true, id: s.id }; }
+  catch (e) { return [400, { error: e.message }]; }
+});
+route('POST', '/api/servers/:id/start', async (req, url, { id }) => { try { return await startServer(id); } catch (e) { return [400, { error: e.message }]; } });
+route('POST', '/api/servers/:id/stop', async (req, url, { id }) => { try { return await stopServer(id); } catch (e) { return [400, { error: e.message }]; } });
+route('POST', '/api/servers/:id/remove', async (req, url, { id }) => removeServer(id));
+route('GET', '/api/servers/:id/logs', async (req, url, { id }) => (await serverLogs(id)) || [404, { error: tr('등록된 서버를 찾을 수 없어요') }]);
+route('POST', '/api/projects/:pid/links', async (req, url, { pid }) => {
+  try { return { ok: true, link: addLink(decodeURIComponent(pid), (await body(req)) || {}) }; } catch (e) { return [400, { error: e.message }]; }
+});
+route('POST', '/api/projects/:pid/links/:id/remove', async (req, url, { pid, id }) => { removeLink(decodeURIComponent(pid), id); return { ok: true }; });
+route('GET', '/api/repos', async () => reposReport(await projectsList()));
 route('POST', '/api/ports/:port/share', async (req, url, { port }) => shareToPhone(port));
 route('POST', '/api/ports/:port/unshare', async (req, url, { port }) => { await unshare(port); return { ok: true }; });
 route('POST', '/api/pids/:pid/stop', async (req, url, { pid }) => stopPort(pid));
@@ -713,6 +736,7 @@ server.listen(PORT, HOST, async () => {
   });
   startUsageScheduler();
   seedDefaults();
+  startServerWatch();
 });
 
 // keep the index warm so the UI is instant

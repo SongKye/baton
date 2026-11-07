@@ -104,7 +104,8 @@ async function procInfo(pid) {
     return m ? { pid, ppid: Number(m[1]), uid: Number(m[2]), startedAt: Date.now() - etimeMs(m[3]), cmd: m[4], cwd } : { pid };
   }
   const r = { pid };
-  try { r.cmd = (await fsp.readFile(`/proc/${pid}/cmdline`, 'utf8')).split('\0').filter(Boolean).join(' '); } catch { /* gone */ }
+  try { r.argv = (await fsp.readFile(`/proc/${pid}/cmdline`, 'utf8')).split('\0').filter(Boolean); r.cmd = r.argv.join(' '); } catch { /* gone */ }
+  try { r.unit = (await fsp.readFile(`/proc/${pid}/cgroup`, 'utf8')).trim().split('/').pop() || null; } catch { /* ignore */ }
   try { r.cwd = await fsp.readlink(`/proc/${pid}/cwd`); } catch { /* not ours */ }
   try {
     const st = await fsp.readFile(`/proc/${pid}/stat`, 'utf8');
@@ -176,6 +177,15 @@ function agentFor(pid, procs, liveByPid) {
   return null;
 }
 
+let portsCache = { at: 0, p: null };
+/** listPorts() with a short cache: the ports page, project pages and the server registry all ask at once. */
+export function listPortsCached(maxAge = 4000) {
+  if (portsCache.p && Date.now() - portsCache.at < maxAge) return portsCache.p;
+  portsCache = { at: Date.now(), p: listPorts().catch((e) => { portsCache.at = 0; throw e; }) };
+  return portsCache.p;
+}
+export function invalidatePorts() { portsCache.at = 0; }
+
 export async function listPorts() {
   const rows = (await listeners()).filter((r) => r.port > 0);
   // merge v4/v6 duplicates of the same port+pid
@@ -221,6 +231,9 @@ export async function listPorts() {
       cmd: p?.cmd ? clip(p.cmd.replace(/\s+/g, ' '), 300) : null,
       name: p?.cmd ? progName(p.cmd) : null,
       cwd: p?.cwd ? shortHome(p.cwd) : null,
+      dir: p?.cwd || null,
+      argv: p?.argv || null,
+      unit: p?.unit || null, // Linux: the systemd unit/scope the process lives in
       project: root,
       startedAt: p?.startedAt || null,
       agent: r.pid ? agentFor(r.pid, procs, liveByPid) : null,

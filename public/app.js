@@ -38,6 +38,16 @@ const ICON = {
   image: '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>',
   x: '<svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M6 6l12 12M18 6L6 18"/></svg>',
 };
+const TOOL_ICON = {
+  ports: '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><path d="m8 8.5 2 1.5-2 1.5M12.5 11.5H16"/></svg>',
+  repos: '<svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="5.5" r="2.2"/><circle cx="6" cy="18.5" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.7v8.6"/><path d="M18 10.2c0 4-6 3.3-11 6.6"/></svg>',
+  skills: '<svg class="i" viewBox="0 0 24 24"><path d="M12 3.5l2.4 5 5.4.6-4 3.7 1.1 5.4L12 15.5l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z"/></svg>',
+  mcp: '<svg class="i" viewBox="0 0 24 24"><path d="M9 3v4M15 3v4"/><path d="M6 7h12v4a6 6 0 0 1-12 0z"/><path d="M12 17v4"/></svg>',
+  usage: '<svg class="i" viewBox="0 0 24 24"><path d="M4 20h16"/><rect x="5" y="11" width="3.5" height="6" rx="1"/><rect x="10.25" y="6" width="3.5" height="11" rx="1"/><rect x="15.5" y="13" width="3.5" height="4" rx="1"/></svg>',
+  sched: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2"/><path d="M4.5 4.5 7 3M19.5 4.5 17 3"/></svg>',
+  clean: '<svg class="i" viewBox="0 0 24 24"><path d="M12 3.5l1.6 4.4L18 9.5l-4.4 1.6L12 15.5l-1.6-4.4L6 9.5l4.4-1.6z"/><path d="M18.5 15l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8zM5.5 15.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z"/></svg>',
+  trash: '<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M9.5 7V4.5h5V7"/><path d="M6.5 7l1 12.5a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5l1-12.5"/><path d="M10 11v6M14 11v6"/></svg>',
+};
 
 function ago(ts) {
   if (!ts) return '';
@@ -348,6 +358,7 @@ const routes = [
   [/^#\/usage$/, viewUsage, 'tools'],
   [/^#\/tools$/, viewTools, 'tools'],
   [/^#\/ports$/, viewPorts, 'tools'],
+  [/^#\/repos$/, viewRepos, 'tools'],
   [/^#\/skills$/, viewSkills, 'tools'],
   [/^#\/skill\/(.+)$/, viewSkill, 'tools'],
   [/^#\/mcp$/, viewMcps, 'tools'],
@@ -701,7 +712,10 @@ async function viewProject([id]) {
         <button class="btn primary" data-brief="1">${t('AI로 정리하기')}</button>
       </div>`;
     const git = d.git;
-    const gitHtml = git ? `<div class="section"><div class="section-h"><h2>Git</h2><span class="count">${esc(git.branch || '')}${git.dirty ? ` · ${t('미커밋 {n}개', { n: git.dirty })}` : ''}</span></div>
+    const repo = (d.services || []).find((x) => REPO_KINDS.has(x.kind));
+    const srvHtml = d.servers?.length ? `<div class="section" id="psrv"><div class="section-h"><h2>${t('개발 서버')}</h2><span class="count">${d.servers.filter((x) => x.running).length}/${d.servers.length}</span><a class="more" href="#/ports">${t('전체 ›')}</a></div>
+      <div class="card list">${d.servers.map((x) => serverRow(x, { showProject: false })).join('')}</div></div>` : '';
+    const gitHtml = git ? `<div class="section"><div class="section-h"><h2>Git</h2>${repo ? `<a class="more" href="${esc(repo.url)}" target="_blank" rel="noopener">${esc(repo.name)} ↗</a>` : ''}<span class="count">${esc(git.branch || '')}${git.dirty ? ` · ${t('미커밋 {n}개', { n: git.dirty })}` : ''}</span></div>
       <div class="card" style="padding:6px 14px">${git.commits.slice(0, 6).map((c) => `<div class="commit"><span class="h">${esc(c.hash)}</span><span class="s">${esc(c.subject)}</span><span class="d">${ago(c.ts)}</span></div>`).join('') || `<div class="muted small" style="padding:8px 0">${t('커밋이 아직 없어요')}</div>`}</div></div>` : '';
     v.innerHTML = `
       <div class="section" style="margin-top:8px">
@@ -713,6 +727,8 @@ async function viewProject([id]) {
       <div class="section" id="pnote"><div class="section-h"><h2>${t('메모')}</h2></div>
         ${p.note ? `<button class="card memo" id="pnotecard" title="${t('눌러서 고치기')}">${esc(p.note)}</button>`
           : `<button class="memo-empty" id="pnotecard">📝 ${t('메모 남기기')}<span>${t('다음에 돌아왔을 때 볼 메모')}</span></button>`}</div>
+      ${srvHtml}
+      ${servicesHtml(d.services)}
       <div class="section"><div class="section-h"><h2>${t('세션')}</h2><span class="count">${d.sessions.length}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span>
         ${d.sessions.length ? `<button class="more" id="pselbtn">${selecting ? t('완료') : t('선택')}</button>` : ''}</div>
         <div class="card list" id="plist">${listHtml()}</div>
@@ -726,6 +742,8 @@ async function viewProject([id]) {
       ${gitHtml}
       <div class="bulkbar" id="pbar" ${selecting ? '' : 'hidden'}><button class="btn sm ghost" id="pall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="pcount">0</b>' })}</span><button class="btn sm" id="phide">${t('숨기기')}</button><button class="btn primary danger-fill" id="ptrash">${t('휴지통으로')}</button></div>`;
     loadProjectMcp($('#pmcp'), p.path);
+    if ($('#psrv')) bindServers($('#psrv'), () => load());
+    bindServices($('#psvc'), p.id, () => load());
     // memo: tap it to edit right there
     const editNote = () => {
       if (noteEditing) return;
@@ -2049,15 +2067,16 @@ async function viewTools() {
   const v = shell({ title: t('도구'), fab: false });
   const card = (href, icon, title, sub, id) => `<a class="card tool-card" href="${href}"><div class="ti">${icon}</div><div class="tb"><b>${title}</b><span id="${id}">${sub}</span></div><span class="muted">›</span></a>`;
   v.innerHTML = `<div class="section tool-grid">
-    ${card('#/ports', '🖥️', t('서빙 중인 포트'), t('불러오는 중…'), 'tc-ports')}
-    ${card('#/skills', '🧩', t('스킬'), t('어떤 스킬이 어디 있고 언제 쓰였는지'), 'tc-skills')}
-    ${card('#/mcp', '🔌', t('MCP 서버'), t('에이전트가 물고 있는 MCP와 실제 호출 기록'), 'tc-mcp')}
-    ${card('#/usage', '📊', t('사용량 · 한도'), t('CLI별 남은 한도와 토큰'), 'tc-usage')}
-    ${card('#/scheduled', '⏰', t('예약 메시지'), t('한도가 풀리면 보낼 메시지'), 'tc-sched')}
-    ${card('#/cleanup', '🧹', t('세션 정리'), t('테스트·자동 실행·"hi" 세션 한 번에 지우기'), 'tc-clean')}
-    ${card('#/trash', '🗑️', t('휴지통'), t('지운 세션 되살리기 (30일 보관)'), 'tc-trash')}
+    ${card('#/ports', TOOL_ICON.ports, t('서빙 중인 포트'), t('불러오는 중…'), 'tc-ports')}
+    ${card('#/repos', TOOL_ICON.repos, t('Git 저장소'), t('프로젝트에 연결된 저장소와 그 저장소를 쓰는 프로젝트'), 'tc-repos')}
+    ${card('#/skills', TOOL_ICON.skills, t('스킬'), t('어떤 스킬이 어디 있고 언제 쓰였는지'), 'tc-skills')}
+    ${card('#/mcp', TOOL_ICON.mcp, t('MCP 서버'), t('에이전트가 물고 있는 MCP와 실제 호출 기록'), 'tc-mcp')}
+    ${card('#/usage', TOOL_ICON.usage, t('사용량 · 한도'), t('CLI별 남은 한도와 토큰'), 'tc-usage')}
+    ${card('#/scheduled', TOOL_ICON.sched, t('예약 메시지'), t('한도가 풀리면 보낼 메시지'), 'tc-sched')}
+    ${card('#/cleanup', TOOL_ICON.clean, t('세션 정리'), t('테스트·자동 실행·"hi" 세션 한 번에 지우기'), 'tc-clean')}
+    ${card('#/trash', TOOL_ICON.trash, t('휴지통'), t('지운 세션 되살리기 (30일 보관)'), 'tc-trash')}
   </div>`;
-  api('/api/ports').then((d) => { const n = d.ports.filter((p) => p.mine && !p.baton).length; $('#tc-ports') && ($('#tc-ports').textContent = t('내 서버 {n}개 실행 중', { n })); }).catch(() => {});
+  api('/api/ports').then((d) => { const sv = d.servers || [], on = sv.filter((s) => s.running).length, off = sv.length - on; $('#tc-ports') && ($('#tc-ports').textContent = t('개발 서버 {n}개 실행 중', { n: on }) + (off ? ` · ${t('꺼진 서버 {n}개', { n: off })}` : '')); }).catch(() => {});
   api('/api/mcp').then((d) => { const on = d.servers.filter((x) => x.enabled === true && x.scope !== 'unlisted').length, used = d.servers.filter((x) => x.uses).length; $('#tc-mcp') && ($('#tc-mcp').textContent = t('{n}개 설정 · 최근 30일 {m}개 사용', { n: on, m: used })); }).catch(() => {});
   api('/api/cleanup').then((d) => { $('#tc-clean') && ($('#tc-clean').textContent = t('정리 후보 {n}개', { n: d.items.length })); }).catch(() => {});
   api('/api/scheduled').then((d) => { $('#tc-sched') && ($('#tc-sched').textContent = d.items.length ? t('{n}개 대기 중 · 다음: {when}', { n: d.items.length, when: whenFull(d.items[0].runAt) }) : t('대기 중인 예약 없음')); }).catch(() => {});
@@ -2073,13 +2092,176 @@ const matchQ = (q, ...fields) => {
 };
 const searchBox = (id, value, placeholder) => `<label class="search">${ICON.search}<input id="${id}" type="search" placeholder="${placeholder}" aria-label="${placeholder}" value="${esc(value)}" autocomplete="off"></label>`;
 
+// ---------------------------------------------------------------- DEV SERVERS (remembered per project)
+// Registered servers stay listed when they're off, so they can be started again with one tap.
+function serverState(s) {
+  if (s.running) return { cls: 'on', text: s.startedAt ? t('실행 중 · {when}부터', { when: ago(s.startedAt) }) : t('실행 중') };
+  if (s.starting) return { cls: 'wait', text: t('켜는 중…') };
+  if (s.busyBy) return { cls: 'warn', text: t(':{port} 포트를 {name}이(가) 쓰는 중', { port: s.port, name: s.busyBy }) };
+  if (s.enabled && s.lastError) return { cls: 'warn', text: t('켜지 못했어요') };
+  if (s.enabled) return { cls: 'warn', text: t('멈춰 있어요') };
+  return { cls: 'off', text: t('꺼둠') };
+}
+function serverRow(s, { showProject = true } = {}) {
+  const st = serverState(s);
+  const open = s.running && s.web ? [
+    ON_THIS_PC ? `<a class="btn sm${s.phoneUrl ? '' : ' primary'}" href="http://localhost:${s.port}" target="_blank" rel="noopener">${t('열기')} ↗</a>` : '',
+    s.phoneUrl ? `<a class="btn sm primary" href="${esc(s.phoneUrl)}" target="_blank" rel="noopener">${t('폰에서 열기 ↗')}</a>` : s.local ? `<button class="btn sm" data-share="${s.port}">${t('폰에서 열 수 있게')}</button>` : '',
+  ].join('') : '';
+  const toggle = s.running || s.starting
+    ? `<button class="btn sm ghost" data-srv-stop="${s.id}">⏸ ${t('끄기')}</button>`
+    : `<button class="btn sm${s.enabled ? ' primary' : ''}" data-srv-start="${s.id}">▶ ${t('켜기')}</button>`;
+  return `<div class="srv ${st.cls}">
+    <span class="srv-dot ${st.cls}" aria-hidden="true"></span>
+    <div class="body">
+      <div class="t"><b class="pn">:${s.port}</b><span class="tt">${showProject ? `<a href="#/p/${encodeURIComponent(s.project)}">${esc(projectName(s.project))}</a>` : esc(projectName(s.project))}${s.title && s.title !== projectName(s.project) ? ` <span class="muted">· ${esc(s.title)}</span>` : ''}</span>${s.portShared ? `<span class="flag warn">${t('포트 겹침')}</span>` : ''}</div>
+      <div class="m"><span class="st ${st.cls}">${esc(st.text)}</span> · ${esc(s.cwd)}</div>
+      <div class="m"><code>${esc(s.label || s.cmd)}</code></div>
+      ${s.agent ? `<div class="m"><a href="#/s/${s.agent.tool}/${encodeURIComponent(s.agent.id)}"><span class="tool-badge ${s.agent.tool}">${TOOL[s.agent.tool]?.name || s.agent.tool}</span> ${t('「{title}」 세션이 띄움', { title: esc(s.agent.title || '') })}</a></div>` : ''}
+      <div class="pact">${open}${toggle}<button class="btn sm ghost" data-srv-logs="${s.id}">${t('로그')}</button><button class="btn sm ghost danger" data-srv-rm="${s.id}" data-port="${s.port}">${t('삭제')}</button></div>
+    </div>
+  </div>`;
+}
+function bindServers(el, reload) {
+  const act = (sel, fn) => $$(sel, el).forEach((b) => (b.onclick = async () => {
+    b.disabled = true;
+    try { await fn(b); } catch (e) { toast(e.message, true); }
+    setTimeout(reload, 1500);
+  }));
+  act('[data-srv-start]', async (b) => { const r = await api(`/api/servers/${b.dataset.srvStart}/start`, { method: 'POST' }); toast(r.already ? t('이미 실행 중이에요') : t('켜는 중이에요…')); setTimeout(reload, 4000); });
+  act('[data-srv-stop]', async (b) => { await api(`/api/servers/${b.dataset.srvStop}/stop`, { method: 'POST' }); toast(t('껐어요. 목록에는 남아 있어요')); });
+  $$('[data-srv-rm]', el).forEach((b) => (b.onclick = async () => {
+    const ok = await pick(t(':{port} 서버를 목록에서 삭제할까요?', { port: b.dataset.port }), [
+      { value: true, label: t('삭제'), desc: t('실행 중이면 멈추고, 다시 자동 등록하지 않아요'), danger: true },
+      { value: false, label: t('취소') }]);
+    if (!ok) return;
+    try { await api(`/api/servers/${b.dataset.srvRm}/remove`, { method: 'POST' }); toast(t('삭제했어요')); } catch (e) { toast(e.message, true); }
+    setTimeout(reload, 800);
+  }));
+  $$('[data-srv-logs]', el).forEach((b) => (b.onclick = async () => {
+    let text = '';
+    try { text = (await api(`/api/servers/${b.dataset.srvLogs}/logs`)).text; } catch (e) { text = e.message; }
+    sheet({ title: t('서버 로그'), body: `<pre class="logbox">${esc(text.trim() || t('Baton이 켠 뒤로 남은 로그가 없어요'))}</pre>` });
+  }));
+  $$('[data-share]', el).forEach((b) => (b.onclick = async () => {
+    b.disabled = true;
+    try { const r = await api(`/api/ports/${b.dataset.share}/share`, { method: 'POST' }); toast(t('공유했어요')); if (r.url) window.open(r.url, '_blank'); reload(); }
+    catch (e) { toast(e.message, true); b.disabled = false; }
+  }));
+}
+
+// ---------------------------------------------------------------- LINKED SERVICES (dashboards)
+// Service logos from Simple Icons (CC0, simpleicons.org). Empty colour = draw in the text colour (dark brand marks).
+const BRAND = {
+  github: ['', 'M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'],
+  gitlab: ['#FC6D26', 'm23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z'],
+  bitbucket: ['#0052CC', 'M.778 1.213a.768.768 0 00-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 00.77-.646l3.27-20.03a.768.768 0 00-.768-.891zM14.52 15.53H9.522L8.17 8.466h7.561z'],
+  git: ['#F03C2E', 'M13.09 23.549a1.54 1.54 0 0 1-2.18 0L.451 13.089a1.54 1.54 0 0 1 0-2.179l7.191-7.19 2.733 2.733a1.85 1.85 0 0 0 .964 2.326v6.66a1.849 1.849 0 1 0 1.54 0V8.957l2.508 2.508a1.85 1.85 0 1 0 1.09-1.09l-2.634-2.634a1.85 1.85 0 0 0-2.378-2.377L8.73 2.63 10.91.451a1.54 1.54 0 0 1 2.179 0l10.459 10.46a1.54 1.54 0 0 1 0 2.179z'],
+  vercel: ['', 'm12 1.608 12 20.784H0Z'],
+  firebase: ['#DD2C00', 'M19.455 8.369c-.538-.748-1.778-2.285-3.681-4.569-.826-.991-1.535-1.832-1.884-2.245a146 146 0 0 0-.488-.576l-.207-.245-.113-.133-.022-.032-.01-.005L12.57 0l-.609.488c-1.555 1.246-2.828 2.851-3.681 4.64-.523 1.064-.864 2.105-1.043 3.176-.047.241-.088.489-.121.738-.209-.017-.421-.028-.632-.033-.018-.001-.035-.002-.059-.003a7.46 7.46 0 0 0-2.28.274l-.317.089-.163.286c-.765 1.342-1.198 2.869-1.252 4.416-.07 2.01.477 3.954 1.583 5.625 1.082 1.633 2.61 2.882 4.42 3.611l.236.095.071.025.003-.001a9.59 9.59 0 0 0 2.941.568q.171.006.342.006c1.273 0 2.513-.249 3.69-.742l.008.004.313-.145a9.63 9.63 0 0 0 3.927-3.335c1.01-1.49 1.577-3.234 1.641-5.042.075-2.161-.643-4.304-2.133-6.371m-7.083 6.695c.328 1.244.264 2.44-.191 3.558-1.135-1.12-1.967-2.352-2.475-3.665-.543-1.404-.87-2.74-.974-3.975.48.157.922.366 1.315.622 1.132.737 1.914 1.902 2.325 3.461zm.207 6.022c.482.368.99.712 1.513 1.028-.771.21-1.565.302-2.369.273a8 8 0 0 1-.373-.022c.458-.394.869-.823 1.228-1.279zm1.347-6.431c-.516-1.957-1.527-3.437-3.002-4.398-.647-.421-1.385-.741-2.194-.95.011-.134.026-.268.043-.4.014-.113.03-.216.046-.313.133-.689.332-1.37.589-2.025.099-.25.206-.499.321-.74l.004-.008c.177-.358.376-.719.61-1.105l.092-.152-.003-.001c.544-.851 1.197-1.627 1.942-2.311l.288.341c.672.796 1.304 1.548 1.878 2.237 1.291 1.549 2.966 3.583 3.612 4.48 1.277 1.771 1.893 3.579 1.83 5.375-.049 1.395-.461 2.755-1.195 3.933-.694 1.116-1.661 2.05-2.8 2.708-.636-.318-1.559-.839-2.539-1.599.79-1.575.952-3.28.479-5.072zm-2.575 5.397c-.725.939-1.587 1.55-2.09 1.856-.081-.029-.163-.06-.243-.093l-.065-.026c-1.49-.616-2.747-1.656-3.635-3.01-.907-1.384-1.356-2.993-1.298-4.653.041-1.19.338-2.327.882-3.379.316-.07.638-.114.96-.131l.084-.002c.162-.003.324-.003.478 0 .227.011.454.035.677.07.073 1.513.445 3.145 1.105 4.852.637 1.644 1.694 3.162 3.144 4.515z'],
+  supabase: ['#3FCF8E', 'M11.9 1.036c-.015-.986-1.26-1.41-1.874-.637L.764 12.05C-.33 13.427.65 15.455 2.409 15.455h9.579l.113 7.51c.014.985 1.259 1.408 1.873.636l9.262-11.653c1.093-1.375.113-3.403-1.645-3.403h-9.642z'],
+  netlify: ['#00C7B7', 'M6.49 19.04h-.23L5.13 17.9v-.23l1.73-1.71h1.2l.15.15v1.2L6.5 19.04ZM5.13 6.31V6.1l1.13-1.13h.23L8.2 6.68v1.2l-.15.15h-1.2L5.13 6.31Zm9.96 9.09h-1.65l-.14-.13v-3.83c0-.68-.27-1.2-1.1-1.23-.42 0-.9 0-1.43.02l-.07.08v4.96l-.14.14H8.9l-.13-.14V8.73l.13-.14h3.7a2.6 2.6 0 0 1 2.61 2.6v4.08l-.13.14Zm-8.37-2.44H.14L0 12.82v-1.64l.14-.14h6.58l.14.14v1.64l-.14.14Zm17.14 0h-6.58l-.14-.14v-1.64l.14-.14h6.58l.14.14v1.64l-.14.14ZM11.05 6.55V1.64l.14-.14h1.65l.14.14v4.9l-.14.14h-1.65l-.14-.13Zm0 15.81v-4.9l.14-.14h1.65l.14.13v4.91l-.14.14h-1.65l-.14-.14Z'],
+  cloudflare: ['#F38020', 'M16.5088 16.8447c.1475-.5068.0908-.9707-.1553-1.3154-.2246-.3164-.6045-.499-1.0615-.5205l-8.6592-.1123a.1559.1559 0 0 1-.1333-.0713c-.0283-.042-.0351-.0986-.021-.1553.0278-.084.1123-.1484.2036-.1562l8.7359-.1123c1.0351-.0489 2.1601-.8868 2.5537-1.9136l.499-1.3013c.0215-.0561.0293-.1128.0147-.168-.5625-2.5463-2.835-4.4453-5.5499-4.4453-2.5039 0-4.6284 1.6177-5.3876 3.8614-.4927-.3658-1.1187-.5625-1.794-.499-1.2026.119-2.1665 1.083-2.2861 2.2856-.0283.31-.0069.6128.0635.894C1.5683 13.171 0 14.7754 0 16.752c0 .1748.0142.3515.0352.5273.0141.083.0844.1475.1689.1475h15.9814c.0909 0 .1758-.0645.2032-.1553l.12-.4268zm2.7568-5.5634c-.0771 0-.1611 0-.2383.0112-.0566 0-.1054.0415-.127.0976l-.3378 1.1744c-.1475.5068-.0918.9707.1543 1.3164.2256.3164.6055.498 1.0625.5195l1.8437.1133c.0557 0 .1055.0263.1329.0703.0283.043.0351.1074.0214.1562-.0283.084-.1132.1485-.204.1553l-1.921.1123c-1.041.0488-2.1582.8867-2.5527 1.914l-.1406.3585c-.0283.0713.0215.1416.0986.1416h6.5977c.0771 0 .1474-.0489.169-.126.1122-.4082.1757-.837.1757-1.2803 0-2.6025-2.125-4.727-4.7344-4.727'],
+  fly: ['', 'M11.987 0c-2.45-.01-5.002.925-6.541 2.897-1.17 1.502-1.664 3.474-1.49 5.356.29 2.112 1.476 3.96 2.676 5.672a41.5 41.5 0 0 0 4.216 4.831c-1.063.832-1.943 2.286-1.357 3.644.821 2.32 4.665 2.05 5.122-.372.39-1.288-.694-2.533-1.428-3.309 2.388-2.431 4.706-5.036 6.17-8.145.595-1.32.902-2.802.614-4.24-.28-2.341-1.823-4.473-3.967-5.46C14.76.266 13.364.016 11.987 0m-.236 1.577v15.534C9.881 13.483 7.724 9.266 8.73 5.069c.35-1.539 1.253-3.309 3.02-3.492m1.996.04c1.534.357 3.031 1.096 3.906 2.48 1.3 1.93 1.318 4.55.1 6.521-1.268 2.395-3.06 4.463-4.916 6.415 1.472-2.974 3.074-6.106 3.182-9.5-.043-2.08-.438-4.612-2.272-5.916M11.97 20.103c.848.342 1.597 1.983.153 2.173-.664.15-1.367-.599-.995-1.222.213-.355.488-.73.842-.95'],
+  render: ['', 'M18.263.007c-3.121-.147-5.744 2.109-6.192 5.082-.018.138-.045.272-.067.405-.696 3.703-3.936 6.507-7.827 6.507-1.388 0-2.691-.356-3.825-.979a.2024.2024 0 0 0-.302.178V24H12v-8.999c0-1.656 1.338-3 2.987-3h2.988c3.382 0 6.103-2.817 5.97-6.244-.12-3.084-2.61-5.603-5.682-5.75'],
+  railway: ['', 'M.113 10.27A13.026 13.026 0 000 11.48h18.23c-.064-.125-.15-.237-.235-.347-3.117-4.027-4.793-3.677-7.19-3.78-.8-.034-1.34-.048-4.524-.048-1.704 0-3.555.005-5.358.01-.234.63-.459 1.24-.567 1.737h9.342v1.216H.113v.002zm18.26 2.426H.009c.02.326.05.645.094.961h16.955c.754 0 1.179-.429 1.315-.96zm-17.318 4.28s2.81 6.902 10.93 7.024c4.855 0 9.027-2.883 10.92-7.024H1.056zM11.988 0C7.5 0 3.593 2.466 1.531 6.108l4.75-.005v-.002c3.71 0 3.849.016 4.573.047l.448.016c1.563.052 3.485.22 4.996 1.364.82.621 2.007 1.99 2.712 2.965.654.902.842 1.94.396 2.934-.408.914-1.289 1.458-2.353 1.458H.391s.099.42.249.886h22.748A12.026 12.026 0 0024 12.005C24 5.377 18.621 0 11.988 0z'],
+  expo: ['', 'M0 20.084c.043.53.23 1.063.718 1.778.58.849 1.576 1.315 2.303.567.49-.505 5.794-9.776 8.35-13.29a.761.761 0 011.248 0c2.556 3.514 7.86 12.785 8.35 13.29.727.748 1.723.282 2.303-.567.57-.835.728-1.42.728-2.046 0-.426-8.26-15.798-9.092-17.078-.8-1.23-1.044-1.498-2.397-1.542h-1.032c-1.353.044-1.597.311-2.398 1.542C8.267 3.991.33 18.758 0 19.77Z'],
+  ghpages: ['', 'M14.088 13.126h-.296V9.858h.998c.815 0 1.094.47 1.094.98s-.28.98-1.094.98h-.701v1.308zm0-1.582h.74a.642.642 0 0 0 .733-.705.642.642 0 0 0-.732-.706h-.741zm2.881-.37a1.913 1.913 0 0 0-.653.11v-.262a1.756 1.756 0 0 1 .653-.118c.654 0 .824.297.824.732v1.49h-.17l-.066-.174a1.143 1.143 0 0 1-.657.218.663.663 0 0 1-.763-.702c0-.37.205-.645.776-.68l.575-.035v-.122c0-.318-.113-.457-.519-.457zm-.078.85c-.31.03-.445.192-.445.445 0 .196.048.431.462.431a1.056 1.056 0 0 0 .58-.174v-.758zm1.86.493a.252.252 0 0 0-.083.16c0 .11.053.158.166.17l.74.088c.41.044.598.205.598.584 0 .532-.532.74-1.133.74-.61 0-.976-.178-.976-.657a.609.609 0 0 1 .449-.575v-.005a.321.321 0 0 1-.14-.287.392.392 0 0 1 .166-.297.746.746 0 0 1-.349-.714c0-.449.192-.82.85-.82a1.36 1.36 0 0 1 .349.044h.74v.165l-.365.105a.908.908 0 0 1 .126.505c0 .449-.192.82-.85.82a1.397 1.397 0 0 1-.288-.027zm.127.588c-.288.065-.532.2-.532.48 0 .322.244.413.693.413.435 0 .845-.109.845-.48 0-.221-.105-.309-.37-.34zm.727-1.381c0-.288-.056-.554-.566-.554-.51 0-.567.266-.567.554 0 .288.057.553.567.553.51 0 .566-.266.566-.554zm1.637-.82c.74 0 .828.506.828 1.133v.14h-1.438c.018.379.118.723.61.723a1.665 1.665 0 0 0 .719-.122v.261a1.765 1.765 0 0 1-.719.131c-.736 0-.915-.505-.915-1.133s.179-1.133.915-1.133zm-.61 1.024h1.133c0-.387-.022-.753-.523-.753-.506 0-.597.36-.61.753zm2.601-.052c.619.057.767.266.767.623 0 .336-.213.671-.876.671a2.147 2.147 0 0 1-.649-.109V12.8a1.924 1.924 0 0 0 .654.1c.453 0 .575-.192.575-.397 0-.2-.061-.34-.492-.374-.632-.057-.763-.28-.763-.58 0-.31.2-.645.815-.645a1.627 1.627 0 0 1 .627.11v.26a1.799 1.799 0 0 0-.631-.1c-.432 0-.523.162-.523.376 0 .19.078.29.496.326zm-20.787-.659H1.38a.05.05 0 0 0-.05.05v.522a.05.05 0 0 0 .05.05h.416v.649a1.267 1.267 0 0 1-.351.032c-.305 0-.731-.112-.731-1.048s.443-1.06.86-1.06a1.69 1.69 0 0 1 .614.094.05.05 0 0 0 .06-.05l.12-.504a.047.047 0 0 0-.02-.039 1.715 1.715 0 0 0-.903-.165C.73 9.748 0 10.05 0 11.508s.837 1.675 1.542 1.675a1.736 1.736 0 0 0 .938-.25.043.043 0 0 0 .016-.038v-1.628a.05.05 0 0 0-.05-.05zm5.545-1.294a.05.05 0 0 0-.05-.05H7.34a.05.05 0 0 0-.05.05v1.161h-.936V9.923a.05.05 0 0 0-.05-.05h-.6a.05.05 0 0 0-.05.05v3.145a.05.05 0 0 0 .05.05h.6a.05.05 0 0 0 .05-.05v-1.345h.937l-.002 1.345a.05.05 0 0 0 .05.05h.603a.05.05 0 0 0 .05-.05zm-4.389.412a.388.388 0 1 0-.387.392.39.39 0 0 0 .387-.392zm-.042 2.068v-1.451a.05.05 0 0 0-.05-.05h-.6a.057.057 0 0 0-.051.056v2.08c0 .06.038.079.087.079h.54c.06 0 .074-.03.074-.08zm6.764-1.497h-.597a.05.05 0 0 0-.05.05v1.542a.673.673 0 0 1-.367.11c-.215 0-.272-.097-.272-.307v-1.344a.05.05 0 0 0-.05-.05h-.604a.05.05 0 0 0-.05.05v1.446c0 .626.348.779.828.779a1.398 1.398 0 0 0 .71-.217 1.274 1.274 0 0 0 .022.128.052.052 0 0 0 .044.027l.385-.002a.05.05 0 0 0 .05-.05v-2.112a.05.05 0 0 0-.05-.05zm1.662-.07a1.121 1.121 0 0 0-.569.15V9.923a.05.05 0 0 0-.05-.05h-.602a.05.05 0 0 0-.05.05v3.145a.05.05 0 0 0 .05.05h.418a.05.05 0 0 0 .044-.027.973.973 0 0 0 .025-.144 1.08 1.08 0 0 0 .713.233c.548 0 .862-.278.862-1.248s-.502-1.095-.841-1.095zm-.235 1.771a.716.716 0 0 1-.347-.1v-.996a.793.793 0 0 1 .308-.1c.215-.019.422.046.422.558 0 .54-.094.647-.383.639zm-6.475-1.706h-.45l-.002-.595c0-.023-.011-.034-.037-.034h-.615c-.024 0-.036.01-.036.033v.615l-.33.08a.05.05 0 0 0-.035.048v.387a.05.05 0 0 0 .05.05h.315v.93c0 .692.484.76.812.76a1.375 1.375 0 0 0 .357-.06.046.046 0 0 0 .028-.044l.001-.426a.05.05 0 0 0-.05-.05c-.026 0-.094.01-.163.01-.221 0-.296-.102-.296-.236v-.884h.451a.05.05 0 0 0 .05-.05v-.484a.05.05 0 0 0-.05-.05z'],
+  itch: ['#FA5C5C', 'M3.13 1.338C2.08 1.96.02 4.328 0 4.95v1.03c0 1.303 1.22 2.45 2.325 2.45 1.33 0 2.436-1.102 2.436-2.41 0 1.308 1.07 2.41 2.4 2.41 1.328 0 2.362-1.102 2.362-2.41 0 1.308 1.137 2.41 2.466 2.41h.024c1.33 0 2.466-1.102 2.466-2.41 0 1.308 1.034 2.41 2.363 2.41 1.33 0 2.4-1.102 2.4-2.41 0 1.308 1.106 2.41 2.435 2.41C22.78 8.43 24 7.282 24 5.98V4.95c-.02-.62-2.082-2.99-3.13-3.612-3.253-.114-5.508-.134-8.87-.133-3.362 0-7.945.053-8.87.133zm6.376 6.477a2.74 2.74 0 0 1-.468.602c-.5.49-1.19.795-1.947.795a2.786 2.786 0 0 1-1.95-.795c-.182-.178-.32-.37-.446-.59-.127.222-.303.412-.486.59a2.788 2.788 0 0 1-1.95.795c-.092 0-.187-.025-.264-.052-.107 1.113-.152 2.176-.168 2.95v.005l-.006 1.167c.02 2.334-.23 7.564 1.03 8.85 1.952.454 5.545.662 9.15.663 3.605 0 7.198-.21 9.15-.664 1.26-1.284 1.01-6.514 1.03-8.848l-.006-1.167v-.004c-.016-.775-.06-1.838-.168-2.95-.077.026-.172.052-.263.052a2.788 2.788 0 0 1-1.95-.795c-.184-.178-.36-.368-.486-.59-.127.22-.265.412-.447.59a2.786 2.786 0 0 1-1.95.794c-.76 0-1.446-.303-1.948-.793a2.74 2.74 0 0 1-.468-.602 2.738 2.738 0 0 1-.463.602 2.787 2.787 0 0 1-1.95.794h-.16a2.787 2.787 0 0 1-1.95-.793 2.738 2.738 0 0 1-.464-.602zm-2.004 2.59v.002c.795.002 1.5 0 2.373.953.687-.072 1.406-.108 2.125-.107.72 0 1.438.035 2.125.107.873-.953 1.578-.95 2.372-.953.376 0 1.876 0 2.92 2.934l1.123 4.028c.832 2.995-.266 3.068-1.636 3.07-2.03-.075-3.156-1.55-3.156-3.025-1.124.184-2.436.276-3.748.277-1.312 0-2.624-.093-3.748-.277 0 1.475-1.125 2.95-3.156 3.026-1.37-.004-2.468-.077-1.636-3.072l1.122-4.027c1.045-2.934 2.545-2.934 2.92-2.934zM12 12.714c-.002.002-2.14 1.964-2.523 2.662l1.4-.056v1.22c0 .056.56.033 1.123.007.562.026 1.124.05 1.124-.008v-1.22l1.4.055C14.138 14.677 12 12.713 12 12.713z'],
+};
+const SERVICE = {
+  github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket', git: 'Git', vercel: 'Vercel', firebase: 'Firebase',
+  supabase: 'Supabase', netlify: 'Netlify', cloudflare: 'Cloudflare', fly: 'Fly.io', render: 'Render', railway: 'Railway',
+  expo: 'Expo', ghpages: 'GitHub Pages', itch: 'itch.io',
+};
+const LINK_ICON = '<svg class="brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+const brandIcon = (kind) => {
+  const b = BRAND[kind];
+  return b ? `<svg class="brand" viewBox="0 0 24 24" role="img" aria-label="${esc(SERVICE[kind] || kind)}" fill="${b[0] || 'currentColor'}"><path d="${b[1]}"/></svg>` : LINK_ICON;
+};
+const REPO_KINDS = new Set(['github', 'gitlab', 'bitbucket', 'git']);
+function servicesHtml(list) {
+  list = list || [];
+  const row = (s) => {
+    const label = s.custom ? s.name : SERVICE[s.kind] || s.kind;
+    const name = !s.custom && s.name && s.name !== label ? s.name : '';
+    let host = '';
+    try { host = new URL(s.url).hostname.replace(/^www\./, ''); } catch { /* keep empty */ }
+    const where = s.custom ? `${esc(host)} · ${t('직접 추가')}` : `${s.detail ? `${esc(s.detail)} · ` : ''}${t('{file}에서 찾음', { file: esc(s.source) })}`;
+    return `<div class="svc"><span class="si">${brandIcon(s.kind)}</span><div class="body"><b>${esc(label)}</b>${name ? ` <span class="muted">${esc(name)}</span>` : ''}
+        <div class="m">${where}</div></div>
+      <div class="pact">${s.site ? `<a class="btn sm" href="${esc(s.site)}" target="_blank" rel="noopener">${t('사이트')} ↗</a>` : ''}<a class="btn sm primary" href="${esc(s.url)}" target="_blank" rel="noopener">${s.custom ? t('열기') : REPO_KINDS.has(s.kind) ? t('저장소') : t('대시보드')} ↗</a>${s.custom ? `<button class="btn sm ghost" data-link-rm="${esc(s.linkId)}" aria-label="${t('링크 삭제')}">✕</button>` : ''}</div></div>`;
+  };
+  return `<div class="section" id="psvc"><div class="section-h"><h2>${t('연결된 서비스')}</h2><span class="count">${list.length}</span><button class="more" data-link-add>+ ${t('링크 추가')}</button></div>
+    ${list.length ? `<div class="card list">${list.map(row).join('')}</div>` : `<p class="small muted">${t('자동으로 찾은 서비스가 없어요. 쓰는 대시보드가 있으면 링크를 추가해두세요.')}</p>`}</div>`;
+}
+function bindServices(el, root, reload) {
+  if (!el) return;
+  $$('[data-link-rm]', el).forEach((b) => (b.onclick = async () => {
+    try { await api(`/api/projects/${encodeURIComponent(root)}/links/${b.dataset.linkRm}/remove`, { method: 'POST' }); toast(t('삭제했어요')); reload(); } catch (e) { toast(e.message, true); }
+  }));
+  const add = $('[data-link-add]', el);
+  if (add) add.onclick = () => sheet({
+    title: t('링크 추가'),
+    body: `<p class="small muted">${t('자동으로 못 찾은 서비스(배포 사이트, 관리 콘솔, 기획 문서…)의 주소를 이 프로젝트에 붙여둬요.')}</p>
+      <label class="fld"><span>${t('이름')}</span><input type="text" data-ln placeholder="${t('예) 운영 사이트, AWS 콘솔')}" maxlength="60"></label>
+      <label class="fld"><span>${t('주소')}</span><input type="url" data-lu placeholder="https://" inputmode="url" autocomplete="off"></label>`,
+    footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('추가')}</button>`,
+    onMount: (sh, close) => {
+      const u = $('[data-lu]', sh);
+      setTimeout(() => $('[data-ln]', sh).focus(), 250);
+      $('[data-x]', sh).onclick = () => close();
+      const ok = async () => {
+        try { await api(`/api/projects/${encodeURIComponent(root)}/links`, { body: { name: $('[data-ln]', sh).value, url: u.value } }); close(); toast(t('추가했어요')); reload(); }
+        catch (e) { toast(e.message, true); }
+      };
+      $('[data-ok]', sh).onclick = ok;
+      u.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) ok(); };
+    },
+  });
+}
+
+// ---------------------------------------------------------------- GIT REPOS (every remote used by a project)
+async function viewRepos() {
+  const v = shell({ title: t('Git 저장소'), fab: false });
+  v.innerHTML = '<div class="section"><div class="skeleton" style="height:300px"></div></div>';
+  const d = await api('/api/repos');
+  let q = sessionStorage.getItem('rq') || '';
+  const kindOf = (host) => (/github/.test(host || '') ? 'github' : /gitlab/.test(host || '') ? 'gitlab' : /bitbucket/.test(host || '') ? 'bitbucket' : 'git');
+  const badge = (r) => r.mine ? `<span class="flag run">${t('내 저장소')}</span>` : r.org ? `<span class="flag run">${t('내 조직')} · ${esc(r.owner)}</span>` : d.login ? `<span class="flag">${t('외부 저장소')}</span>` : '';
+  const repoCard = (r) => `<div class="card repo">
+      <div class="rh"><span class="si">${brandIcon(kindOf(r.host))}</span>
+        <div class="body"><b>${esc(r.slug)}</b><div class="m">${esc(r.host || '')}${badge(r) ? ` · ${badge(r)}` : ''}</div></div>
+        ${r.web ? `<a class="btn sm primary" href="${esc(r.web)}" target="_blank" rel="noopener">${t('열기')} ↗</a>` : ''}</div>
+      <div class="rp">${r.projects.map((p) => `<a class="rpp" href="#/p/${encodeURIComponent(p.id)}">📁 <b>${esc(p.name)}</b> <span class="muted">${esc(p.path)}${p.remote !== 'origin' ? ` · ${esc(p.remote)}` : ''}</span>${p.worktree ? ` <span class="flag">${t('워크트리')}</span>` : ''}</a>`).join('')}</div>
+    </div>`;
+  const draw = () => {
+    const repos = d.repos.filter((r) => matchQ(q, r.slug, r.host, ...r.projects.map((p) => `${p.name} ${p.path}`)));
+    const local = d.noRemote.filter((p) => matchQ(q, p.name, p.path));
+    $('#rlist').innerHTML = `<div class="section"><div class="section-h"><h2>${t('연결된 저장소')}</h2><span class="count">${repos.length}</span></div>
+        ${repos.length ? `<div class="port-grid">${repos.map(repoCard).join('')}</div>` : `<div class="card empty"><b>${t('원격 저장소가 연결된 프로젝트가 없어요')}</b></div>`}</div>
+      ${local.length ? `<div class="section"><div class="section-h"><h2>${t('원격 저장소 없음')}</h2><span class="count">${local.length}</span></div>
+        <p class="small muted">${t('git은 쓰지만 GitHub 같은 원격 저장소에 연결되지 않은 프로젝트예요. 이 PC에만 있어요.')}</p>
+        <div class="card list">${local.map((p) => `<a class="srow" href="#/p/${encodeURIComponent(p.id)}"><div class="body"><div class="t">📁 ${esc(p.name)}</div><div class="m">${esc(p.path)}</div></div></a>`).join('')}</div></div>` : ''}`;
+  };
+  v.innerHTML = `${searchBox('rq', q, t('저장소·프로젝트 검색'))}<div id="rlist"></div>
+    <p class="small muted" style="text-align:center;line-height:1.6">${t('Baton 프로젝트 폴더의 git remote를 모은 목록이에요')}<br>${
+      d.via === 'gh' ? t('「내 저장소」는 GitHub CLI(gh)에 로그인한 {login} 계정{orgs} 기준이에요', { login: esc(d.login), orgs: d.orgs?.length ? t('과 소속 조직 {n}곳', { n: d.orgs.length }) : '' })
+      : d.via === 'git' ? t('「내 저장소」는 git 설정의 github.user({login}) 기준이에요', { login: esc(d.login) })
+      : t('GitHub CLI(gh)에 로그인하면 내 저장소와 외부 저장소를 구분해서 보여줘요')}</p>`;
+  $('#rq').oninput = (e) => { q = e.target.value; sessionStorage.setItem('rq', q); draw(); };
+  draw();
+}
+
 // ---------------------------------------------------------------- PORTS
 const ON_THIS_PC = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
 async function viewPorts() {
   const v = shell({ title: t('서빙 중인 포트'), fab: false, right: `<button class="icon-btn" id="prefresh" aria-label="${t('새로고침')}">${ICON.refresh}</button>` });
   v.innerHTML = '<div class="section"><div class="skeleton" style="height:300px"></div></div>';
   const d = await api('/api/ports');
-  const mine = d.ports.filter((p) => p.mine);
+  const servers = d.servers || [];
+  const claimed = new Set(servers.filter((s) => s.running).map((s) => s.port));
+  const mine = d.ports.filter((p) => p.mine && !claimed.has(p.port));
   const sys = d.ports.filter((p) => !p.mine);
   const portCard = (p) => {
     const title = p.page?.title || (p.page?.kind === 'api' ? t('API 서버') : p.page?.kind === 'tcp' ? t('HTTP 아님') : '');
@@ -2121,13 +2303,18 @@ async function viewPorts() {
     const el = $('#plist');
     if (!el) return;
     const searching = Boolean(q.trim()), m = mine.filter(hit), sy = sys.filter(hit);
-    el.innerHTML = searching && !m.length && !sy.length
+    const sv = servers.filter((s) => matchQ(q, `:${s.port}`, s.title, s.cmd, s.label, s.cwd, projectName(s.project), s.project));
+    el.innerHTML = searching && !m.length && !sy.length && !sv.length
       ? `<div class="empty"><b>${t('검색 결과가 없어요')}</b></div>`
-      : `<div class="section"><div class="section-h"><h2>${t('내 서버')}</h2><span class="count">${m.length}</span></div>
-      ${m.length ? `<div class="port-grid">${m.map(portCard).join('')}</div>` : `<div class="card empty"><b>${searching ? t('검색 결과가 없어요') : t('실행 중인 서버가 없어요')}</b></div>`}</div>
+      : `${sv.length || !searching ? `<div class="section" id="srvsec"><div class="section-h"><h2>${t('개발 서버')}</h2><span class="count">${t('켜짐 {on} · 전체 {n}', { on: sv.filter((s) => s.running).length, n: sv.length })}</span></div>
+      <p class="small muted">${t('Baton이 기억하는 서버예요. 켜둔 서버는 PC나 Baton을 다시 켜도 자동으로 다시 떠요. 꺼도 목록에 남아요.')}</p>
+      ${sv.length ? `<div class="card list">${sv.map((s) => serverRow(s)).join('')}</div>` : `<div class="card empty"><b>${t('아직 기억하는 서버가 없어요')}</b><span>${t('에이전트나 터미널에서 개발 서버를 띄우면 자동으로 여기에 추가돼요')}</span></div>`}</div>` : ''}
+      ${m.length ? `<div class="section"><details class="sysports"${searching ? ' open' : ''}><summary>${t('기타 프로그램 {n}개', { n: m.length })} <span class="muted small">· ${t('개발 서버가 아닌, 이 PC에서 포트를 연 프로그램')}</span></summary>
+        <div class="port-grid" style="margin-top:10px">${m.map(portCard).join('')}</div></details></div>` : ''}
     ${sy.length ? `<div class="section"><details class="sysports"${searching ? ' open' : ''}><summary>${t('시스템 서비스 {n}개', { n: sy.length })}</summary>
       <div class="card list">${sy.map(sysRow).join('')}</div></details></div>` : ''}`;
     bind(el);
+    if ($('#srvsec')) bindServers($('#srvsec'), render);
   };
   $('#pq').oninput = (e) => { q = e.target.value; sessionStorage.setItem('pq', q); draw(); };
   $('#prefresh').onclick = () => render();
