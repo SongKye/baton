@@ -5,6 +5,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Dev servers stay listed and come back**: Baton remembers each project's dev servers (folder, command, port). Servers that agents or terminals start are added automatically. Turn one off and it stays in the list so you can start it again with one tap; remove it to drop it from the list. Servers left on are started again after a reboot or a Baton restart. See **Tools → Served ports** and each project page. Other programs with an open port (remote desktop, adb…) are collapsed under **Other programs**.
+- **Linked services on project pages**: Baton shows the GitHub repo and hosting and backend services a project is set up for, such as Vercel, Firebase, Supabase, Netlify, Cloudflare, Fly.io and itch.io. Each has a link to its dashboard. Baton only reads the project's config files and never reads secret values.
+- **Tools → Git repositories**: every git remote used by your projects, with the projects (folders, worktrees) that use it. Repos are marked as yours or external. Projects that use git without a remote are listed separately. "Yours" means the repo belongs to the account signed in to the GitHub CLI (`gh`) or to one of its organizations. Without `gh`, Baton falls back to `github.user` in your git config, and shows no badge if neither is set.
+- **Add your own links to a project**: use **+ Add link** under Linked services to keep dashboards Baton can't detect on the project page, such as a live site, an admin console or a planning doc. Known services get their logo automatically.
+- Linked services and repositories now show each service's real logo (from Simple Icons, CC0).
+
+### Changed
+- **Tools icons**: the Tools screen uses line icons that match the tab bar instead of emoji.
+
+### Fixed
+- **Updating or restarting Baton no longer stops dev servers**: servers Baton starts now run in their own systemd user unit on Linux, or as a detached process elsewhere, so they no longer share Baton's process group.
+
 ## [0.5.0] - 2026-11-07
 
 ### Added

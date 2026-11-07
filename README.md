@@ -26,7 +26,8 @@ Baton reads the session files your CLIs already write, puts them in one place, a
 - 🔀 **Spread the load** — open a new session in the same project with another CLI, or hand a session over when one runs out of tokens
 - 📊 **Limits & usage** — live subscription limits and token usage per CLI and model
 - 🔌 **MCP servers** — add popular servers to every CLI in one tap, and see which ones each CLI loads in each folder, whether they connect, and which tools agents actually call
-- 🖥 **Served ports · 🧩 skills · 🧹 cleanup** — what's running where, which skills agents actually use, and one-tap cleanup of throwaway sessions
+- 🖥 **Dev servers · 🔗 linked services** — each project's dev servers (on / off, kept running across restarts), its GitHub repo and links to the Vercel, Firebase or Supabase dashboards it uses
+- 🧩 **Skills · 🧹 cleanup** — which skills agents actually use, and one-tap cleanup of throwaway sessions
 - 🔔 **Notifications** — your phone buzzes whenever a session finishes (Baton or PC terminal) or the agent has a question; on a desktop, cards pop up in the corner. Mute a session or a whole project from its ⋯ menu
 - 🏢 **Any backend** — subscriptions, API keys, Amazon Bedrock, Google Vertex, LLM gateways and self-hosted models
 
