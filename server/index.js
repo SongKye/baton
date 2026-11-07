@@ -18,8 +18,9 @@ import { startWatcher } from './watch.js';
 import { listPorts, listPortsCached, invalidatePorts, shareToPhone, unshare, stopPort } from './ports.js';
 import { listServers, startServer, stopServer, removeServer, addServer, serverLogs, observe as observeServers, startServerWatch } from './servers.js';
 import { projectServices, reposReport, addLink, removeLink } from './links.js';
-import { skillsReport, skillDetail } from './skills.js';
-import { mcpReport, mcpDetail, mcpEffective, checkMcp, invalidateMcp } from './mcp.js';
+import { skillsReport, skillDetail, pickableSkills } from './skills.js';
+import { mentionFiles } from './mention.js';
+import { mcpReport, mcpDetail, mcpEffective, checkMcp, invalidateMcp, mcpForPicker } from './mcp.js';
 import { setupStatus, startJob, getJob, jobInput, stopJob, publicJob } from './setup.js';
 import { handoff, linksOf, buildHandoffNote } from './handoff.js';
 import { moveSession, folderSuggestions, consumeMoveNote, startPendingMoves, TERMINAL_MOVE } from './move.js';
@@ -356,6 +357,34 @@ route('GET', '/api/dirs/browse', async (req, url) => {
   } catch (e) {
     return [400, { error: tr('폴더를 열 수 없어요. 경로와 접근 권한을 확인해주세요'), code: e.code || 'INVALID_PATH' }];
   }
+});
+
+// @ picker in the chat composer: files, folders and skills for this chat's folder (names only, never contents).
+route('GET', '/api/mention', async (req, url) => {
+  const tool = url.searchParams.get('tool');
+  if (!TOOL_IDS.includes(tool)) return [400, { error: 'unknown tool' }];
+  let cwd;
+  const sid = url.searchParams.get('session');
+  try {
+    if (sid) { // same folder rule as /api/run
+      const s = await findSession(tool, sid);
+      if (!s) return [404, { error: tr('세션을 찾을 수 없어요') }];
+      cwd = s.cwd && fs.existsSync(s.cwd) ? s.cwd : (s.project || HOME);
+    } else cwd = resolveCwd(url.searchParams.get('cwd') || defaultCwd());
+    const home = await fsp.realpath(HOME);
+    const real = await fsp.realpath(cwd);
+    const rel = path.relative(home, real);
+    if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) return [403, { error: tr('홈 디렉터리 밖은 열 수 없어요') }];
+    if (!(await fsp.stat(real)).isDirectory()) throw new Error('not a dir');
+  } catch { return { files: [], dirs: [], skills: [], others: [], mcp: [], truncated: false }; } // folder not created yet / gone
+  const isHome = path.resolve(cwd) === path.resolve(HOME);
+  const [f, sk] = await Promise.all([
+    isHome ? { files: [], dirs: [], truncated: true } : mentionFiles(cwd), // the whole home tree is too big to list
+    pickableSkills(tool, cwd, projectRoot(cwd)),
+  ]);
+  let mcp = [];
+  try { mcp = mcpForPicker(tool, cwd); } catch { /* unreadable config */ }
+  return { ...f, ...sk, mcp };
 });
 
 route('GET', '/api/dirs', async (req, url) => {

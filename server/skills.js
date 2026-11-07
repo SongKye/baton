@@ -115,6 +115,88 @@ async function discover() {
   return all.filter((s) => (seen.has(s.path) ? false : seen.add(s.path)));
 }
 
+// ---------------------------------------------------------------- @ picker
+// Only what the chosen CLI can load from this folder: its global skills + the project's own, no usage scan.
+const XDG_CONFIG = process.env.XDG_CONFIG_HOME || path.join(HOME, '.config');
+// mine = folders people put their own skills in (shareable); builtin = ships with that CLI, only works there.
+const PICK_DIRS = {
+  claude: { mine: () => [path.join(CLAUDE_HOME, 'skills')], builtin: () => [], project: ['.claude/skills'] },
+  codex: { mine: () => [path.join(CODEX_HOME, 'skills'), path.join(HOME, '.agents', 'skills')], builtin: () => [path.join(CODEX_HOME, 'skills', '.system')], project: ['.agents/skills', '.codex/skills'] },
+  agy: { mine: () => [path.join(HOME, '.gemini', 'antigravity-cli', 'skills'), path.join(HOME, '.gemini', 'skills')], builtin: () => [path.join(HOME, '.gemini', 'antigravity-cli', 'builtin', 'skills')], project: ['.agent/skills', '.gemini/skills'] },
+  // OpenCode also reads the Claude- and agents-style folders
+  opencode: { mine: () => [path.join(XDG_CONFIG, 'opencode', 'skills'), path.join(CLAUDE_HOME, 'skills'), path.join(HOME, '.agents', 'skills')], builtin: () => [], project: ['.opencode/skills', '.claude/skills', '.agents/skills'] },
+  cursor: { mine: () => [path.join(HOME, '.cursor', 'skills')], builtin: () => [], project: ['.cursor/skills', '.claude/skills'] },
+};
+const pickCache = new Map();
+const notSynced = (s) => !s.dir.includes(`${path.sep}synced${path.sep}`);
+
+async function ownSkills(tool, bases) {
+  const conf = PICK_DIRS[tool];
+  const all = [];
+  for (const g of [...conf.mine(), ...conf.builtin()]) all.push(...(await skillsIn(g, { scope: 'global' })).filter(notSynced));
+  for (const b of bases) for (const rel of conf.project) all.push(...await skillsIn(path.join(b, rel), { scope: 'project' }));
+  if (tool === 'claude') {
+    all.push(...await commandsIn(path.join(CLAUDE_HOME, 'commands'), { scope: 'global' }));
+    for (const b of bases) all.push(...await commandsIn(path.join(b, '.claude', 'commands'), { scope: 'project' }));
+    const synced = path.join(CLAUDE_HOME, 'skills', 'synced');
+    for (const d of await fsp.readdir(synced).catch(() => [])) for (const s of await skillsIn(path.join(synced, d), { scope: 'synced' })) all.push({ ...s, alias: `anthropic-skills:${s.name}` });
+    const installed = readJson(path.join(CLAUDE_HOME, 'plugins', 'installed_plugins.json'))?.plugins || {};
+    for (const [pid, entries] of Object.entries(installed)) {
+      for (const ent of [].concat(entries)) {
+        if (!ent?.installPath) continue;
+        const plugin = pid.split('@')[0];
+        for (const s of await skillsIn(path.join(ent.installPath, 'skills'), { scope: 'plugin' })) all.push({ ...s, alias: `${plugin}:${s.name}` });
+      }
+    }
+  }
+  return all;
+}
+
+/** Other CLIs' own (non-builtin, non-plugin) skills: usable anywhere by having the agent read the SKILL.md. */
+async function otherSkills(tool, bases) {
+  const all = [];
+  for (const other of Object.keys(PICK_DIRS)) {
+    if (other === tool) continue;
+    const conf = PICK_DIRS[other];
+    for (const g of conf.mine()) for (const s of (await skillsIn(g, {})).filter(notSynced)) all.push({ ...s, from: other });
+    for (const b of bases) for (const rel of conf.project) for (const s of await skillsIn(path.join(b, rel), {})) all.push({ ...s, from: other });
+  }
+  return all;
+}
+
+/** { skills, others } for the @ picker: skills `tool` loads itself in `cwd`, then other CLIs' skills it can borrow. */
+export async function pickableSkills(tool, cwd, root) {
+  if (!PICK_DIRS[tool]) return { skills: [], others: [] };
+  const key = `${tool}|${cwd}|${root}`;
+  const hit = pickCache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.data;
+  // the session folder and every parent up to (not including) home, like the CLIs and .mcp.json lookup
+  const bases = [];
+  for (let d = path.resolve(cwd); d !== HOME && path.dirname(d) !== d; d = path.dirname(d)) bases.push(d);
+  if (root && !bases.includes(root)) bases.push(root);
+  const own = await ownSkills(tool, bases);
+  const seen = new Set();
+  const skills = [];
+  for (const s of own) {
+    const name = s.alias || s.name;
+    if (seen.has(name)) continue; // same name in two places -> one entry (the inserted text is identical)
+    seen.add(name);
+    skills.push({ name, description: String(s.description || '').slice(0, 160), scope: s.scope, kind: s.kind });
+  }
+  const ownPaths = new Set(own.map((s) => s.path));
+  const others = [];
+  for (const s of await otherSkills(tool, bases)) {
+    if (ownPaths.has(s.path) || seen.has(s.name)) continue; // this CLI already sees it (shared folder or same name)
+    seen.add(s.name);
+    others.push({ name: s.name, description: String(s.description || '').slice(0, 160), from: s.from, path: shortHome(s.path) });
+  }
+  skills.sort((a, b) => a.name.localeCompare(b.name));
+  others.sort((a, b) => a.name.localeCompare(b.name));
+  const data = { skills, others };
+  pickCache.set(key, { at: Date.now(), data });
+  return data;
+}
+
 let cache = { at: 0, list: [] };
 
 export async function skillsReport() {

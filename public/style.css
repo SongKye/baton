@@ -392,7 +392,15 @@ body.chat-mode .tabbar, body.chat-mode .fab, body.chat-mode .runpill { display: 
 
 .composer { flex: none; border-top: 1px solid var(--border); background: var(--bg); padding: 8px 12px calc(8px + var(--safe-b)); }
 body.kb-open .composer { padding-bottom: 8px; }
-.composer .inner { max-width: 760px; margin: 0 auto; }
+.composer .inner { max-width: 760px; margin: 0 auto; position: relative; }
+.composer .mention { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 20; max-height: min(320px, 40vh); overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 4px; }
+.composer .mention[hidden] { display: none; }
+.mention-item { display: flex; align-items: baseline; gap: 8px; padding: 7px 10px; border-radius: 10px; cursor: pointer; min-width: 0; }
+.mention-item.on, .mention-item:hover { background: var(--surface-2); }
+.mention-item .mi { flex: none; }
+.mention-item b { flex: none; font-weight: 600; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mention-item .ms { flex: 1; min-width: 0; color: var(--text-2); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mention-empty { padding: 8px 10px; color: var(--text-2); font-size: 14px; }
 .composer .box { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 8px 8px 8px 14px; display: flex; flex-direction: column; gap: 6px; box-shadow: var(--shadow); }
 .composer textarea { width: 100%; border: 0; outline: none; background: none; resize: none; font-size: 16px; line-height: 1.45; max-height: 38vh; min-height: 24px; padding: 4px 0; }
 .composer .row { display: flex; align-items: center; gap: 6px; }

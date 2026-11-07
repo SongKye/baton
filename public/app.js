@@ -1092,7 +1092,7 @@ function composerPrefs(tool) {
 const DESK_KEYS = matchMedia('(hover: hover) and (pointer: fine)');
 const sendHint = () => (DESK_KEYS.matches ? t('Enter로 보내기 · Shift+Enter로 줄바꿈') : t('Ctrl+Enter로 보내기'));
 function composerHtml(tool, isNew = false) {
-  return `<div class="composer"><div class="inner"><div class="box">
+  return `<div class="composer"><div class="inner"><div class="mention" id="mention" role="listbox" hidden></div><div class="box">
     <div class="thumbs" id="thumbs" hidden></div>
     <textarea id="input" rows="1" placeholder="${isNew ? t('{name}에게 첫 메시지…', { name: TOOL[tool].name }) : t('{name}에게 이어서 물어보기…', { name: TOOL[tool].name })}" enterkeyhint="${DESK_KEYS.matches ? 'send' : 'enter'}"></textarea>
     <div class="row"><button class="attach" id="attach" aria-label="${t('사진 첨부')}" title="${t('사진 첨부 · 붙여넣기나 끌어다 놓기도 돼요')}">${ICON.image}</button><input type="file" id="file" accept="image/*" multiple hidden><div class="opts" id="opts"></div><button class="send" id="send" disabled aria-label="${t('보내기')}" title="${t('보내기')} (${sendHint()})">${ICON.send}</button></div>
@@ -1433,7 +1433,137 @@ async function shrinkImage(file) {
 const userBubble = (text, imgs = []) => `<div class="msg-user">${imgs.length ? `<div class="uimgs">${imgs.map((a) => `<img src="${a.url}" alt="">`).join('')}</div>` : ''}${esc(text)}</div>`;
 const imgPayload = (imgs) => (imgs?.length ? imgs.map((a) => ({ mime: a.mime, data: a.data })) : undefined);
 
-function wireComposer(tool, onSend, draftKey) {
+// ---------------------------------------------------------------- @ picker
+// Type @ to search this chat's files, folders and skills; picking one just writes text into the prompt.
+const MENTION_CACHE = new Map();
+const mentionScore = (text, q) => {
+  if (!q) return 0;
+  const s = text.toLowerCase();
+  const base = s.replace(/\/$/, '').split('/').pop();
+  if (base.startsWith(q)) return 0;
+  if (base.includes(q)) return 1;
+  if (s.includes(q)) return 2;
+  let i = 0;
+  for (const c of s) if (c === q[i]) i++;
+  return i === q.length ? 3 : -1;
+};
+// Each CLI's own way to ask for a skill; the ones without one get a plain sentence.
+const skillText = (tool, name) => (tool === 'claude' ? `/${name}` : tool === 'codex' ? `$${name}` : t('「{name}」 스킬을 써서', { name }));
+// another CLI's skill: this CLI can't load it by name, so point the agent at the file
+const borrowText = (p) => t('`{path}` 스킬 파일을 읽고 그대로 따라서', { path: p });
+const mcpText = (name) => t('「{name}」 MCP를 써서', { name });
+const mentionPath = (p) => (/\s/.test(p) ? `@"${p}"` : `@${p}`);
+
+function wireMention(tool, ta, ctx, onChange) {
+  const box = $('#mention');
+  if (!box || !ctx) return { key: () => false };
+  let items = [], sel = 0, tok = null, seq = 0;
+  const cacheKey = () => `${tool}|${JSON.stringify(ctx())}`;
+  const load = async () => {
+    const k = cacheKey();
+    const hit = MENTION_CACHE.get(k);
+    if (hit?.pending) return hit.pending;
+    if (hit && Date.now() - hit.at < 30000) return hit.data;
+    const pending = api(`/api/mention?${new URLSearchParams({ tool, ...ctx() })}`).then((d) => ({ others: [], mcp: [], ...d })).catch(() => ({ files: [], dirs: [], skills: [], others: [], mcp: [] }));
+    MENTION_CACHE.set(k, { pending });
+    const data = await pending;
+    MENTION_CACHE.set(k, { at: Date.now(), data });
+    return data;
+  };
+  const close = () => { box.hidden = true; items = []; tok = null; seq++; };
+  const token = () => {
+    if (ta.selectionStart !== ta.selectionEnd) return null;
+    const before = ta.value.slice(0, ta.selectionStart);
+    const m = before.match(/(^|\s)@([^\s@]*)$/); // only after a space or at line start, so emails don't trigger it
+    return m ? { start: before.length - m[2].length - 1, end: ta.selectionStart, q: m[2] } : null;
+  };
+  const draw = (d) => {
+    const q = tok.q.toLowerCase();
+    let list;
+    if (!q) {
+      list = [...d.skills.slice(0, 4).map((x) => ({ x, kind: 'skill' })), ...d.others.slice(0, 2).map((x) => ({ x, kind: 'other' })), ...d.mcp.slice(0, 2).map((x) => ({ x, kind: 'mcp' })),
+        ...d.dirs.filter((x) => !x.slice(0, -1).includes('/')).map((x) => ({ x, kind: 'dir' })),
+        ...d.files.filter((x) => !x.includes('/')).map((x) => ({ x, kind: 'file' }))];
+    } else {
+      const rank = (arr, kind, text) => arr.map((x) => ({ x, kind, s: mentionScore(text(x), q) })).filter((r) => r.s >= 0);
+      const order = { skill: 0, other: 1, mcp: 2, dir: 3, file: 4 };
+      list = [...rank(d.skills, 'skill', (x) => x.name), ...rank(d.others, 'other', (x) => x.name), ...rank(d.mcp, 'mcp', (x) => x.name), ...rank(d.dirs, 'dir', (x) => x), ...rank(d.files, 'file', (x) => x)]
+        .sort((a, b) => a.s - b.s || order[a.kind] - order[b.kind] || (typeof a.x !== 'string' ? 0 : a.x.length - b.x.length));
+    }
+    items = list.slice(0, 10);
+    sel = Math.min(sel, Math.max(0, items.length - 1));
+    const empty = d.truncated && !d.files.length ? t('이 폴더는 너무 커서 파일 목록을 보여주지 않아요') : t('찾는 파일·폴더·스킬·MCP가 없어요');
+    box.innerHTML = !items.length ? `<div class="mention-empty">${empty}</div>` : items.map((r, i) => {
+      const sk = r.kind === 'skill' || r.kind === 'other' || r.kind === 'mcp';
+      const icon = r.kind === 'mcp' ? '🔌' : sk ? '✨' : r.kind === 'dir' ? '📁' : '📄';
+      const path0 = sk ? '' : r.x.replace(/\/$/, '');
+      const name = sk ? r.x.name : path0.split('/').pop() + (r.kind === 'dir' ? '/' : '');
+      const sub = r.kind === 'mcp' ? t('MCP 서버') : r.kind === 'other' ? `${t('{name} 스킬', { name: TOOL[r.x.from]?.name || r.x.from })}${r.x.description ? ` · ${r.x.description}` : ''}`
+        : sk ? (r.x.description || t('스킬')) : path0.includes('/') ? path0.slice(0, path0.lastIndexOf('/') + 1) : '';
+      return `<div class="mention-item${i === sel ? ' on' : ''}" role="option" data-i="${i}"><span class="mi">${icon}</span><b>${esc(name)}</b><span class="ms">${esc(sub)}</span></div>`;
+    }).join('');
+    box.hidden = false;
+    box.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+  };
+  const update = async () => {
+    const next = token();
+    if (!next) { if (tok) close(); return; }
+    if (next.q !== tok?.q) sel = 0;
+    tok = next;
+    const my = ++seq;
+    if (!MENTION_CACHE.get(cacheKey())?.data) { box.innerHTML = `<div class="mention-empty">${t('찾는 중…')}</div>`; box.hidden = false; }
+    const d = await load();
+    if (my !== seq) return; // typed on or closed meanwhile
+    draw(d);
+  };
+  const choose = (i) => {
+    const r = items[i];
+    if (!r || !tok) return;
+    const v = ta.value;
+    const head = v.slice(0, tok.start), tail = v.slice(tok.end);
+    let caret;
+    if (r.kind !== 'dir' && r.kind !== 'file') {
+      // skills / MCP go to the front of the prompt, where Claude Code (/name) and Codex ($name) look for skills
+      const ins = r.kind === 'skill' ? skillText(tool, r.x.name) : r.kind === 'other' ? borrowText(r.x.path) : mcpText(r.x.name);
+      const tl = /\s$/.test(head) || !head ? tail.replace(/^[ \t]+/, '') : tail;
+      const rest = head + tl;
+      const already = rest === ins || rest.startsWith(ins + ' ');
+      ta.value = already ? rest : `${ins} ${rest}`;
+      caret = (already ? 0 : ins.length + 1) + head.length;
+    } else {
+      const ins = mentionPath(r.x) + ' ';
+      ta.value = head + ins + tail.replace(/^ /, '');
+      caret = head.length + ins.length;
+    }
+    close();
+    ta.focus();
+    ta.setSelectionRange(caret, caret);
+    onChange(); // resize + save the draft (setting .value doesn't fire input)
+  };
+  box.addEventListener('pointerdown', (e) => e.preventDefault()); // keep the textarea (and phone keyboard) focused
+  box.addEventListener('click', (e) => { const el = e.target.closest('[data-i]'); if (el) choose(+el.dataset.i); });
+  ta.addEventListener('input', update);
+  ta.addEventListener('click', update);
+  ta.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== ta) close(); }, 150));
+  return {
+    /** keydown while the list is open; true = handled (never while an IME is composing) */
+    key(e) {
+      if (box.hidden || e.isComposing || e.keyCode === 229) return false;
+      if (e.key === 'Escape') { close(); e.preventDefault(); e.stopPropagation(); return true; }
+      if (!items.length) return false;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        sel = (sel + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+        $$('.mention-item', box).forEach((el, i) => el.classList.toggle('on', i === sel));
+        box.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+        e.preventDefault(); return true;
+      }
+      if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') { e.preventDefault(); choose(sel); return true; }
+      return false;
+    },
+  };
+}
+
+function wireComposer(tool, onSend, draftKey, mentionCtx) {
   const ta = $('#input'), btn = $('#send');
   let atts = [];
   const fit = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, window.innerHeight * 0.38) + 'px'; btn.disabled = !ta.value.trim() && !atts.length; };
@@ -1491,7 +1621,9 @@ function wireComposer(tool, onSend, draftKey) {
   const draft = sessionStorage.getItem(draftKey) || store.get(draftKey, '');
   if (draft) { ta.value = draft; sessionStorage.removeItem(draftKey); }
   ta.oninput = () => { fit(); store.set(draftKey, ta.value); };
+  const mention = wireMention(tool, ta, mentionCtx, ta.oninput);
   ta.onkeydown = (e) => {
+    if (mention.key(e)) return;
     if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return; // IME (Korean/Japanese) is still composing
     const send = e.metaKey || e.ctrlKey || (DESK_KEYS.matches && !e.shiftKey && !e.altKey);
     if (!send) return; // Shift+Enter on desktop, plain Enter on touch → newline
@@ -1614,7 +1746,7 @@ async function viewChat([tool, id]) {
       toast(e.message, true); return false;
     }
   };
-  const comp = wireComposer(tool, send, `draft:${key}`);
+  const comp = wireComposer(tool, send, `draft:${key}`, () => ({ session: id }));
   $('#cmore').onclick = () => session && sessionMenu(session, () => load({ keepScroll: true }), { onTrashed: () => { if (G.navCount > 1) history.back(); else location.hash = '#/sessions'; } });
   await load();
   if (navCount !== G.navCount || !msgsEl.isConnected) return;
@@ -1663,7 +1795,7 @@ async function viewNew(_, params) {
     $('#msgs').innerHTML = `<div class="empty" style="padding-top:12vh"><b>${t('무엇을 만들어볼까요? 🏃')}</b>${t('보낸 뒤에는 이 화면에서 바로 대화가 이어져요')}</div>`;
     $$('#ntool [data-t]').forEach((b) => (b.onclick = () => { tool = b.dataset.t; store.set('newtool', tool); keepDraft(); render2(); }));
     $('#ndir').onclick = pickDir;
-    wireComposer(tool, send, 'draft:new');
+    wireComposer(tool, send, 'draft:new', () => ({ cwd }));
   };
   const keepDraft = () => { const ta = $('#input'); if (ta?.value) sessionStorage.setItem('draft:new', ta.value); };
   const pickDir = async () => {
