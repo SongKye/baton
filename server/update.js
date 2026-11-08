@@ -1,5 +1,5 @@
-// "A new version is out": checks GitHub Releases a few times a day, tells the user once per version
-// (inbox + push), and updates a git install in place before restarting:
+// Manual release checks and in-place updates before restarting.
+// Automatic checks and new-version alerts are disabled:
 //   release install (scripts/install.sh: HEAD = a vX.Y.Z tag) → git checkout of the new release tag
 //   main checkout (developers)                                → git pull --ff-only
 // Both then run npm ci. Zip installs get a download link instead.
@@ -7,9 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { ROOT } from './util.js';
-import { getKV, setKV, getSettings } from './store.js';
-import { notify } from './push.js';
-import { tr } from './i18n.js';
+import { getKV, setKV } from './store.js';
 import { sh, IS_WIN, IS_MAC } from './platform.js';
 
 const REPO = process.env.BATON_UPDATE_REPO || 'SongKye/baton';
@@ -71,7 +69,7 @@ async function installInfo() {
 }
 
 function view(c) {
-  return { current: CURRENT, enabled: getSettings().updateCheck !== false, checkedAt: c?.at || null, error: c?.error || null,
+  return { current: CURRENT, enabled: false, checkedAt: c?.at || null, error: c?.error || null,
     latest: c?.latest || null, newer: Boolean(c?.latest && cmpVersion(c.latest, CURRENT) > 0), url: c?.url || `https://github.com/${REPO}/releases`, zip: c?.zip || null, notes: c?.notes || '', publishedAt: c?.publishedAt || null };
 }
 /** Cached result only (cheap, for /api/state). */
@@ -92,23 +90,12 @@ export async function checkUpdate({ force = false } = {}) {
     setKV('update_check', c);
   }
   const v = view(c);
-  // tell the user once per new version
-  if (v.newer && v.enabled && getKV('update_notified', null) !== v.latest) {
-    setKV('update_notified', v.latest);
-    notify({ kind: 'update', title: tr('🎉 Baton v{v}이 나왔어요', { v: v.latest }), body: tr('지금 쓰는 버전은 v{c}이에요. 눌러서 바뀐 점을 보고 업데이트하세요.', { c: CURRENT }), url: '/#/?update=1', tag: 'baton-update' }).catch(() => {});
-  }
   const install = await installInfo();
   // The new code is already on disk (pulled / switched branch by hand) and only this process is old: a restart is enough.
   const onDisk = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return CURRENT; } })();
   install.restartOnly = cmpVersion(onDisk, CURRENT) > 0 && (!v.latest || cmpVersion(onDisk, v.latest) >= 0);
   install.onDisk = onDisk;
   return { ...v, install: { ...install, manual: [...gitUpdateSteps(install.channel, v.latest), 'npm ci --omit=dev'].join(' && ') } };
-}
-
-export function startUpdateChecker() {
-  const tick = () => { if (getSettings().updateCheck !== false) checkUpdate().catch(() => {}); };
-  setTimeout(tick, 60_000).unref();
-  setInterval(tick, EVERY).unref();
 }
 
 /** The git part of an update: release installs move to the newest release tag, main checkouts pull,

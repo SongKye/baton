@@ -32,7 +32,7 @@ import { providersSummary, resetProviderCache } from './providers.js';
 import { connect, testConnection, probeModels, findLocalLlms } from './connect.js';
 import { presets as mcpPresets, addMcp, copyMcp, removeMcp } from './mcp-install.js';
 import { qrSvg } from './qr.js';
-import { checkUpdate, updateCached, startUpdateChecker, restartSelf } from './update.js';
+import { checkUpdate, updateCached, restartSelf } from './update.js';
 import crypto from 'node:crypto';
 import { ensureBrief, briefPending } from './brief.js';
 import { dozingProjects, sendNudge, startNudgeScheduler } from './nudge.js';
@@ -768,7 +768,6 @@ await (async () => {
   if (process.platform === 'win32') setTimeout(() => listPorts().catch(() => {}), 3000).unref(); // first PowerShell start is slow (~7 s)
   if (envInfo.imported.length || envInfo.extra.length) console.log(`[baton] env: ${envInfo.imported.length} vars from ${envInfo.shell || 'shell'}, ${envInfo.extra.length} from settings`);
   startNudgeScheduler();
-  startUpdateChecker();
   startScheduler();
   startWatcher();
   startTrashPurge();

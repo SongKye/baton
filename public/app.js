@@ -621,15 +621,8 @@ async function viewHome(_, params) {
     parts.push(`<div class="section"><div class="section-h"><h2>${t('최근 프로젝트')}</h2><a class="more" href="#/projects">${t('전체')}</a></div>
       <div class="list">${d.activeProjects.slice(0, 4).map(projectRow).join('')}</div></div>`);
   }
-  const up = G.state?.update;
-  if (up?.newer && store.get('update.dismissed', '') !== up.latest) {
-    parts.unshift(`<div class="section"><div class="banner update-banner"><span>🎉 ${t('Baton v{v}이 나왔어요', { v: esc(up.latest) })} <span class="muted">· ${t('지금 v{c}', { c: esc(up.current) })}</span></span>
-      <button class="btn sm primary" id="upopen">${t('업데이트')}</button><button class="icon-btn" id="upx" aria-label="${t('닫기')}">${ICON.x}</button></div></div>`);
-  }
   v.innerHTML = parts.join('');
   $$('[data-snooze]', v).forEach((b) => (b.onclick = () => snoozeFlow(b.dataset.snooze, () => render())));
-  $('#upopen', v) && ($('#upopen', v).onclick = () => updateSheet());
-  $('#upx', v) && ($('#upx', v).onclick = () => { store.set('update.dismissed', up.latest); $('#upx', v).closest('.section').remove(); });
   if (params?.get('update')) updateSheet();
   homeUsageCard();
 }
@@ -2047,7 +2040,7 @@ async function viewSettings() {
         : `<div class="setting"><div class="l"><b>${t('푸시 알림')}</b><span>${ps.sub ? t('이 기기에서 켜져 있어요') : t('응답 완료·잠자는 프로젝트 알림을 받아요')}</span></div>
             ${ps.sub ? `<button class="btn sm" id="ptest">${t('테스트')}</button><button class="btn sm ghost" id="poff">${t('끄기')}</button>` : `<button class="btn sm primary" id="pon">${t('켜기')}</button>`}</div>`}
       <div class="setting"><div class="l"><b>${t('응답 완료 알림')}</b><span>${t('세션 응답이 끝날 때마다 알려줘요 (PC 터미널 포함). 세션·프로젝트 ⋯ 메뉴에서 따로 끌 수 있어요')}</span></div>${sw('notifyOnRunDone')}</div>
-      <div class="setting"><div class="l"><b>${t('새 버전 알림')}</b><span>${t('Baton 새 버전이 나오면 한 번 알려줘요 (GitHub에서 하루 몇 번 확인)')}</span></div>${sw('updateCheck')}</div>
+      <div class="setting"><div class="l"><b>${t('새 버전 알림')}</b><span>${t('새 버전 알림은 비활성화되어 있어요. 아래 버전 항목에서 직접 확인할 수 있어요.')}</span></div><label class="switch"><input type="checkbox" aria-label="${t('새 버전 알림')}" disabled><i></i></label></div>
       ${DESK_MQ.matches ? `<div class="setting"><div class="l"><b>${t('데스크톱 화면 알림')}</b><span>${t('이 PC에서 Baton을 보고 있으면 화면 우측 하단에 알림 카드를 띄워요')}</span></div><label class="switch"><input type="checkbox" id="deskcards-sw" ${deskCardsOn() ? 'checked' : ''}><i></i></label></div>` : ''}
     </div></div>
     <div class="section" data-settings="reminders"><div class="section-h"><h2>${t('잊혀가는 프로젝트 챙기기 💤')}</h2></div><div class="card">
