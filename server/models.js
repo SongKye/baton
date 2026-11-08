@@ -124,6 +124,7 @@ function codexCatalog() {
     cfgEffort = cfg.match(/^model_reasoning_effort\s*=\s*"([^"]+)"/m)?.[1] || null;
   } catch { /* ignore */ }
   const prov = codexProvider();
+  if (prov.kind === 'custom' && getKV('codex_default_fallback', null)) setKV('codex_default_fallback', null);
   if (prov.kind === 'custom') {
     return {
       models: [{ id: '', label: tr('기본값 · {model}', { model: cfgModel || prov.label }), short: cfgModel || tr('기본'), desc: `${prov.label}${prov.baseUrl ? ` · ${prov.baseUrl}` : ''}` }],
@@ -140,11 +141,12 @@ function codexCatalog() {
   // An old config.toml can pin a model the account no longer offers (e.g. "gpt-5-codex": "not supported
   // when using Codex with a ChatGPT account"), which makes every default run fail. When the account's
   // list is known and doesn't have it, the default sends the account's first model instead (runner reads
-  // codex_default_fallback). config.toml itself is left alone.
+  // codexDefaultFallback(), which re-checks provider/account/config). config.toml itself is left alone.
   const offered = new Set((codexList.models || cached || []).map((m) => m.slug));
   const stale = Boolean(prov.subscription && cfgModel && list.length && !offered.has(cfgModel));
   const fallback = stale ? list[0].slug : null;
-  if ((getKV('codex_default_fallback', null) || null) !== fallback) setKV('codex_default_fallback', fallback);
+  const want = fallback ? { model: fallback, accountId: prov.accountId, configModel: cfgModel } : null;
+  if (JSON.stringify(getKV('codex_default_fallback', null)) !== JSON.stringify(want)) setKV('codex_default_fallback', want);
   const defModel = fallback || cfgModel || obs?.model || list[0]?.slug || null;
   const effortFor = (slug) => cfgEffort || list.find((m) => m.slug === slug)?.default_reasoning_level || null;
   const models = [{
