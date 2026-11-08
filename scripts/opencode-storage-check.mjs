@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const child = process.argv[2] === '--child';
@@ -59,8 +59,8 @@ try {
     await legacy(sid, 'Shared session');
     await legacy('ses_legacy_only', 'Legacy only');
 
-    const { listOpencode, readOpencode } = await import(path.join(process.cwd(), 'server', 'sources', 'opencode.js'));
-    const { usageReport } = await import(path.join(process.cwd(), 'server', 'usage.js'));
+    const { listOpencode, readOpencode } = await import(pathToFileURL(path.join(process.cwd(), 'server', 'sources', 'opencode.js')).href);
+    const { usageReport } = await import(pathToFileURL(path.join(process.cwd(), 'server', 'usage.js')).href);
 
     const rows = await listOpencode();
     assert.deepEqual(rows.map((r) => r.id).sort(), ['ses_legacy_only', sid], 'each session listed once');
