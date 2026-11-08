@@ -23,7 +23,7 @@ try {
     await fs.mkdir(path.join(home, '.codex'), { recursive: true });
     execFileSync(process.execPath, ['--no-warnings', path.join(app, 'scripts', 'codex-fallback-check.mjs'), '--child'], {
       stdio: 'inherit', cwd: app,
-      env: { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: path.join(home, '.codex'), BATON_NO_SHELL_ENV: '1', PATH: path.dirname(process.execPath) },
+      env: { ...process.env, HOME: home, USERPROFILE: home, APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local'), CODEX_HOME: path.join(home, '.codex'), BATON_NO_SHELL_ENV: '1', PATH: path.dirname(process.execPath) },
     });
   } else {
     const codexHome = process.env.CODEX_HOME;
