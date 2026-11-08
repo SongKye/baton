@@ -967,5 +967,6 @@
  "터미널에서 {n} 명령을 찾으려면 PATH에 {p}를 추가해주세요.": "To run {n} from your terminal, add {p} to your PATH.",
  "Codex 로그인이 만료됐어요 — 설정에서 다시 로그인해주세요": "Your Codex sign-in has expired — sign in again in Setup",
  "로그인 만료": "Sign-in expired",
- "저장된 로그인이 만료됐어요. 다시 로그인하면 한도도 다시 보여요.": "Your saved sign-in has expired. Sign in again to see your limits too."
+ "저장된 로그인이 만료됐어요. 다시 로그인하면 한도도 다시 보여요.": "Your saved sign-in has expired. Sign in again to see your limits too.",
+ "~/.codex/config.toml의 \"{v}\"는 이 계정에서 쓸 수 없어서 대신 써요": "Used instead of \"{v}\" from ~/.codex/config.toml, which this account can't use"
 }

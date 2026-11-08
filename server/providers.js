@@ -8,6 +8,7 @@ import path from 'node:path';
 import { CLAUDE_HOME, CODEX_HOME } from './env.js';
 import { binFor } from './tools.js';
 import { runCli } from './platform.js';
+import { getKV } from './store.js';
 
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
 
@@ -77,7 +78,21 @@ export function codexProvider() {
     kind, subscription: kind === 'subscription', providerId, label: kind === 'custom' ? name : kind === 'apikey' ? 'OpenAI API key' : 'ChatGPT',
     baseUrl, envKey, envKeySet: envKey ? Boolean(process.env[envKey]) : null,
     configured: chatgpt || (kind === 'apikey' && hasKey) || (kind === 'custom' && (!envKey || Boolean(process.env[envKey]))),
+    accountId: auth.tokens?.account_id || null, configModel: (top.match(/^model\s*=\s*"([^"]+)"/m) || [])[1] || null,
   };
+}
+
+/**
+ * Model to send when the user picks "default" but config.toml's model isn't offered on this ChatGPT
+ * account (set by the Codex catalog). Only valid for the exact setup it was computed for: switching
+ * to a custom provider / API key, another account, or editing the model in config.toml drops it.
+ */
+export function codexDefaultFallback() {
+  const fb = getKV('codex_default_fallback', null);
+  if (!fb?.model) return null;
+  const prov = codexProvider();
+  if (!prov.subscription || prov.accountId !== fb.accountId || prov.configModel !== fb.configModel) return null;
+  return fb.model;
 }
 
 /** Last known Claude provider without waiting (refreshes in the background). */
