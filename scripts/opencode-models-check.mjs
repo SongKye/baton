@@ -60,7 +60,7 @@ try {
     const auth = path.join(process.env.XDG_DATA_HOME, 'opencode', 'auth.json');
     await fs.writeFile(fake, `import fs from 'node:fs';\nconst out = ${JSON.stringify({ a: verbose(false), b: verbose(true) })};\nprocess.stdout.write(fs.existsSync(${JSON.stringify(auth)}) ? out.b : out.a);\n`);
     if (process.platform === 'win32') await fs.writeFile(path.join(binDir, 'opencode.cmd'), `@"${process.execPath}" "%~dp0fake-opencode.mjs" %*\r\n`);
-    else await fs.writeFile(path.join(binDir, 'opencode'), `#!/bin/sh\nexec "${process.execPath}" "$(dirname "$0")/fake-opencode.mjs" "$@"\n`, { mode: 0o755 });
+    else await fs.writeFile(path.join(binDir, 'opencode'), `#!/bin/sh\nexec "${process.execPath}" "\${0%/*}/fake-opencode.mjs" "$@"\n`, { mode: 0o755 });
 
     clearWhichCache(); invalidateModels(); // what a finished install job does
     await waitFor((l, cat) => cat.efforts.includes('high'), 'models after install'); // the verbose list, not the plain fallback
