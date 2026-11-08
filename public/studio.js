@@ -11,7 +11,7 @@ brand.className = 'studio-brand';
 brand.innerHTML = '<span class="baton-mark studio-mark" aria-hidden="true"></span><strong>baton<span>WORKSPACE / STUDIO</span></strong>';
 const foot = document.createElement('div');
 foot.className = 'studio-foot';
-foot.innerHTML = `<span>MAKE SOMETHING GOOD.</span><a href="/preview.html">${copy('화면 비교', 'Compare layouts')} ↗</a><a href="/original.html">${copy('기존 화면으로', 'Original layout')} ↗</a>`;
+foot.innerHTML = '<span>MAKE SOMETHING GOOD.</span>';
 
 function decorate() {
   if (!enabled()) return;
