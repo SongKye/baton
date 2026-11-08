@@ -690,20 +690,19 @@ async function restartBaton(btn, { version } = {}) {
   if (btn) { btn.disabled = false; btn.textContent = label; }
 }
 
-/** Settings → Baton card: version, new release (update + auto restart), restart button. */
+/** Settings → Baton card: current version, latest release, an 업데이트 button that is only enabled when
+ *  there is something to update to (opens the sheet: update → restart → reload), and a restart button. */
+let versionCheckedAt = 0;
 function versionCard(box) {
-  const draw = () => {
+  const draw = (checking = false) => {
     const up = G.state?.update || {};
-    const row = up.newer
-      ? `<div class="setting update-row"><div class="l"><b>🎉 ${t('Baton v{v}이 나왔어요', { v: esc(up.latest) })}</b><span>${t('지금 v{c} · 눌러서 바뀐 점을 보고 업데이트하세요. 끝나면 자동으로 다시 켜져요.', { c: esc(up.current || G.state?.version || '') })}</span></div><button class="btn sm primary" data-v="open">${t('업데이트')}</button></div>`
-      : `<div class="setting"><div class="l"><b>Baton v${esc(G.state?.version || '')}</b><span>${up.latest ? t('최신 버전이에요') : t('아직 새 버전을 확인하지 않았어요')}</span></div><button class="btn sm" data-v="check">${t('새 버전 확인')}</button></div>`;
-    box.innerHTML = `${row}<div class="setting"><div class="l"><b>${t('Baton 다시 켜기')}</b><span>${t('Baton 서버를 껐다 켜요. 터미널에서 직접 업데이트했거나 뭔가 이상할 때 눌러보세요.')}</span></div><button class="btn sm" data-v="restart">${t('다시 켜기')}</button></div>`;
-    $('[data-v="open"]', box) && ($('[data-v="open"]', box).onclick = () => updateSheet());
-    $('[data-v="check"]', box) && ($('[data-v="check"]', box).onclick = async (e) => {
-      const b = e.currentTarget; b.disabled = true;
-      await updateSheet({ check: true });
-      if (box.isConnected) draw();
-    });
+    const status = checking ? t('새 버전을 확인하는 중…')
+      : up.newer ? t('최신 버전: v{v}', { v: esc(up.latest) })
+      : up.latest ? t('최신 버전이에요') : t('새 버전을 확인하지 못했어요');
+    box.innerHTML = `<div class="setting ${up.newer ? 'update-row' : ''}"><div class="l"><b>Baton v${esc(G.state?.version || '')}</b><span>${up.newer ? '🎉 ' : ''}${status}</span></div>
+        <button class="btn sm ${up.newer ? 'primary' : ''}" data-v="update" ${up.newer && !checking ? '' : 'disabled'}>${t('업데이트')}</button></div>
+      <div class="setting"><div class="l"><b>${t('Baton 다시 켜기')}</b><span>${t('Baton 서버를 껐다 켜요. 터미널에서 직접 업데이트했거나 뭔가 이상할 때 눌러보세요.')}</span></div><button class="btn sm" data-v="restart">${t('다시 켜기')}</button></div>`;
+    $('[data-v="update"]', box).onclick = () => updateSheet();
     $('[data-v="restart"]', box).onclick = (e) => {
       const n = G.state?.runs?.length || 0;
       if (n && !confirm(t('지금 실행 중인 작업이 {n}개 있어요. 다시 켜면 멈출 수 있어요. 계속할까요?', { n }))) return;
@@ -711,6 +710,14 @@ function versionCard(box) {
     };
   };
   draw();
+  // Ask GitHub when Settings opens (at most every 5 minutes), so the button reflects the real latest release.
+  if (Date.now() - versionCheckedAt < 5 * 60_000) return;
+  versionCheckedAt = Date.now();
+  draw(true);
+  api('/api/update/check', { method: 'POST' })
+    .then((d) => { if (G.state) G.state.update = { current: d.current, latest: d.latest, newer: d.newer }; })
+    .catch(() => {})
+    .finally(() => { if (box.isConnected) draw(); });
 }
 
 // ---------------------------------------------------------------- PROJECTS
