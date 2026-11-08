@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const child = process.argv[2] === '--child';
@@ -37,8 +37,8 @@ try {
     await auth('acct-1');
     await write('config.toml', 'model = "retired-model"\n');
 
-    const { catalogs } = await import(path.join(process.cwd(), 'server', 'models.js'));
-    const { codexDefaultFallback } = await import(path.join(process.cwd(), 'server', 'providers.js'));
+    const { catalogs } = await import(pathToFileURL(path.join(process.cwd(), 'server', 'models.js')).href);
+    const { codexDefaultFallback } = await import(pathToFileURL(path.join(process.cwd(), 'server', 'providers.js')).href);
     const codex = () => catalogs().codex;
 
     // 1) ChatGPT account, config.toml model not offered -> default uses the first offered model
