@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-08
+
 ### Added
 - **Start Baton again without a terminal command or the port**: setup adds a **Baton** shortcut to the Windows Start menu and desktop, and a `baton` command on macOS / Linux / WSL (`~/.local/bin`). Both start Baton and open the dashboard, or just open the dashboard when Baton is already running. Run the installer again to get them on an existing install.
 
