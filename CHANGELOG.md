@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Changed
+- **New-version alerts are disabled**: automatic release checks, Home banners, inbox and push alerts are off and cannot be re-enabled, including through saved settings or the API. Manual checks and updates remain available in Settings.
+
 ## [0.8.7] - 2026-11-08
 
 ### Added

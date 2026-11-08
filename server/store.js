@@ -70,7 +70,7 @@ const DEFAULT_SETTINGS = {
   briefModel: 'haiku',
   defaultPerm: 'auto',
   notifyOnRunDone: true,
-  updateCheck: true,            // look for new Baton releases and announce them
+  updateCheck: false,           // reserved for compatibility; new-version alerts cannot be enabled
   workspaceRoots: ['~/workspace'],
   defaultCwd: '',
 };
@@ -84,13 +84,14 @@ export function setKV(k, v) {
   q('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v').run(k, JSON.stringify(v));
 }
 export function getSettings() {
-  return { ...DEFAULT_SETTINGS, ...(getKV('settings', {}) || {}) };
+  return { ...DEFAULT_SETTINGS, ...(getKV('settings', {}) || {}), updateCheck: false };
 }
 export function updateSettings(patch) {
   const next = { ...getSettings() };
   for (const [k, v] of Object.entries(patch || {})) {
     if (k in DEFAULT_SETTINGS && typeof v === typeof DEFAULT_SETTINGS[k]) next[k] = v;
   }
+  next.updateCheck = false; // Ignore attempts to re-enable alerts from older clients.
   setKV('settings', next);
   return next;
 }
