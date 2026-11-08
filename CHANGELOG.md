@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-08
+
 ### Added
 - **One-line install of the latest release**: `curl -fsSL https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.sh | bash` on macOS, Linux and WSL, or `irm https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.ps1 | iex` in Windows PowerShell. It installs the newest release into `~/baton` (or `BATON_DIR`) and starts it. Running it again moves to the newest release.
 
