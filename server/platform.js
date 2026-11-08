@@ -36,8 +36,10 @@ export function augmentedPath(base = process.env.PATH || '') {
 
 const whichCache = new Map();
 /** Absolute path of an executable, or null. Honors PATHEXT on Windows. */
+// A miss is only trusted for 15s: a CLI installed from the user's own terminal shows up without a restart.
 export function which(bin, { fresh = false } = {}) {
-  if (!fresh && whichCache.has(bin)) return whichCache.get(bin);
+  const hit = whichCache.get(bin);
+  if (!fresh && hit && (hit.found || Date.now() - hit.at < 15_000)) return hit.found;
   const exts = IS_WIN ? (process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';').map((e) => e.toLowerCase()) : [''];
   let found = null;
   for (const dir of augmentedPath().split(path.delimiter)) {
@@ -50,7 +52,7 @@ export function which(bin, { fresh = false } = {}) {
     }
     if (found) break;
   }
-  whichCache.set(bin, found);
+  whichCache.set(bin, { found, at: Date.now() });
   return found;
 }
 export function clearWhichCache() { whichCache.clear(); }

@@ -22,7 +22,7 @@ try {
     await fs.mkdir(home, { recursive: true });
     execFileSync(process.execPath, ['--no-warnings', path.join(app, 'scripts', 'opencode-storage-check.mjs'), '--child'], {
       stdio: 'inherit', cwd: app,
-      env: { ...process.env, HOME: home, USERPROFILE: home, XDG_DATA_HOME: path.join(home, 'data'), BATON_NO_SHELL_ENV: '1', PATH: path.dirname(process.execPath) },
+      env: { ...process.env, HOME: home, USERPROFILE: home, APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local'), XDG_DATA_HOME: path.join(home, 'data'), BATON_NO_SHELL_ENV: '1', PATH: path.dirname(process.execPath) },
     });
   } else {
     const { DatabaseSync } = await import('node:sqlite');

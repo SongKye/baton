@@ -220,17 +220,19 @@ function agyCatalog() {
 }
 
 // ---------------------------------------------------------------- opencode / cursor
-// Both list their models with a `models` subcommand; refreshed in the background every 6h.
-const listCache = { opencode: { at: 0, models: [] }, cursor: { at: 0, models: [] } };
+// Both list their models with a `models` subcommand; refreshed in the background every 6h (every minute
+// while the list is still empty). Nothing is cached while the CLI isn't installed, so the list loads as
+// soon as it shows up — no Baton restart needed after installing.
+const listCache = { opencode: { at: 0, models: [], bin: null }, cursor: { at: 0, models: [], bin: null } };
 function refreshList(tool) {
   const c = listCache[tool];
-  if (Date.now() - c.at < 6 * 3600 * 1000) return;
-  c.at = Date.now();
   const bin = binFor(tool);
   if (!bin) return;
+  if (bin === c.bin && Date.now() - c.at < (c.models.length ? 6 * 3600 * 1000 : 60 * 1000)) return;
+  c.at = Date.now(); c.bin = bin;
   runCli(bin, ['models'], { timeout: 30000 }).then(({ stdout }) => {
     const models = [];
-    for (const raw of stdout.split('\n')) {
+    for (const raw of stdout.split(/\r?\n/)) {
       const line = raw.replace(/\x1b\[[0-9;]*m/g, '').trim();
       if (!line || /^(available|models|usage|error)/i.test(line)) continue;
       const m = line.match(/^([\w./:@-]+)(?:\s+[-–—]\s+(.+)|\s{2,}(.+))?$/);
@@ -253,15 +255,33 @@ function simpleCatalog(tool, note) {
 // free-models-first order and per-model effort; fall back to the plain list if it can't be parsed.
 const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const effortRank = (e) => (e === '' ? -1 : EFFORT_ORDER.includes(e) ? EFFORT_ORDER.indexOf(e) : 99);
-const ocList = { at: 0, ok: false, models: null };
+const ocList = { at: 0, ok: false, models: null, sig: '' };
+let ocBusy = false;
+// Which models OpenCode offers depends on the binary and the providers it's signed in to (`opencode auth
+// login` in the user's own terminal, or Baton's "connect a server" writing opencode.json). Any change
+// there refetches the list on the next poll instead of waiting out the cache.
+const mtime = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } };
+const XDG_DATA = process.env.XDG_DATA_HOME || path.join(HOME, '.local', 'share');
+const XDG_CONFIG = process.platform !== 'win32' && process.env.XDG_CONFIG_HOME ? process.env.XDG_CONFIG_HOME : path.join(HOME, '.config');
+function opencodeSig(bin) {
+  const cfg = path.join(XDG_CONFIG, 'opencode');
+  return [bin, mtime(path.join(XDG_DATA, 'opencode', 'auth.json')), mtime(path.join(cfg, 'opencode.json')), mtime(path.join(cfg, 'opencode.jsonc'))].join('|');
+}
+/** Forget cached model lists (after an install / sign-in job) so the next /api/state refetches them. */
+export function invalidateModels() {
+  ocList.at = 0; ocList.sig = '';
+  for (const c of Object.values(listCache)) { c.at = 0; c.bin = null; }
+  codexList.at = 0;
+  refreshOpencodeModels(); // start now so the list is usually ready by the UI's next poll
+}
 export function parseOpencodeVerbose(text) {
-  const lines = String(text).replace(/\x1b\[[0-9;]*m/g, '').split('\n');
+  const lines = String(text).replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/); // Windows prints CRLF
   const out = [];
   for (let i = 0; i < lines.length; i++) {
     const id = lines[i].trim();
     if (!/^[\w.@-]+\/[\w./:@-]+$/.test(id) || lines[i + 1]?.trim() !== '{') continue;
     let j = i + 1;
-    while (j < lines.length && lines[j] !== '}') j++;
+    while (j < lines.length && lines[j].trimEnd() !== '}') j++;
     let meta = null;
     try { meta = JSON.parse(lines.slice(i + 1, j + 1).join('\n')); } catch { /* skip */ }
     i = j;
@@ -275,15 +295,16 @@ export function parseOpencodeVerbose(text) {
   return out;
 }
 function refreshOpencodeModels() {
-  if (Date.now() - ocList.at < (ocList.ok ? 6 * 3600 * 1000 : 120 * 1000)) return;
-  ocList.at = Date.now();
   const bin = binFor('opencode');
-  if (!bin) return;
+  if (!bin || ocBusy) return;
+  const sig = opencodeSig(bin);
+  if (sig === ocList.sig && Date.now() - ocList.at < (ocList.ok ? 6 * 3600 * 1000 : 30 * 1000)) return;
+  ocList.at = Date.now(); ocList.sig = sig; ocBusy = true;
   runCli(bin, ['models', '--verbose'], { timeout: 60000 }).then(({ stdout }) => {
     const models = parseOpencodeVerbose(stdout);
     ocList.ok = models.length > 0;
     if (ocList.ok) ocList.models = models;
-  }).catch(() => { ocList.ok = false; });
+  }).catch(() => { ocList.ok = false; }).finally(() => { ocBusy = false; });
 }
 function opencodeCatalog() {
   refreshOpencodeModels();

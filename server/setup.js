@@ -10,6 +10,7 @@ import { ROOT } from './util.js';
 import { TOOLS, TOOL_IDS, binFor, installPlan } from './tools.js';
 import { IS_WIN, IS_MAC, IS_WSL, OS_NAME, which, clearWhichCache, runCli, spawnCli, augmentedPath, sh } from './platform.js';
 import { childEnv } from './runner.js';
+import { invalidateModels } from './models.js';
 import { tr, lang } from './i18n.js';
 import { claudeProvider, codexProvider } from './providers.js';
 import { envInfo } from './env.js';
@@ -209,6 +210,7 @@ function finish(job, code) {
   job.exit = code;
   clearWhichCache();
   statusCache.at = 0;
+  if (code === 0 && (job.action === 'install' || job.action === 'login')) invalidateModels(); // new CLI / account -> new model list
   job.emit({ t: 'end', ok: code === 0, code });
 }
 

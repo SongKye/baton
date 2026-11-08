@@ -50,6 +50,8 @@ jobs:
         run: node scripts/chat-images-check.mjs
       - name: OpenCode db / legacy storage checks
         run: node scripts/opencode-storage-check.mjs
+      - name: OpenCode model list checks (CRLF, refresh after install / sign-in)
+        run: node scripts/opencode-models-check.mjs
       - name: Codex default-model fallback checks
         run: node scripts/codex-fallback-check.mjs
       - name: Composer @ picker checks
