@@ -52,13 +52,21 @@ async function latestTag() {
 const STABLE = /^\d+\.\d+\.\d+$/;
 
 /** How Baton was installed, and whether it can update itself.
- *  channel 'release': HEAD sits exactly on a vX.Y.Z tag (the installer does this); 'main': the main branch. */
+ *  channel 'release': HEAD sits exactly on a vX.Y.Z tag (the installer does this); 'main': the main branch;
+ *  'merged': another branch whose commits are all in origin/main already (e.g. a merged PR branch) —
+ *  switching back to main loses nothing, so the update does that. */
 async function installInfo() {
   if (!fs.existsSync(path.join(ROOT, '.git'))) return { kind: 'zip', canAuto: false };
-  const branch = (await sh('git', ['-C', ROOT, 'rev-parse', '--abbrev-ref', 'HEAD'])).trim();
-  const dirty = Boolean((await sh('git', ['-C', ROOT, 'status', '--porcelain', '--untracked-files=no'])).trim());
-  const tag = branch === 'HEAD' ? (await sh('git', ['-C', ROOT, 'describe', '--tags', '--exact-match', 'HEAD'])).trim() : '';
-  const channel = branch === 'main' ? 'main' : STABLE.test(tag.replace(/^v/, '')) ? 'release' : null;
+  const git = (...a) => sh('git', ['-C', ROOT, ...a]).then((o) => o.trim());
+  const branch = await git('rev-parse', '--abbrev-ref', 'HEAD');
+  const dirty = Boolean(await git('status', '--porcelain', '--untracked-files=no'));
+  const tag = branch === 'HEAD' ? await git('describe', '--tags', '--exact-match', 'HEAD') : '';
+  let channel = branch === 'main' ? 'main' : STABLE.test(tag.replace(/^v/, '')) ? 'release' : null;
+  if (!channel && branch && branch !== 'HEAD') {
+    await sh('git', ['-C', ROOT, 'fetch', '--quiet', 'origin', 'main'], 20_000);
+    const head = await git('rev-parse', 'HEAD');
+    if (head && head === await git('merge-base', 'HEAD', 'origin/main')) channel = 'merged';
+  }
   return { kind: 'git', branch, tag: tag || null, channel, dirty, canAuto: Boolean(channel) && !dirty };
 }
 
@@ -103,12 +111,14 @@ export function startUpdateChecker() {
   setInterval(tick, EVERY).unref();
 }
 
-/** The git part of an update: release installs move to the newest release tag, main checkouts pull. */
+/** The git part of an update: release installs move to the newest release tag, main checkouts pull,
+ *  anything else (a merged or unmerged feature branch) goes back to main first. */
 export function gitUpdateSteps(channel, latest) {
   if (channel === 'release' && STABLE.test(String(latest || ''))) {
     return ['git fetch --tags --force origin', `git -c advice.detachedHead=false checkout --quiet v${latest}`];
   }
-  return ['git pull --ff-only'];
+  if (channel === 'main') return ['git pull --ff-only'];
+  return ['git checkout main', 'git pull --ff-only'];
 }
 
 /** The shell command that updates a git install (shown to the user too). */

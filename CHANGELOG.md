@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- **Updating works from a branch that was already merged**: if Baton's folder is on a branch whose commits are all in `main` (e.g. after a merged PR), the update switches back to `main` and pulls instead of staying on the old branch. Other branches get the right manual command (`git checkout main && git pull`).
+
+### Changed
+- **Settings → Baton version card**: shows the current version and "Latest version: vX.Y.Z" with an Update button that is only enabled when a newer release exists. Opening Settings checks GitHub (at most every 5 minutes).
+
 ## [0.8.7] - 2026-11-08
 
 ### Added
