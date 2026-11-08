@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [0.8.6] - 2026-11-08
 
 ### Fixed
+- **No more "MCP connection problem" note on every message for unused claude.ai connectors**: connectors that come attached to your claude.ai account (e.g. Google Calendar) but were never authorized no longer show "Needs auth" in the chat. The MCP panel still shows their status, and real connection failures are still reported.
 - **OpenCode on Windows shows readable model names and effort levels**: Windows prints `opencode models --verbose` with CRLF line endings, so Baton couldn't read it and fell back to raw model ids with no effort choice. The list now parses the same as on WSL/macOS/Linux.
 - **OpenCode models appear right after installing or signing in, without restarting Baton**: a missing CLI was remembered until restart and the model list was cached for hours. Baton now notices a newly installed CLI within seconds, refetches the list when an install/sign-in finishes, and also when OpenCode's sign-in (`auth.json`) or `opencode.json` changes from the user's own terminal.
 
