@@ -52,6 +52,9 @@ Please also add a line under **Unreleased** in `CHANGELOG.md`.
 
 ## Releasing (maintainers)
 
+Start with `npm run release:check` and follow [deployment readiness and verification](docs/releasing.md).
+Confirm Windows CI passes before tagging: installers select release tags directly.
+
 1. Move the **Unreleased** entries in `CHANGELOG.md` under a new version heading.
 2. Bump `version` in `package.json` (semver: features → minor, fixes → patch).
 3. Commit, then tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
