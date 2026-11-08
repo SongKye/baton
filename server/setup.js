@@ -78,7 +78,7 @@ export async function setupStatus({ fresh = false } = {}) {
     return {
       id, name: t.name, vendor: t.vendor, docs: t.docs, installed: Boolean(bin), path: bin, version: ver, loggedIn: Boolean(logged), provider,
       optionalLogin: Boolean(t.optionalLogin), installCmd: plan?.cmd || null, canInstall: Boolean(plan),
-      loginKind: t.login?.kind || null, loginCmd: bin ? `${path.basename(bin).replace(/\.(cmd|exe)$/i, '')} ${t.login.args.join(' ')}` : null,
+      loginKind: t.login?.kind || null, loginCmd: bin ? [path.basename(bin).replace(/\.(cmd|exe)$/i, ''), ...t.login.args].join(' ') : null,
       note: t.note?.[lang()] || t.note?.en,
     };
   }));
