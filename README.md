@@ -91,7 +91,7 @@ Codex and Antigravity work best when Baton runs inside WSL (Linux on Windows). Y
    [boot]
    systemd=true
    ```
-4. **Update.** Press **Update now** when Baton tells you about a new version, or run the install line again.
+4. **Update.** Check for a new version at the bottom of Settings and press **Update now**, or run the install line again.
 5. **Remove.** Turn off Start on login in Get started, then run `rm -rf ~/baton`. Your CLIs and their sessions stay.
 
 To change Baton's own code, use a `git clone` of `main` instead. See [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -187,7 +187,7 @@ Wide screens get a studio layout with a sidebar; phones keep the compact one. Pi
 
 ## Updates
 
-Baton checks for a new release a few times a day and tells you once: a banner on Home and a notification. **Update now** switches to the new release, installs its packages and restarts Baton — sessions and settings stay. Installs from the install line only ever move between releases; a checkout of the `main` branch pulls `main` instead. If you installed from a zip, or the Baton folder has local changes, you get the steps instead. Installed with `git clone` before 0.8? Run `git fetch --tags && git checkout v0.8.0` in the Baton folder once, and from then on it follows releases. Check any time from the version line at the bottom of Settings; turn the alerts off in **Settings → Notifications**.
+Automatic release checks and new-version alerts (Home banner, inbox and push) are disabled and cannot be enabled. **Update now** switches to the new release, installs its packages and restarts Baton — sessions and settings stay. Installs from the install line only ever move between releases; a checkout of the `main` branch pulls `main` instead. If you installed from a zip, or the Baton folder has local changes, you get the steps instead. Installed with `git clone` before 0.8? Run `git fetch --tags && git checkout v0.8.0` in the Baton folder once, and from then on it follows releases. Check manually any time from **Settings → Baton version · Updates**.
 
 ## How it works
 

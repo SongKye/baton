@@ -44,6 +44,8 @@ jobs:
         run: for f in server/*.js server/sources/*.js public/*.js scripts/*.mjs; do node --check "$f"; done
       - name: Translations complete
         run: npm run i18n:check
+      - name: Disabled update alerts and manual release checks
+        run: node scripts/update-alerts-check.mjs
       - name: Windows installation regression checks
         run: node scripts/windows-install-check.mjs
       - name: Chat image regression checks
