@@ -65,7 +65,7 @@ export const TOOLS = {
     bins: ['agy'],
     docs: 'https://antigravity.google/docs/cli/features',
     install: { unix: 'curl -fsSL https://antigravity.google/cli/install.sh | bash' },
-    login: { args: ['-p=/usage', '--output-format', 'json'], kind: 'browser' }, // any command triggers the Google sign-in flow
+    login: { args: [], kind: 'terminal' }, // print mode (-p) now refuses unauthenticated; sign-in only runs in interactive `agy`
     loggedIn: async () => exists(path.join(HOME, '.gemini', 'antigravity-cli', 'antigravity-oauth-token')),
     note: { ko: 'Google 계정 전용이에요 (외부 LLM 연결은 지원하지 않아요). Windows는 WSL에서 쓰는 걸 권장해요.', en: 'Google account only (no external LLMs). On Windows, WSL is recommended.' },
   },
