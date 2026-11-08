@@ -70,7 +70,12 @@ irm https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.ps1 | i
 
 단계마다 끝났는지 표시되고, 연결은 **연결 테스트**로 확인할 수 있어요.
 
-CLI를 설치하면 기존 세션이 바로 나타나요. 다음부터는 Baton 폴더(`~/baton`)에서 `npm start`를 실행하세요(브라우저까지 열려면 `npm run open`).
+CLI를 설치하면 기존 세션이 바로 나타나요.
+
+**대시보드를 닫았거나 Baton이 꺼졌다면?** 포트 번호나 폴더를 기억할 필요 없어요.
+
+- **Windows** — 시작 메뉴(또는 바탕화면)의 **Baton** 아이콘을 누르세요. Baton이 최소화된 창으로 켜지고(그 창을 닫으면 꺼져요), 이미 켜져 있으면 대시보드만 열어요.
+- **macOS · Linux · WSL** — 터미널을 열고 `baton`을 입력하세요. 동작은 같고 **Ctrl+C**로 꺼요. (설치할 때 `~/.local/bin`에 추가돼요. 명령을 못 찾으면 `~/baton/scripts/baton`을 실행하세요.)
 
 ### Windows: WSL에 설치하기 (단계별)
 
@@ -82,17 +87,18 @@ Codex와 Antigravity는 Baton을 WSL(Windows 안의 Linux)에서 돌릴 때 가�
    curl -fsSL https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.sh | bash
    ```
    Node.js가 필요하면 설치할지 물어보고, 끝나면 Baton을 켜고 Windows 브라우저에서 **http://localhost:7420** 을 열어요. 쓰는 동안 Ubuntu 창은 열어 두세요. **Ctrl+C**를 누르면 꺼져요.
-3. **다음에 다시 켜기.** Ubuntu를 열고 실행하세요.
+3. **다음에 다시 켜기.** Ubuntu를 열고 입력하세요.
    ```bash
-   cd ~/baton && npm start
+   baton
    ```
+   Baton을 켜고 대시보드를 열어요. 이미 켜져 있으면 대시보드만 열어요.
    시작하기 화면에서 **자동 시작**을 켜면 터미널 없이 써요. WSL에서는 WSL이 켜질 때 Baton이 같이 켜져요(재부팅 후 Ubuntu를 한 번 열면 돼요). systemd가 필요한데, 요즘 설치한 Ubuntu에는 켜져 있어요. 시작하기에서 자동 시작을 쓸 수 없다고 나오면 `sudo nano /etc/wsl.conf`로 아래 두 줄을 넣고, PowerShell에서 `wsl --shutdown`을 실행한 뒤 Ubuntu를 다시 여세요.
    ```ini
    [boot]
    systemd=true
    ```
 4. **업데이트.** 설정 맨 아래 버전 항목에서 직접 확인한 뒤 **지금 업데이트**를 누르거나, 설치 명령을 다시 실행하세요.
-5. **삭제.** 시작하기에서 자동 시작을 끄고 `rm -rf ~/baton`을 실행하세요. CLI와 대화 기록은 그대로 남아요.
+5. **삭제.** 시작하기에서 자동 시작을 끄고 `rm -rf ~/baton ~/.local/bin/baton`을 실행하세요. CLI와 대화 기록은 그대로 남아요.
 
 Baton 코드를 직접 고치려면 `main`을 `git clone`해서 쓰세요. [CONTRIBUTING.md](CONTRIBUTING.md)를 보세요.
 

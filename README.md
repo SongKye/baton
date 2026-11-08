@@ -70,7 +70,12 @@ The **Get started** screen walks you through:
 
 Every step shows whether it's done, and each connection can be checked with **Test connection**.
 
-Existing sessions show up as soon as a CLI is installed. Later, run `npm start` (or `npm run open`) in the Baton folder (`~/baton`).
+Existing sessions show up as soon as a CLI is installed.
+
+**Closed the dashboard or stopped Baton?** You don't need to remember the port or the folder:
+
+- **Windows** — click **Baton** in the Start menu (or the Baton icon on the desktop). It starts Baton in a minimized window (close that window to stop it), or just opens the dashboard when Baton is already running.
+- **macOS · Linux · WSL** — open a terminal and type `baton`. Same behavior; **Ctrl+C** stops it. (The installer adds this command to `~/.local/bin`; if it isn't found, run `~/baton/scripts/baton`.)
 
 ### Windows: install in WSL, step by step
 
@@ -82,17 +87,18 @@ Codex and Antigravity work best when Baton runs inside WSL (Linux on Windows). Y
    curl -fsSL https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.sh | bash
    ```
    It asks before installing Node.js, then starts Baton and opens **http://localhost:7420** in your Windows browser. Keep the Ubuntu window open while you use Baton; **Ctrl+C** stops it.
-3. **Start it again later.** Open Ubuntu and run:
+3. **Start it again later.** Open Ubuntu and type:
    ```bash
-   cd ~/baton && npm start
+   baton
    ```
+   This starts Baton and opens the dashboard, or just opens the dashboard if Baton is already running.
    Or turn on **Start on login** in Get started so you never need the terminal. In WSL this starts Baton whenever WSL starts (opening Ubuntu once after a reboot is enough). It needs systemd, which new Ubuntu installs have. If Get started says auto-start isn't available, add these two lines to `/etc/wsl.conf` with `sudo nano /etc/wsl.conf`, then run `wsl --shutdown` in PowerShell and open Ubuntu again:
    ```ini
    [boot]
    systemd=true
    ```
 4. **Update.** Check for a new version at the bottom of Settings and press **Update now**, or run the install line again.
-5. **Remove.** Turn off Start on login in Get started, then run `rm -rf ~/baton`. Your CLIs and their sessions stay.
+5. **Remove.** Turn off Start on login in Get started, then run `rm -rf ~/baton ~/.local/bin/baton`. Your CLIs and their sessions stay.
 
 To change Baton's own code, use a `git clone` of `main` instead. See [CONTRIBUTING.md](CONTRIBUTING.md).
 

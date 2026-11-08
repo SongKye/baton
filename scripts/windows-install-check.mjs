@@ -1,7 +1,7 @@
 // Exercise the public installer with local release tags and a minimal server.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync, readdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +55,19 @@ try {
   git('-c', 'user.name=Installer Test', '-c', 'user.email=installer@example.invalid', 'commit', '-m', 'Fixture release');
   git('tag', 'v0.0.1');
   success('fresh install via Invoke-Expression, including real npm.cmd');
+  {
+    // the Start menu shortcut (found by Start search) points at this install and opens the dashboard
+    const lnk = run('powershell.exe', ['-NoProfile', '-Command',
+      "$l = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'Baton.lnk')); $l.TargetPath; $l.Arguments; $l.WorkingDirectory"]);
+    assert.equal(lnk.status, 0, lnk.output);
+    const [target, args, cwd] = lnk.stdout.split(/\r?\n/).filter(Boolean);
+    assert.match(target, /node\.exe$/i, lnk.output);
+    // tmpdir() may be an 8.3 short path (RUNNER~1); the shortcut stores the long one
+    const longDest = realpathSync.native(dest).toLowerCase();
+    assert.ok(args.toLowerCase().includes(path.join(longDest, 'server', 'index.js')) && args.endsWith('--open'), lnk.output);
+    assert.equal(realpathSync.native(cwd).toLowerCase(), longDest, lnk.output);
+    console.log('PASS Start menu shortcut starts this installation');
+  }
   success('repeat installation');
   git('-c', 'user.name=Installer Test', '-c', 'user.email=installer@example.invalid', 'commit', '--allow-empty', '-m', 'Next release');
   git('tag', 'v0.0.2');
