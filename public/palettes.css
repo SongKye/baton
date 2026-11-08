@@ -20,7 +20,7 @@
 @media (min-width: 760px) {
   :root[data-palette]:not([data-palette="default"]) .tabbar:has(.studio-brand) { background: var(--palette-sidebar); }
   :root[data-palette]:not([data-palette="default"]) .tabbar:has(.studio-brand) > a.on svg { stroke: #f3f3f8; }
-  :root[data-palette]:not([data-palette="default"]) .studio-brand strong,
+  :root[data-palette]:not([data-palette="default"]) .studio-brand strong { color: #f0eff5; }
   :root[data-palette]:not([data-palette="default"]) .studio-brand strong span,
   :root[data-palette]:not([data-palette="default"]) .studio-foot > span,
   :root[data-palette]:not([data-palette="default"]) .tabbar:has(.studio-brand) > a { color: #c9cbd6; }
