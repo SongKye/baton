@@ -68,7 +68,31 @@ irm https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.ps1 | i
 
 단계마다 끝났는지 표시되고, 연결은 **연결 테스트**로 확인할 수 있어요.
 
-CLI를 설치하면 기존 세션이 바로 나타나요. 다음부터는 `npm start` (브라우저까지 열려면 `npm run open`).
+CLI를 설치하면 기존 세션이 바로 나타나요. 다음부터는 Baton 폴더(`~/baton`)에서 `npm start`를 실행하세요(브라우저까지 열려면 `npm run open`).
+
+### Windows: WSL에 설치하기 (단계별)
+
+Codex와 Antigravity는 Baton을 WSL(Windows 안의 Linux)에서 돌릴 때 가장 잘 돼요. 화면은 평소 쓰는 Windows 브라우저로 열어요.
+
+1. **WSL 켜기** (한 번만). PowerShell을 **관리자 권한으로** 열고 `wsl --install`을 실행한 뒤 Windows를 다시 시작하세요. Ubuntu 창이 뜨면 Linux 사용자 이름과 비밀번호를 정해요.
+2. **Baton 설치.** Ubuntu 창에 설치 명령을 붙여넣으세요.
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.sh | bash
+   ```
+   Node.js가 필요하면 설치할지 물어보고, 끝나면 Baton을 켜고 Windows 브라우저에서 **http://localhost:7420** 을 열어요. 쓰는 동안 Ubuntu 창은 열어 두세요. **Ctrl+C**를 누르면 꺼져요.
+3. **다음에 다시 켜기.** Ubuntu를 열고 실행하세요.
+   ```bash
+   cd ~/baton && npm start
+   ```
+   시작하기 화면에서 **자동 시작**을 켜면 터미널 없이 써요. WSL에서는 WSL이 켜질 때 Baton이 같이 켜져요(재부팅 후 Ubuntu를 한 번 열면 돼요). systemd가 필요한데, 요즘 설치한 Ubuntu에는 켜져 있어요. 시작하기에서 자동 시작을 쓸 수 없다고 나오면 `sudo nano /etc/wsl.conf`로 아래 두 줄을 넣고, PowerShell에서 `wsl --shutdown`을 실행한 뒤 Ubuntu를 다시 여세요.
+   ```ini
+   [boot]
+   systemd=true
+   ```
+4. **업데이트.** 새 버전 알림이 오면 **지금 업데이트**를 누르거나, 설치 명령을 다시 실행하세요.
+5. **삭제.** 시작하기에서 자동 시작을 끄고 `rm -rf ~/baton`을 실행하세요. CLI와 대화 기록은 그대로 남아요.
+
+Baton 코드를 직접 고치려면 `main`을 `git clone`해서 쓰세요. [CONTRIBUTING.md](CONTRIBUTING.md)를 보세요.
 
 ## 지원 현황
 
@@ -179,7 +203,7 @@ Baton은 빌드 과정이 없는 작은 Node.js 서버예요. 대화 내용을 �
 | 설치했는데 *설치 안 됨*으로 보여요 | 시작하기에서 ↻. Windows는 Baton을 다시 실행해야 새 PATH가 반영돼요. |
 | 터미널에선 되는데 Baton에서 실패해요 | **설정 → 회사 환경**을 확인하세요. 필요한 변수가 Baton이 읽지 않은 셸에만 있을 수 있어요. 거기에 추가하세요. |
 | 포트 7420이 이미 사용 중 | `BATON_PORT=7421 npm start` |
-| Windows에서 Codex·Antigravity가 이상해요 | WSL에서 가장 잘 동작해요. WSL 안에서 `./scripts/setup.sh`를 실행하고 Windows 브라우저로 `http://localhost:7420`을 여세요. |
+| Windows에서 Codex·Antigravity가 이상해요 | WSL에서 가장 잘 동작해요. [Windows: WSL에 설치하기](#windows-wsl에-설치하기-단계별)를 보세요. |
 | 폰에서 개발 서버가 안 열려요 | Vite 같은 개발 서버는 외부 주소를 막아요. `server.allowedHosts`를 설정하세요. |
 
 ## 기여

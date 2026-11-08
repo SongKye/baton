@@ -12,6 +12,8 @@ npm start            # http://localhost:7420
 
 Use another port for a second copy while one is already running: `BATON_PORT=7421 npm start`.
 
+This checkout stays on `main`: **Update now** pulls `main`, and the install line never switches it to a release. On Windows, do this inside WSL (Ubuntu) and open `http://localhost:7420` in your Windows browser. If the repository is private, sign in once with `gh auth login` (answer *Yes* to authenticating Git) so `git clone` and updates can reach it.
+
 ## Project layout
 
 | Path | What it is |
