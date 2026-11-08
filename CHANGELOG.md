@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-11-08
+
+### Fixed
+- **Windows and WSL can run independent Baton installations without choosing ports manually**: native Windows defaults to 7421 and Linux/WSL to 7420, with separate fallback port ranges. Baton remembers the selected port across restarts and auto-start, checks installation identity before reusing a running server, and uses the actual port for setup and phone sharing.
+
 ## [0.8.2] - 2026-11-08
 
 ### Fixed

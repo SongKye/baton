@@ -7,10 +7,10 @@ Thanks for helping! Baton is deliberately simple: **Node.js only, no build step,
 ```bash
 git clone https://github.com/SongKye/baton.git && cd baton
 npm install
-npm start            # http://localhost:7420
+npm start            # prints the dashboard address
 ```
 
-Use another port for a second copy while one is already running: `BATON_PORT=7421 npm start`.
+Baton defaults to port 7420 on Linux/macOS/WSL and 7421 on native Windows. Independent installations automatically select and remember a free port. Set `BATON_PORT` only when you need a specific port.
 
 This checkout stays on `main`: **Update now** pulls `main`, and the install line never switches it to a release. On Windows, do this inside WSL (Ubuntu) and open `http://localhost:7420` in your Windows browser. If the repository is private, sign in once with `gh auth login` (answer *Yes* to authenticating Git) so `git clone` and updates can reach it.
 
