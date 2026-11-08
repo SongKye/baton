@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-08
+
 ### Added
 - **Type @ in the chat box to pick files, folders, skills and MCP servers**: Baton searches the chat's folder (following `.gitignore` in git repos) and shows the skills and MCP servers the chosen CLI loads there, including project-level ones from parent folders. Picking an item writes it into your message: `@path` for files and folders, `/skill` for Claude Code, `$skill` for Codex, and a short phrase for the other CLIs. Skills from other CLIs are listed too; picking one asks the agent to read that skill's `SKILL.md`. Baton only lists names and never sends file contents.
 
