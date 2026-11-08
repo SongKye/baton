@@ -961,5 +961,6 @@
  "생각 과정": "Thinking",
  "도구 {n}회": "{n} tool calls",
  "생각": "Thinking",
- "📌 고정": "📌 Pinned"
+ "📌 고정": "📌 Pinned",
+ "~/.codex/config.toml의 \"{v}\"는 이 계정에서 쓸 수 없어서 대신 써요": "Used instead of \"{v}\" from ~/.codex/config.toml, which this account can't use"
 }

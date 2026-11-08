@@ -84,6 +84,7 @@ function codexCmd({ sessionId, model, effort, perm, prompt, images }) {
   if (sessionId) args.push('resume');
   for (const im of images || []) args.push(`--image=${im.path}`);
   args.push('--json', '--skip-git-repo-check');
+  model ||= getKV('codex_default_fallback', null); // config.toml's model isn't offered on this account
   if (model) args.push('-m', model);
   if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
   if (perm === 'full') args.push('--dangerously-bypass-approvals-and-sandbox');
@@ -442,6 +443,7 @@ export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
     } else if (tool === 'codex') {
       bin = 'codex';
       args = ['exec', '--json', '--skip-git-repo-check', '--ephemeral', '-c', 'sandbox_mode="read-only"'];
+      model ||= getKV('codex_default_fallback', null);
       if (model) args.push('-m', model);
       args.push('-');
     } else if (tool === 'agy') {

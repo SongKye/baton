@@ -99,6 +99,23 @@ function claudeCompanyCatalog(prov) {
 }
 
 // ---------------------------------------------------------------- codex
+// Codex only writes models_cache.json after it has run once, so right after signing in there was no
+// list at all. `codex debug models` fetches the catalog for the signed-in account (and refreshes that
+// file), so run it in the background: every 6h once it works, every 2 min while it doesn't.
+const codexList = { at: 0, ok: false, models: null };
+function refreshCodexModels() {
+  if (Date.now() - codexList.at < (codexList.ok ? 6 * 3600 * 1000 : 120 * 1000)) return;
+  codexList.at = Date.now();
+  const bin = binFor('codex');
+  if (!bin) return;
+  runCli(bin, ['debug', 'models'], { timeout: 60000, cwd: HOME }).then(({ stdout }) => {
+    let models = null;
+    try { models = JSON.parse(stdout).models; } catch { /* not json */ }
+    codexList.ok = Boolean(models?.length);
+    if (codexList.ok) codexList.models = models;
+  }).catch(() => { codexList.ok = false; });
+}
+
 function codexCatalog() {
   let cfgModel = null; let cfgEffort = null;
   try {
@@ -113,15 +130,27 @@ function codexCatalog() {
       efforts: ['', 'minimal', 'low', 'medium', 'high'], defaults: { model: cfgModel, effort: cfgEffort }, provider: prov.label, freeform: true,
     };
   }
-  const j = readJson(path.join(CODEX_HOME, 'models_cache.json')) || {};
-  const list = (j.models || []).filter((m) => m.slug && !/auto-review/.test(m.slug)).sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
+  refreshCodexModels();
+  const cached = readJson(path.join(CODEX_HOME, 'models_cache.json'))?.models;
+  const list = (codexList.models || cached || [])
+    .filter((m) => m.slug && m.visibility !== 'hide' && !/auto-review/.test(m.slug))
+    .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
   const name = (slug) => list.find((m) => m.slug === slug)?.display_name || slug;
   const obs = getKV('observed_default_codex', null);
-  const defModel = cfgModel || obs?.model || list[0]?.slug || null;
+  // An old config.toml can pin a model the account no longer offers (e.g. "gpt-5-codex": "not supported
+  // when using Codex with a ChatGPT account"), which makes every default run fail. When the account's
+  // list is known and doesn't have it, the default sends the account's first model instead (runner reads
+  // codex_default_fallback). config.toml itself is left alone.
+  const offered = new Set((codexList.models || cached || []).map((m) => m.slug));
+  const stale = Boolean(prov.subscription && cfgModel && list.length && !offered.has(cfgModel));
+  const fallback = stale ? list[0].slug : null;
+  if ((getKV('codex_default_fallback', null) || null) !== fallback) setKV('codex_default_fallback', fallback);
+  const defModel = fallback || cfgModel || obs?.model || list[0]?.slug || null;
   const effortFor = (slug) => cfgEffort || list.find((m) => m.slug === slug)?.default_reasoning_level || null;
   const models = [{
     id: '', label: tr('기본값 · {model}', { model: defModel ? name(defModel) : tr('알 수 없음') }), short: defModel ? name(defModel) : tr('기본'),
-    desc: cfgModel ? tr('~/.codex/config.toml의 model = "{v}"', { v: cfgModel }) : tr('Codex 계정 기본값'), defaultEffort: effortFor(defModel),
+    desc: stale ? tr('~/.codex/config.toml의 "{v}"는 이 계정에서 쓸 수 없어서 대신 써요', { v: cfgModel })
+      : cfgModel ? tr('~/.codex/config.toml의 model = "{v}"', { v: cfgModel }) : tr('Codex 계정 기본값'), defaultEffort: effortFor(defModel),
   }];
   const efforts = new Set(['']);
   for (const m of list) {
