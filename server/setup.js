@@ -195,6 +195,15 @@ async function removeAutostart() {
 export async function startJob(action, tool) {
   const t = tool ? TOOLS[tool] : null;
   if (tool && !t) throw new Error('unknown tool');
+  // a second tap (or another device) joins the job already running instead of starting it twice
+  const key = `${action}:${tool || ''}`;
+  for (const j of jobs.values()) if (j.key === key && j.status === 'running') return j;
+  const job = await createJob(action, tool, t);
+  job.key = key; job.action = action; job.tool = tool || null;
+  return job;
+}
+
+async function createJob(action, tool, t) {
   if (action === 'install') {
     const plan = installPlan(tool);
     if (!plan) throw new Error(tr('이 OS에서는 자동 설치를 지원하지 않아요. 문서를 참고해주세요.'));
@@ -264,5 +273,7 @@ export function stopJob(id) {
   return true;
 }
 export function publicJob(j) {
-  return { id: j.id, label: j.label, status: j.status, urls: j.urls, code: j.code, exit: j.exit };
+  return { id: j.id, label: j.label, status: j.status, urls: j.urls, code: j.code, exit: j.exit, action: j.action, tool: j.tool, startedAt: j.startedAt };
 }
+/** Jobs still running, so a reopened setup page can show their progress again. */
+export function runningJobs() { return [...jobs.values()].filter((j) => j.status === 'running').map(publicJob); }

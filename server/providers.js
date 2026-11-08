@@ -41,7 +41,8 @@ export async function claudeProvider() {
       if (/bedrock/.test(p)) kind = 'bedrock';
       else if (/vertex/.test(p)) kind = 'vertex';
       else if (/foundry|azure/.test(p)) kind = 'foundry';
-      else if (!kind && j.authMethod && !/claude\.ai/i.test(j.authMethod)) kind = 'apikey';
+      // a fresh install reports authMethod "none" — that's "not signed in yet", not an API key
+      else if (!kind && j.loggedIn && j.authMethod && !/claude\.ai|none/i.test(j.authMethod)) kind = 'apikey';
     } catch { /* older CLI: env-based guess stands */ }
   }
   kind = kind || 'subscription';
@@ -69,11 +70,13 @@ export function codexProvider() {
   const envKey = (section.match(/^env_key\s*=\s*"([^"]+)"/m) || [])[1] || null;
   const auth = readJson(path.join(CODEX_HOME, 'auth.json')) || {};
   const chatgpt = providerId === 'openai' && (auth.auth_mode === 'chatgpt' || Boolean(auth.tokens?.access_token)) && !auth.OPENAI_API_KEY;
-  const kind = providerId !== 'openai' ? 'custom' : chatgpt ? 'subscription' : 'apikey';
+  // no key anywhere means "not signed in yet" (ChatGPT login is the default), not an API-key setup
+  const hasKey = Boolean(auth.OPENAI_API_KEY || process.env.OPENAI_API_KEY);
+  const kind = providerId !== 'openai' ? 'custom' : chatgpt || !hasKey ? 'subscription' : 'apikey';
   return {
     kind, subscription: kind === 'subscription', providerId, label: kind === 'custom' ? name : kind === 'apikey' ? 'OpenAI API key' : 'ChatGPT',
     baseUrl, envKey, envKeySet: envKey ? Boolean(process.env[envKey]) : null,
-    configured: kind === 'subscription' || (kind === 'apikey' && Boolean(auth.OPENAI_API_KEY || process.env.OPENAI_API_KEY)) || (kind === 'custom' && (!envKey || Boolean(process.env[envKey]))),
+    configured: chatgpt || (kind === 'apikey' && hasKey) || (kind === 'custom' && (!envKey || Boolean(process.env[envKey]))),
   };
 }
 

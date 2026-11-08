@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- **Claude Code and Codex show a sign-in button right after installing**: a fresh install was mistaken for "already connected with an API key", so the account sign-in button was hidden.
+- **You can tell whether an install or sign-in is running**: the button turns into "Installing…" and can't be tapped twice, a timer and status line show progress, and the end says clearly whether it worked — with the reason and a "Try again" button if it didn't. Tapping again (or from another device) joins the running job instead of starting a second one, and the progress comes back if you leave and reopen the page.
+
+### Changed
+- **Sign in with your account, per tool**: "Sign in with Claude / ChatGPT / Google / Cursor" buttons with a short how-to — no API key needed.
+- **Line icons instead of emoji** in the setup page, folder picker, MCP lists, session and project menus, and chat tool summaries, so they match the rest of the app.
+
 ## [0.8.1] - 2026-11-08
 
 ### Added
