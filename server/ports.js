@@ -12,9 +12,10 @@ import { liveSessions } from './live.js';
 import { IS_WIN, IS_MAC, sh } from './platform.js';
 import { tr } from './i18n.js';
 
+import { PORT as BATON_PORT } from './runtime.js';
+
 const pexec = promisify(execFile);
 const MY_UID = os.userInfo().uid;
-const BATON_PORT = Number(process.env.BATON_PORT || 7420);
 const PS = ['-NoProfile', '-NonInteractive', '-Command'];
 
 // ---------------------------------------------------------------- per-OS: listening sockets

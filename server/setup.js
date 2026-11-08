@@ -15,8 +15,9 @@ import { claudeProvider, codexProvider } from './providers.js';
 import { envInfo } from './env.js';
 import { updateCommand } from './update.js';
 
+import { PORT } from './runtime.js';
+
 const HOME = os.homedir();
-const PORT = Number(process.env.BATON_PORT || 7420);
 const NODE_MIN = [22, 13];
 
 // ---------------------------------------------------------------- status
@@ -233,7 +234,7 @@ async function writeAutostart() {
   <key>Label</key><string>dev.baton.dashboard</string>
   <key>ProgramArguments</key><array><string>${node}</string><string>--no-warnings</string><string>${entry}</string></array>
   <key>WorkingDirectory</key><string>${ROOT}</string>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>${augmentedPath()}</string><key>BATON_PORT</key><string>${PORT}</string></dict>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>${augmentedPath()}</string></dict>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
 </dict></plist>
 `);
@@ -246,7 +247,6 @@ After=network-online.target
 [Service]
 WorkingDirectory=${ROOT}
 ExecStart=${node} --no-warnings ${entry}
-Environment=BATON_PORT=${PORT}
 Environment=PATH=${augmentedPath()}
 Restart=on-failure
 RestartSec=3

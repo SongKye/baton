@@ -41,7 +41,9 @@ import { usageReport, startUsageScheduler } from './usage.js';
 import { observeRun, seedDefaults } from './observe.js';
 import { readClaudeImage } from './sources/claude-images.js';
 
-const PORT = Number(process.env.BATON_PORT || 7420);
+import { PORT, setPort } from './runtime.js';
+import { listenerConfig, listen } from './listener.js';
+const listener = listenerConfig(ROOT);
 const HOST = process.env.BATON_HOST || '127.0.0.1';
 const ALLOWED = (process.env.BATON_ALLOWED_LOGINS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 const PUBLIC = path.join(ROOT, 'public');
@@ -703,6 +705,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.headers['tailscale-user-login'] && req.headers.host) setPublicOrigin(`https://${req.headers['x-forwarded-host'] || req.headers.host}`);
   const url = new URL(req.url, 'http://x');
+  if (req.method === 'GET' && url.pathname === '/api/instance' && isLocal(req)) {
+    return send(res, 200, { id: listener.id, os: OS_NAME, port: PORT });
+  }
   try {
     const image = url.pathname.match(/^\/api\/sessions\/claude\/([^/]+)\/images\/([^/]+)$/);
     if (image && req.method === 'GET') {
@@ -737,15 +742,20 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.on('error', (e) => {
-  if (e.code === 'EADDRINUSE') {
-    console.log(`[baton] already running → http://localhost:${PORT}`);
-    if (process.argv.includes('--open')) openBrowser(`http://localhost:${PORT}`);
-    process.exit(0);
-  }
-  throw e;
-});
-server.listen(PORT, HOST, async () => {
+let listening;
+try {
+  listening = await listen(server, listener, HOST);
+  setPort(listening.port);
+} catch (e) {
+  console.error(`[baton] ${e.message}`);
+  process.exit(1);
+}
+if (listening.existing) {
+  console.log(`[baton] this installation is already running → http://localhost:${PORT}`);
+  if (process.argv.includes('--open')) openBrowser(`http://localhost:${PORT}`);
+  process.exit(0);
+}
+await (async () => {
   console.log(`[baton] listening on http://${HOST}:${PORT}`);
   console.log(`[baton] open  →  http://localhost:${PORT}`);
   if (process.argv.includes('--open')) openBrowser(`http://localhost:${PORT}`);
@@ -767,7 +777,7 @@ server.listen(PORT, HOST, async () => {
   startUsageScheduler();
   seedDefaults();
   startServerWatch();
-});
+})();
 
 // keep the index warm so the UI is instant
 setInterval(() => { getSnapshot(15000).catch(() => {}); }, 20000).unref();

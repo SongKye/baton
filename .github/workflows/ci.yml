@@ -38,5 +38,7 @@ jobs:
       - name: Composer @ picker checks
         if: runner.os != 'Windows' # creates symlinks, which need admin rights there
         run: node scripts/mention-check.mjs
+      - name: Independent installation and port checks
+        run: node scripts/listener-check.mjs
       - name: Boot the server and hit every endpoint
         run: node scripts/ci-boot.mjs

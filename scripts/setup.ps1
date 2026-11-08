@@ -5,7 +5,6 @@
 # dashboard's "Get started" screen. Tip: for Codex/Antigravity, running Baton inside WSL works best.
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
-$Port = if ($env:BATON_PORT) { $env:BATON_PORT } else { '7420' }
 
 function Say($m) { Write-Host "▸ $m" -ForegroundColor DarkYellow }
 function Ok($m)  { Write-Host "✓ $m" -ForegroundColor Green }
@@ -39,7 +38,6 @@ Say "Installing Baton's dependencies…"
 npm install --omit=dev --no-audit --no-fund --loglevel=error
 Ok "Dependencies installed"
 
-Say "Starting Baton on http://localhost:$Port  (close this window to stop)"
+Say "Starting Baton (close this window to stop). The server will print and open its address."
 Say "Tip: turn on 'Start Baton when you log in' in Get started so you don't need this window."
-$env:BATON_PORT = $Port
 node --no-warnings server/index.js --open
