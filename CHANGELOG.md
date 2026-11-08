@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-11-08
+
+### Fixed
+- **Claude Code no longer shows "Ready" with an old, expired sign-in**: a leftover `~/.claude/.credentials.json` from an earlier install counted as signed in. Baton now checks the saved login, and shows "Login expired" with the sign-in button (like Codex) when it was rejected or has been expired for over a week. A credentials file without a Claude login is no longer treated as signed in.
+- **Deleting an OpenCode session from its database now works safely**: the session is archived in place and restored or purged together with the trash, and old JSON copies of a migrated session can't bring it back.
+
 ## [0.8.4] - 2026-11-08
 
 ### Fixed

@@ -73,7 +73,39 @@ try {
     assert.equal(today.input, 200, 'input tokens counted once per session');
     assert.equal(today.output, 40, 'output tokens counted once per session');
 
-    console.log('PASS: OpenCode db + legacy JSON sessions are listed and counted once');
+    const { trashSession, restoreSession, emptyTrash, listTrash } = await import(pathToFileURL(path.join(process.cwd(), 'server', 'trash.js')).href);
+    const session = { ...shared, key: `opencode:${sid}` };
+    const transcript = await readOpencode(shared.file);
+    await trashSession(session);
+    await trashSession(session); // repeat requests must preserve the original restore state
+    assert.equal(listTrash().length, 1);
+    assert.deepEqual((await listOpencode()).map((r) => r.id), ['ses_legacy_only'], 'DB session and migrated JSON disappear');
+    assert.deepEqual(await readOpencode(shared.file), transcript, 'archive preserves the complete conversation');
+    await restoreSession(session.key);
+    assert.equal(listTrash().length, 0);
+    assert.equal((await listOpencode()).length, 2);
+    assert.deepEqual(await readOpencode(shared.file), transcript, 'restore preserves messages and parts');
+
+    // No migrated files: the DB reference alone must support trash and restore.
+    await fs.rm(path.join(st, 'session', 'p', `${sid}.json`));
+    await fs.rm(path.join(st, 'message', sid), { recursive: true });
+    await trashSession(session);
+    await restoreSession(session.key);
+    assert.equal((await listOpencode()).length, 2);
+    await legacy(sid, 'Shared session');
+    await trashSession(session);
+    assert.equal(await emptyTrash(), 1);
+    assert.deepEqual((await listOpencode()).map((r) => r.id), ['ses_legacy_only'], 'purge cannot resurrect migrated JSON');
+    const check = new DatabaseSync(path.join(base, 'opencode.db'));
+    for (const table of ['session', 'message', 'part']) assert.equal(check.prepare(`SELECT count(*) AS n FROM ${table}`).get().n, 0, `${table} purged`);
+    check.close();
+    const legacyRow = (await listOpencode())[0];
+    await trashSession({ ...legacyRow, key: `opencode:${legacyRow.id}` });
+    assert.equal((await listOpencode()).length, 0);
+    await restoreSession(`opencode:${legacyRow.id}`);
+    assert.equal((await listOpencode()).length, 1, 'legacy restore still works');
+
+    console.log('PASS: OpenCode DB/JSON deduplication, trash, restore and permanent deletion');
     process.exit(0);
   }
 } finally {

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { DATA_DIR, HOME, DAY } from './util.js';
 import { db } from './store.js';
 import { tr } from './i18n.js';
+import { isOpencodeDbRef, OPENCODE_STORAGE, changeOpencodeArchive } from './sources/opencode.js';
 
 const TRASH_DIR = path.join(DATA_DIR, 'trash');
 const TRASH_DAYS = 30;
@@ -26,6 +27,16 @@ function sessionFiles(s) {
   add(s.file);
   if (s.tool === 'claude') add(s.file.replace(/\.jsonl$/, '')); // subagent transcripts live in <id>/
   if (s.tool === 'opencode') {
+    if (isOpencodeDbRef(s.file)) {
+      // Migrated installations can retain JSON copies. Move those as well so purging
+      // the DB row cannot resurrect a session from the legacy storage.
+      const root = path.join(OPENCODE_STORAGE, 'session');
+      if (fs.existsSync(root)) {
+        for (const project of fs.readdirSync(root)) add(path.join(root, project, `${s.id}.json`));
+      }
+      add(path.join(OPENCODE_STORAGE, 'message', s.id));
+      return out;
+    }
     const storage = path.resolve(path.dirname(s.file), '..', '..'); // storage/session/<proj>/<id>.json
     add(path.join(storage, 'message', s.id)); // parts stay (keyed by message id) — harmless orphans
   }
@@ -47,23 +58,38 @@ async function move(from, to) {
 }
 
 export async function trashSession(s) {
+  if (trashedKeys().has(s.key)) return;
+  const dbSession = s.tool === 'opencode' && isOpencodeDbRef(s.file);
   const files = sessionFiles(s);
-  if (!files.length) throw new Error(tr('세션 파일을 찾을 수 없어요'));
+  if (!files.length && !dbSession) throw new Error(tr('세션 파일을 찾을 수 없어요'));
   const dir = path.join(TRASH_DIR, `${Date.now()}-${s.tool}-${s.id}`.replace(/[^\w.-]/g, '_'));
   const moved = [];
-  for (const [i, f] of files.entries()) {
-    const to = path.join(dir, `${i}-${path.basename(f)}`);
-    await move(f, to);
-    moved.push({ from: f, to });
+  let archive;
+  try {
+    if (dbSession) archive = { kind: 'opencode-db', id: s.id, previous: changeOpencodeArchive(s.id, Date.now()) };
+    for (const [i, f] of files.entries()) {
+      const to = path.join(dir, `${i}-${path.basename(f)}`);
+      await move(f, to);
+      moved.push({ from: f, to });
+    }
+    db.prepare(`INSERT OR REPLACE INTO trash (key, tool, id, title, project, deleted_at, dir, files) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(s.key, s.tool, s.id, s.title || null, s.project || null, Date.now(), dir, JSON.stringify([...moved, ...(archive ? [archive] : [])]));
+  } catch (e) {
+    for (const { from, to } of moved.reverse()) await move(to, from);
+    if (archive) changeOpencodeArchive(archive.id, archive.previous);
+    throw e;
   }
-  db.prepare(`INSERT OR REPLACE INTO trash (key, tool, id, title, project, deleted_at, dir, files) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(s.key, s.tool, s.id, s.title || null, s.project || null, Date.now(), dir, JSON.stringify(moved));
 }
 
 export async function restoreSession(key) {
   const r = db.prepare('SELECT * FROM trash WHERE key = ?').get(key);
   if (!r) throw new Error(tr('휴지통에 없어요'));
-  for (const { from, to } of JSON.parse(r.files)) {
+  for (const entry of JSON.parse(r.files)) {
+    if (entry.kind === 'opencode-db') {
+      changeOpencodeArchive(entry.id, entry.previous);
+      continue;
+    }
+    const { from, to } = entry;
     if (fs.existsSync(from) || !fs.existsSync(to)) continue;
     await move(to, from);
   }
@@ -78,8 +104,11 @@ export function listTrash() {
 
 export async function emptyTrash(olderThanMs = 0) {
   const cutoff = Date.now() - olderThanMs;
-  const rows = db.prepare('SELECT key, dir FROM trash WHERE deleted_at <= ?').all(cutoff);
+  const rows = db.prepare('SELECT key, dir, files FROM trash WHERE deleted_at <= ?').all(cutoff);
   for (const r of rows) {
+    for (const entry of JSON.parse(r.files)) {
+      if (entry.kind === 'opencode-db') changeOpencodeArchive(entry.id, null, true);
+    }
     await fsp.rm(r.dir, { recursive: true, force: true });
     db.prepare('DELETE FROM trash WHERE key = ?').run(r.key);
   }
