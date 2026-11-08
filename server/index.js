@@ -21,7 +21,7 @@ import { projectServices, reposReport, addLink, removeLink } from './links.js';
 import { skillsReport, skillDetail, pickableSkills } from './skills.js';
 import { mentionFiles } from './mention.js';
 import { mcpReport, mcpDetail, mcpEffective, checkMcp, invalidateMcp, mcpForPicker } from './mcp.js';
-import { setupStatus, startJob, getJob, jobInput, stopJob, publicJob } from './setup.js';
+import { setupStatus, startJob, getJob, jobInput, stopJob, publicJob, runningJobs } from './setup.js';
 import { handoff, linksOf, buildHandoffNote } from './handoff.js';
 import { moveSession, folderSuggestions, consumeMoveNote, startPendingMoves, TERMINAL_MOVE } from './move.js';
 import { isLocal, authorized } from './auth.js';
@@ -176,6 +176,7 @@ route('POST', '/api/setup/jobs', async (req) => {
   try { return { job: publicJob(await startJob(String(b.action || ''), b.tool || null)) }; }
   catch (e) { return [400, { error: e.message }]; }
 });
+route('GET', '/api/setup/jobs', async () => ({ jobs: runningJobs() }));
 route('POST', '/api/setup/jobs/:id/input', async (req, url, { id }) => ({ ok: jobInput(id, (await body(req)).text || '') }));
 route('POST', '/api/setup/jobs/:id/stop', async (req, url, { id }) => ({ ok: stopJob(id) }));
 

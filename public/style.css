@@ -397,7 +397,8 @@ body.kb-open .composer { padding-bottom: 8px; }
 .composer .mention[hidden] { display: none; }
 .mention-item { display: flex; align-items: baseline; gap: 8px; padding: 7px 10px; border-radius: 10px; cursor: pointer; min-width: 0; }
 .mention-item.on, .mention-item:hover { background: var(--surface-2); }
-.mention-item .mi { flex: none; }
+.mention-item .mi { flex: none; display: grid; place-items: center; color: var(--text-3); }
+.mention-item .mi svg.i { width: 16px; height: 16px; }
 .mention-item b { flex: none; font-weight: 600; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mention-item .ms { flex: 1; min-width: 0; color: var(--text-2); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mention-empty { padding: 8px 10px; color: var(--text-2); font-size: 14px; }
@@ -432,6 +433,8 @@ body.kb-open .composer { padding-bottom: 8px; }
 .sheet .opt-row { width: 100%; text-align: left; padding: 12px; border-radius: 12px; display: flex; gap: 12px; align-items: center; }
 .sheet .opt-row:active { background: var(--surface-2); }
 .sheet .opt-row .l { flex: 1; min-width: 0; }
+.sheet .opt-row .oi { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--surface-2); color: var(--text-2); }
+.sheet .opt-row .oi svg.i { width: 18px; height: 18px; stroke-width: 1.7; }
 .sheet .opt-row .l b { display: block; font-weight: 650; font-size: 15px; }
 .sheet .opt-row .l span { font-size: 12.5px; color: var(--text-3); }
 .sheet .opt-row.danger b { color: var(--danger); }
@@ -648,7 +651,17 @@ code.copy { display: inline-block; font-size: 12.5px; background: var(--code-bg)
 .jobbox { border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .jobbox[hidden] { display: none; }
 .jobbox .jhead { display: flex; align-items: center; gap: 8px; }
-.jobbox .jhead b { flex: 1; font-size: 14px; }
+.jobbox .jhead .jt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.jobbox .jhead b { font-size: 14px; }
+.jobbox .jsub { font-size: 12.5px; color: var(--text-3); line-height: 1.4; }
+.jobbox .jtime { font: 600 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-3); }
+.jobbox.ok .jhead svg.i { color: var(--ok); }
+.jobbox.fail .jhead svg.i, .jobbox.fail .jhead b { color: var(--danger); }
+.jobbox.fail .jsub { color: var(--text-2); }
+.jobbox .jdetails summary { font-size: 12.5px; color: var(--text-3); cursor: pointer; }
+.jobbox .jdetails .jlog { margin-top: 6px; }
+.spinner.sm { width: 13px; height: 13px; border-width: 2px; display: inline-block; vertical-align: -2px; margin-right: 6px; }
+.login-hint { color: var(--text-2); background: var(--accent-soft); border-radius: 10px; padding: 8px 10px; }
 .jobbox .jlinks { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .jobbox .jlinks a { text-decoration: none; }
 .jobbox .jlog { margin: 0; max-height: 220px; overflow: auto; font-size: 12px; line-height: 1.45; background: var(--code-bg); border-radius: 10px; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -759,7 +772,9 @@ details.card.env[open] > summary { border-bottom: 1px solid var(--border); }
 
 .choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
 .choice { text-align: left; display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1.5px solid var(--border); color: var(--text); cursor: pointer; }
-.choice .ci { font-size: 20px; line-height: 1; margin-bottom: 4px; }
+.choice .ci { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--surface-2); color: var(--text-2); margin-bottom: 6px; }
+.choice .ci svg.i { width: 18px; height: 18px; stroke-width: 1.7; }
+.choice.on .ci { color: var(--accent); }
 .choice b { font-size: 14.5px; font-weight: 720; }
 .choice span:last-child { font-size: 12px; color: var(--text-3); line-height: 1.4; }
 .choice.on { border-color: var(--accent); background: var(--accent-soft); }
@@ -793,7 +808,8 @@ details.card.env[open] > summary { border-bottom: 1px solid var(--border); }
 .preset-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
 .preset { display: flex; gap: 12px; align-items: flex-start; text-align: left; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); color: var(--text); cursor: pointer; }
 .preset:hover { border-color: var(--accent); }
-.preset .pi { font-size: 22px; line-height: 1.1; flex: none; }
+.preset .pi { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--surface-2); color: var(--text-2); }
+.preset .pi svg.i { width: 19px; height: 19px; stroke-width: 1.7; }
 .preset .pb { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .preset .pb b { font-size: 14.5px; font-weight: 720; }
 .preset .pb > span { font-size: 12.5px; color: var(--text-3); line-height: 1.45; }
@@ -824,6 +840,7 @@ details.card.env[open] > summary { border-bottom: 1px solid var(--border); }
 .inline-form { display: flex; gap: 6px; width: 100%; max-width: 360px; }
 .inline-form input { flex: 1; min-width: 0; height: 36px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); padding: 0 10px; font-size: 14px; }
 .ok-banner { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--text); }
+.ok-banner svg.i { width: 17px; height: 17px; color: var(--ok); vertical-align: -3px; margin-right: 4px; }
 @media (min-width: 760px) {
   .choice-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .preset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -955,3 +972,7 @@ body.chat-mode .layout-return { display: none; }
 .sheet .sb .fld input { width: 100%; height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); padding: 0 12px; font-size: 16px; outline: none; }
 .sheet .sb .fld input:focus { border-color: var(--accent); }
 .section-h button.more { background: none; border: 0; cursor: pointer; font-family: inherit; padding: 0; }
+
+/* small line icon inline with text (chat tool summaries, MCP chip) */
+svg.i.inl { width: 1.15em; height: 1.15em; vertical-align: -0.2em; margin-right: 5px; stroke-width: 1.8; }
+.mcpchip svg.i.inl { margin-right: 3px; }
