@@ -61,6 +61,9 @@ async function codexLimits() {
   if (!t?.access_token) throw Object.assign(new Error(tr('Codex 로그인 정보가 없어요')), { code: 'NOAUTH' });
   const j = await getJson('https://chatgpt.com/backend-api/wham/usage', {
     headers: { Authorization: `Bearer ${t.access_token}`, 'ChatGPT-Account-Id': t.account_id || '', 'User-Agent': UA },
+  }).catch((e) => {
+    if (e.status === 401) throw Object.assign(new Error(tr('Codex 로그인이 만료됐어요 — 설정에서 다시 로그인해주세요')), { code: 'EXPIRED' });
+    throw e;
   });
   const rl = j.rate_limit || {};
   const w = (x, id, label, sub, weekly) => (x ? { id, label, sub, usedPercent: pct(x.used_percent), resetsAt: x.reset_at ? x.reset_at * 1000 : null, weekly } : null);
