@@ -1,7 +1,7 @@
 // Exercise the public installer with local release tags and a minimal server.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync, readdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,8 +62,10 @@ try {
     assert.equal(lnk.status, 0, lnk.output);
     const [target, args, cwd] = lnk.stdout.split(/\r?\n/).filter(Boolean);
     assert.match(target, /node\.exe$/i, lnk.output);
-    assert.ok(args.includes(path.join(dest, 'server', 'index.js')) && args.endsWith('--open'), lnk.output);
-    assert.equal(path.resolve(cwd), path.resolve(dest), lnk.output);
+    // tmpdir() may be an 8.3 short path (RUNNER~1); the shortcut stores the long one
+    const longDest = realpathSync.native(dest).toLowerCase();
+    assert.ok(args.toLowerCase().includes(path.join(longDest, 'server', 'index.js')) && args.endsWith('--open'), lnk.output);
+    assert.equal(realpathSync.native(cwd).toLowerCase(), longDest, lnk.output);
     console.log('PASS Start menu shortcut starts this installation');
   }
   success('repeat installation');
