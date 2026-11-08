@@ -24,6 +24,31 @@ const DB_PREFIX = `${OPENCODE_DB}#`;
 export const isOpencodeDbRef = (file) => String(file || '').startsWith(DB_PREFIX);
 export const opencodeSessionId = (file) => (isOpencodeDbRef(file) ? file.slice(DB_PREFIX.length) : path.basename(file, '.json'));
 
+// Keep the full session (including auxiliary tables) in place during the restore window.
+// Unlike read probes, mutations must report errors to the trash caller.
+export function changeOpencodeArchive(id, archived, purge = false) {
+  if (!fs.existsSync(OPENCODE_DB)) throw new Error(`OpenCode database not found: ${OPENCODE_DB}`);
+  const db = new DatabaseSync(OPENCODE_DB);
+  try {
+    db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; BEGIN IMMEDIATE');
+    const row = db.prepare('SELECT time_archived FROM session WHERE id = ?').get(id);
+    if (!row && !purge) throw new Error(`OpenCode session not found: ${id}`);
+    if (purge) {
+      db.prepare('DELETE FROM part WHERE session_id = ?').run(id);
+      db.prepare('DELETE FROM message WHERE session_id = ?').run(id);
+      db.prepare('DELETE FROM session WHERE id = ?').run(id);
+    } else {
+      db.prepare('UPDATE session SET time_archived = ? WHERE id = ?').run(archived, id);
+    }
+    db.exec('COMMIT');
+    cache.delete(DB_PREFIX + id);
+    return row?.time_archived ?? null;
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch { /* transaction may not have started */ }
+    throw e;
+  } finally { db.close(); }
+}
+
 function withDb(fn, fallback) {
   if (!fs.existsSync(OPENCODE_DB)) return fallback;
   let db;
@@ -109,7 +134,7 @@ function listDbSessions(batonIds) {
 export async function listOpencode() {
   const batonIds = new Set(getKV('baton_opencode_ids', []) || []);
   const out = listDbSessions(batonIds);
-  const seen = new Set(out.map((r) => r.id));
+  const seen = opencodeDbSessionIds(); // archived DB sessions must not reappear through old JSON
   const root = path.join(OPENCODE_STORAGE, 'session');
   let projects = [];
   try { projects = await fsp.readdir(root); } catch { return out; }

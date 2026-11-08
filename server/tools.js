@@ -25,6 +25,24 @@ async function codexTokenOk(tokens) {
   } catch { return true; }
 }
 
+// Same story for Claude: .credentials.json outlives the login (a file from an install months ago), and
+// it can also exist holding only MCP OAuth entries. A live access token is checked against the usage
+// endpoint. An expired one we can't test without refreshing it ourselves, which would rotate the CLI's
+// refresh token, so: a recently expired token is fine (the CLI refreshes it on next use), but one
+// that's been dead for a week usually means the refresh token is gone too ("OAuth session expired and
+// could not be refreshed"), so ask for a fresh sign-in.
+const CLAUDE_STALE_MS = 7 * 24 * 3600 * 1000;
+async function claudeTokenState(cred) {
+  if (cred.expiresAt && cred.expiresAt < Date.now()) return Date.now() - cred.expiresAt > CLAUDE_STALE_MS ? 'expired' : true;
+  try {
+    const r = await fetch('https://api.anthropic.com/api/oauth/usage', {
+      headers: { Authorization: `Bearer ${cred.accessToken}`, 'anthropic-beta': 'oauth-2025-04-20', 'User-Agent': 'baton/1.0' },
+      signal: AbortSignal.timeout(6000),
+    });
+    return r.status === 401 ? 'expired' : true;
+  } catch { return true; }
+}
+
 export const TOOL_IDS = ['claude', 'codex', 'agy', 'opencode', 'cursor'];
 
 export const TOOLS = {
@@ -39,7 +57,8 @@ export const TOOLS = {
     },
     login: { args: ['auth', 'login'], kind: 'url+code' },
     loggedIn: async (bin) => {
-      if (exists(path.join(CLAUDE_HOME, '.credentials.json'))) return true;
+      const cred = readJson(path.join(CLAUDE_HOME, '.credentials.json'))?.claudeAiOauth;
+      if (cred?.accessToken) return claudeTokenState(cred);
       const r = await runCli(bin, ['auth', 'status'], { timeout: 15000 });
       return /"loggedIn":\s*true/.test(r.stdout);
     },
