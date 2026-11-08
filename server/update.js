@@ -1,6 +1,8 @@
 // "A new version is out": checks GitHub Releases a few times a day, tells the user once per version
-// (inbox + push), and updates a git install in place (git pull --ff-only + npm ci) before restarting.
-// Zip installs get a download link instead.
+// (inbox + push), and updates a git install in place before restarting:
+//   release install (scripts/install.sh: HEAD = a vX.Y.Z tag) → git checkout of the new release tag
+//   main checkout (developers)                                → git pull --ff-only
+// Both then run npm ci. Zip installs get a download link instead.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -47,12 +49,17 @@ async function latestTag() {
   return { latest, url: `https://github.com/${REPO}/releases/tag/v${latest}`, zip: null, notes: '', publishedAt: null };
 }
 
-/** How Baton was installed, and whether it can update itself. */
+const STABLE = /^\d+\.\d+\.\d+$/;
+
+/** How Baton was installed, and whether it can update itself.
+ *  channel 'release': HEAD sits exactly on a vX.Y.Z tag (the installer does this); 'main': the main branch. */
 async function installInfo() {
   if (!fs.existsSync(path.join(ROOT, '.git'))) return { kind: 'zip', canAuto: false };
   const branch = (await sh('git', ['-C', ROOT, 'rev-parse', '--abbrev-ref', 'HEAD'])).trim();
   const dirty = Boolean((await sh('git', ['-C', ROOT, 'status', '--porcelain', '--untracked-files=no'])).trim());
-  return { kind: 'git', branch, dirty, canAuto: branch === 'main' && !dirty };
+  const tag = branch === 'HEAD' ? (await sh('git', ['-C', ROOT, 'describe', '--tags', '--exact-match', 'HEAD'])).trim() : '';
+  const channel = branch === 'main' ? 'main' : STABLE.test(tag.replace(/^v/, '')) ? 'release' : null;
+  return { kind: 'git', branch, tag: tag || null, channel, dirty, canAuto: Boolean(channel) && !dirty };
 }
 
 function view(c) {
@@ -82,7 +89,8 @@ export async function checkUpdate({ force = false } = {}) {
     setKV('update_notified', v.latest);
     notify({ kind: 'update', title: tr('🎉 Baton v{v}이 나왔어요', { v: v.latest }), body: tr('지금 쓰는 버전은 v{c}이에요. 눌러서 바뀐 점을 보고 업데이트하세요.', { c: CURRENT }), url: '/#/?update=1', tag: 'baton-update' }).catch(() => {});
   }
-  return { ...v, install: await installInfo() };
+  const install = await installInfo();
+  return { ...v, install: { ...install, manual: [...gitUpdateSteps(install.channel, v.latest), 'npm ci --omit=dev'].join(' && ') } };
 }
 
 export function startUpdateChecker() {
@@ -91,10 +99,21 @@ export function startUpdateChecker() {
   setInterval(tick, EVERY).unref();
 }
 
+/** The git part of an update: release installs move to the newest release tag, main checkouts pull. */
+export function gitUpdateSteps(channel, latest) {
+  if (channel === 'release' && STABLE.test(String(latest || ''))) {
+    return ['git fetch --tags --force origin', `git -c advice.detachedHead=false checkout --quiet v${latest}`];
+  }
+  return ['git pull --ff-only'];
+}
+
 /** The shell command that updates a git install (shown to the user too). */
-export function updateCommand() {
-  return IS_WIN ? `Set-Location "${ROOT}"; git pull --ff-only; if ($?) { npm ci --omit=dev }`
-    : `cd "${ROOT}" && git pull --ff-only && npm ci --omit=dev`;
+export async function updateCommand() {
+  const i = await installInfo();
+  const steps = [...gitUpdateSteps(i.channel, getKV('update_check', null)?.latest), 'npm ci --omit=dev'];
+  // PowerShell has no &&: nest each next step under the previous one's success
+  return IS_WIN ? `Set-Location "${ROOT}"; ${steps.reduceRight((rest, c) => (rest ? `${c}; if ($?) { ${rest} }` : c), '')}`
+    : `cd "${ROOT}" && ${steps.join(' && ')}`;
 }
 
 /** Restart Baton the way it was started: systemd / launchd restart it themselves; otherwise respawn. */
