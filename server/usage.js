@@ -10,7 +10,7 @@ import readline from 'node:readline';
 import { HOME, DATA_DIR, DAY } from './util.js';
 import { noteClaudeModels } from './models.js';
 import { agyUsage, agyConversationModel, agySkillReads } from './sources/agy.js';
-import { OPENCODE_STORAGE, opencodeUsage, opencodeDbSessions, opencodeSessionId } from './sources/opencode.js';
+import { OPENCODE_STORAGE, opencodeUsage, opencodeDbSessions, opencodeDbSessionIds, opencodeSessionId } from './sources/opencode.js';
 import { CLAUDE_HOME, CODEX_HOME } from './env.js';
 
 const WINDOW_DAYS = 31;
@@ -193,10 +193,11 @@ function scanAgy(file) {
 
 async function listOpencodeSessions(minMtime) {
   const out = opencodeDbSessions(minMtime);
+  const inDb = opencodeDbSessionIds(); // all of them, not just recent: an old migrated session's JSON may be newer
   const root = path.join(OPENCODE_STORAGE, 'session');
   for (const proj of await fsp.readdir(root).catch(() => [])) {
     for (const f of await fsp.readdir(path.join(root, proj)).catch(() => [])) {
-      if (!f.endsWith('.json')) continue;
+      if (!f.endsWith('.json') || inDb.has(f.replace(/\.json$/, ''))) continue;
       const p = path.join(root, proj, f);
       const st = await fsp.stat(p).catch(() => null);
       const md = await fsp.stat(path.join(OPENCODE_STORAGE, 'message', f.replace(/\.json$/, ''))).catch(() => null);

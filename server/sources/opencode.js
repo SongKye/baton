@@ -169,6 +169,11 @@ export async function opencodeUsage(file) {
   }));
 }
 
+/** Every session id in opencode.db (legacy JSON copies of these must not be counted again). */
+export function opencodeDbSessionIds() {
+  return new Set(withDb((db) => db.prepare('SELECT id FROM session').all().map((r) => r.id), []));
+}
+
 /** Sessions changed since minMtime for the usage scanner: [{ p, st: { mtimeMs, size } }] (db sessions only). */
 export function opencodeDbSessions(minMtime) {
   return withDb((db) => db.prepare('SELECT id, time_updated FROM session WHERE time_updated >= ?').all(minMtime)
