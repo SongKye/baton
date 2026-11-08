@@ -961,5 +961,8 @@
  "생각 과정": "Thinking",
  "도구 {n}회": "{n} tool calls",
  "생각": "Thinking",
- "📌 고정": "📌 Pinned"
+ "📌 고정": "📌 Pinned",
+ "Codex 로그인이 만료됐어요 — 설정에서 다시 로그인해주세요": "Your Codex sign-in has expired — sign in again in Setup",
+ "로그인 만료": "Sign-in expired",
+ "저장된 로그인이 만료됐어요. 다시 로그인하면 한도도 다시 보여요.": "Your saved sign-in has expired. Sign in again to see your limits too."
 }
