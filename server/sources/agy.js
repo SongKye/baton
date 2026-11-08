@@ -110,6 +110,8 @@ function readVarint(b, i) {
 }
 
 const utf8 = new TextDecoder('utf-8', { fatal: true });
+// eslint-disable-next-line no-control-regex
+const PLAIN_TEXT = /^[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+$/;
 
 /** Returns a list of [path, string] leaves, or null if `b` is not a valid message. */
 function decode(b, prefix, out, depth) {
@@ -135,12 +137,12 @@ function decode(b, prefix, out, depth) {
           const tmp = [];
           if (decode(sub, p, tmp, depth + 1)) { out.push(...tmp); nested = true; }
         }
-        if (!nested) {
-          try {
-            const s = utf8.decode(sub);
-            out.push([p, s]);
-          } catch { /* binary */ }
-        }
+        // Short text can also parse as a message ("hi" = 0x68 0x69 = field 13, varint 105), which used to
+        // drop one-word prompts. Real sub-messages start with control-byte tags (0x0a, 0x12…), so keep
+        // the string too whenever the bytes read as plain text.
+        let text = null;
+        try { text = utf8.decode(sub); } catch { /* binary */ }
+        if (text != null && (!nested || PLAIN_TEXT.test(text))) out.push([p, text]);
       } else return false;
     }
     return i === b.length;
