@@ -90,6 +90,10 @@ export async function checkUpdate({ force = false } = {}) {
     notify({ kind: 'update', title: tr('🎉 Baton v{v}이 나왔어요', { v: v.latest }), body: tr('지금 쓰는 버전은 v{c}이에요. 눌러서 바뀐 점을 보고 업데이트하세요.', { c: CURRENT }), url: '/#/?update=1', tag: 'baton-update' }).catch(() => {});
   }
   const install = await installInfo();
+  // The new code is already on disk (pulled / switched branch by hand) and only this process is old: a restart is enough.
+  const onDisk = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return CURRENT; } })();
+  install.restartOnly = cmpVersion(onDisk, CURRENT) > 0 && (!v.latest || cmpVersion(onDisk, v.latest) >= 0);
+  install.onDisk = onDisk;
   return { ...v, install: { ...install, manual: [...gitUpdateSteps(install.channel, v.latest), 'npm ci --omit=dev'].join(' && ') } };
 }
 

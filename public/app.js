@@ -646,16 +646,24 @@ async function updateSheet({ check = false } = {}) {
   }
   const i = d.install || {};
   const manual = i.manual || 'git pull --ff-only && npm ci --omit=dev';
-  const how = i.canAuto ? `<p class="small muted">${t('버튼을 누르면 새 버전을 받고 필요한 패키지를 설치한 뒤 Baton을 다시 켜요. 대화 기록과 설정은 그대로예요.')}</p>`
-    : i.kind === 'git' ? `<p class="small warn-text">${i.dirty ? t('Baton 폴더에 고친 파일이 있어서 자동으로 업데이트하지 않아요.') : t('지금 {b} 브랜치라 자동으로 업데이트하지 않아요.', { b: esc(i.branch || '?') })}</p><p class="small muted">${t('터미널에서 직접 실행하세요:')}</p><code class="copy" data-copy="${esc(manual)}">${esc(manual)}</code>`
+  // restartOnly: the new version is already downloaded, only the running Baton is old.
+  const mode = i.restartOnly ? 'restart' : i.canAuto ? 'update' : i.kind === 'git' ? 'manual' : 'zip';
+  const how = mode === 'restart' ? `<p class="small muted">${t('새 버전(v{v})은 이미 받아져 있어요. 다시 켜기만 하면 적용돼요.', { v: esc(i.onDisk || d.latest) })}</p>`
+    : mode === 'update' ? `<p class="small muted">${t('버튼을 누르면 새 버전을 받고 필요한 패키지를 설치한 뒤 Baton을 다시 켜요. 대화 기록과 설정은 그대로예요.')}</p>`
+    : mode === 'manual' ? `<p class="small warn-text">${i.dirty ? t('Baton 폴더에 고친 파일이 있어서 자동으로 업데이트하지 않아요.') : t('지금 {b} 브랜치라 자동으로 업데이트하지 않아요.', { b: esc(i.branch || '?') })}</p><p class="small muted">${t('터미널에서 직접 실행하세요:')}</p><code class="copy" data-copy="${esc(manual)}">${esc(manual)}</code><p class="small muted">${t('실행한 뒤 아래 「다시 켜기」를 누르면 새 버전으로 켜져요.')}</p>`
       : `<p class="small muted">${t('zip으로 설치했어요. 새 zip을 받아 압축을 풀고, 기존 data 폴더를 옮긴 뒤 설치 스크립트를 다시 실행하세요.')}</p>`;
   await sheet({
     title: `🎉 Baton v${esc(d.latest)}`,
     body: `<div class="update-sheet"><p class="small muted">${t('지금 쓰는 버전: v{c}', { c: esc(d.current) })}${d.publishedAt ? ` · ${t('{when} 출시', { when: ago(d.publishedAt) })}` : ''}</p>
       <div class="card md-card msg-ai update-notes">${d.notes ? md(d.notes) : `<p>${t('바뀐 점은 릴리스 페이지에서 볼 수 있어요')}</p>`}</div>${how}<div class="jobbox" hidden></div></div>`,
-    footer: `<a class="btn ghost" href="${esc(d.url)}" target="_blank" rel="noopener">${t('릴리스 페이지')} ↗</a>${i.canAuto ? `<button class="btn primary" data-up>${t('지금 업데이트')}</button>` : d.zip ? `<a class="btn primary" href="${esc(d.zip)}">${t('zip 받기')}</a>` : ''}`,
+    footer: `<a class="btn ghost" href="${esc(d.url)}" target="_blank" rel="noopener">${t('릴리스 페이지')} ↗</a>${mode === 'update' ? `<button class="btn primary" data-up>${t('지금 업데이트')}</button>`
+      : mode === 'restart' || mode === 'manual' ? `<button class="btn primary" data-restart>${t('다시 켜기')}</button>`
+      : d.zip ? `<a class="btn primary" href="${esc(d.zip)}">${t('zip 받기')}</a>` : ''}`,
     onMount: (el) => {
       $$('code.copy', el).forEach((c) => (c.onclick = () => { navigator.clipboard?.writeText(c.dataset.copy); toast(t('복사했어요')); }));
+      const r = $('[data-restart]', el);
+      // manual: only wait for the new version if the terminal command already brought it in
+      if (r) r.onclick = () => restartBaton(r, { version: mode === 'restart' ? i.onDisk : undefined });
       const b = $('[data-up]', el);
       if (!b) return;
       b.onclick = async () => {
@@ -664,19 +672,52 @@ async function updateSheet({ check = false } = {}) {
           const { job } = await api('/api/setup/jobs', { body: { action: 'update' } });
           runJobBox($('.jobbox', el), job, async (ev) => {
             if (!ev.ok) { b.disabled = false; toast(t('업데이트하지 못했어요. 로그를 확인해주세요'), true); return; }
-            b.textContent = t('다시 켜는 중…');
-            await api('/api/update/restart', { method: 'POST' }).catch(() => {});
-            // wait for the new server, then reload into the new version
-            for (let k = 0; k < 60; k++) {
-              await new Promise((r) => setTimeout(r, 2000));
-              try { const st = await api('/api/state'); if (st.version === d.latest) { location.reload(); return; } } catch { /* restarting */ }
-            }
-            toast(t('다시 켜지지 않았어요. PC에서 Baton을 직접 실행해주세요'), true);
+            await restartBaton(b, { version: d.latest });
           });
         } catch (e) { toast(e.message, true); b.disabled = false; }
       };
     },
   });
+}
+
+/** Restart the Baton server, wait until the new process answers (and runs `version`, if given), then reload. */
+async function restartBaton(btn, { version } = {}) {
+  const before = G.state?.boot;
+  const label = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = t('다시 켜는 중…'); }
+  await api('/api/update/restart', { method: 'POST' }).catch(() => {});
+  for (let k = 0; k < 60; k++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    try {
+      const st = await api('/api/state');
+      if (st.boot !== before && (!version || st.version === version)) { location.reload(); return; }
+    } catch { /* restarting */ }
+  }
+  toast(t('다시 켜지지 않았어요. PC에서 Baton을 직접 실행해주세요'), true);
+  if (btn) { btn.disabled = false; btn.textContent = label; }
+}
+
+/** Settings → Baton card: version, new release (update + auto restart), restart button. */
+function versionCard(box) {
+  const draw = () => {
+    const up = G.state?.update || {};
+    const row = up.newer
+      ? `<div class="setting update-row"><div class="l"><b>🎉 ${t('Baton v{v}이 나왔어요', { v: esc(up.latest) })}</b><span>${t('지금 v{c} · 눌러서 바뀐 점을 보고 업데이트하세요. 끝나면 자동으로 다시 켜져요.', { c: esc(up.current || G.state?.version || '') })}</span></div><button class="btn sm primary" data-v="open">${t('업데이트')}</button></div>`
+      : `<div class="setting"><div class="l"><b>Baton v${esc(G.state?.version || '')}</b><span>${up.latest ? t('최신 버전이에요') : t('아직 새 버전을 확인하지 않았어요')}</span></div><button class="btn sm" data-v="check">${t('새 버전 확인')}</button></div>`;
+    box.innerHTML = `${row}<div class="setting"><div class="l"><b>${t('Baton 다시 켜기')}</b><span>${t('Baton 서버를 껐다 켜요. 터미널에서 직접 업데이트했거나 뭔가 이상할 때 눌러보세요.')}</span></div><button class="btn sm" data-v="restart">${t('다시 켜기')}</button></div>`;
+    $('[data-v="open"]', box) && ($('[data-v="open"]', box).onclick = () => updateSheet());
+    $('[data-v="check"]', box) && ($('[data-v="check"]', box).onclick = async (e) => {
+      const b = e.currentTarget; b.disabled = true;
+      await updateSheet({ check: true });
+      if (box.isConnected) draw();
+    });
+    $('[data-v="restart"]', box).onclick = (e) => {
+      const n = G.state?.runs?.length || 0;
+      if (n && !confirm(t('지금 실행 중인 작업이 {n}개 있어요. 다시 켜면 멈출 수 있어요. 계속할까요?', { n }))) return;
+      restartBaton(e.currentTarget);
+    };
+  };
+  draw();
 }
 
 // ---------------------------------------------------------------- PROJECTS
@@ -2019,9 +2060,10 @@ async function viewSettings() {
       <a class="setting" href="#/usage"><div class="l"><b>${t('사용량 · 한도')}</b><span>${t('CLI별 남은 한도와 토큰 사용량')}</span></div><span class="muted">›</span></a>
       <div class="setting"><div class="l"><b>${t('목록 새로고침')}</b><span>${t('세션 파일을 다시 읽어요')}</span></div><button class="btn sm" id="reindex">${ICON.refresh}</button></div>
     </div></div>
-    <p class="small muted" style="text-align:center;margin-top:24px">${t('Baton · 바이브코딩 이어달리기 🏃‍♂️')} · v${esc(G.state?.version || '')}<br>${esc(G.state?.home || '')} · <a href="#" id="upcheck">${t('새 버전 확인')}</a></p>`;
+    <div class="section" data-settings="version"><div class="section-h"><h2>${t('Baton 버전 · 업데이트')}</h2></div><div class="card" id="verbox"></div></div>
+    <p class="small muted" style="text-align:center;margin-top:24px">${t('Baton · 바이브코딩 이어달리기 🏃‍♂️')} · v${esc(G.state?.version || '')}<br>${esc(G.state?.home || '')}</p>`;
   organizeSettings(v);
-  $('#upcheck', v) && ($('#upcheck', v).onclick = (e) => { e.preventDefault(); updateSheet({ check: true }); });
+  versionCard($('#verbox', v));
   $$('[data-k]', v).forEach((el) => (el.onchange = async () => {
     const k = el.dataset.k;
     const val = el.type === 'checkbox' ? el.checked : el.dataset.num !== undefined ? Number(el.value) : el.value;

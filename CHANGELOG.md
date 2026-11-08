@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Update and restart Baton from Settings**: a new "Baton version · Updates" card at the bottom of Settings shows the current version and any new release (update in one tap; Baton restarts and reloads on its own), plus a "Restart Baton" button so you never need a terminal just to restart.
+
+### Fixed
+- **The update sheet no longer offers a zip download on git installs**: if the new version is already on disk (pulled by hand) it just offers to restart; if Baton can't update itself (another branch, edited files) it shows the command plus a restart button. The zip link is only for zip installs.
+
 ## [0.8.6] - 2026-11-08
 
 ### Fixed
