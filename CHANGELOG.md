@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-11-08
+
 ### Added
 - **Update and restart Baton from Settings**: a new "Baton version · Updates" card at the bottom of Settings shows the current version and any new release (update in one tap; Baton restarts and reloads on its own), plus a "Restart Baton" button so you never need a terminal just to restart.
 
