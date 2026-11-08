@@ -9,6 +9,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Step-by-step WSL guide in the README**: turning on WSL, installing, starting Baton again, auto-start (and enabling systemd), updating and removing.
 
 ### Fixed
+- **Installing on a fresh Ubuntu / WSL no longer stops at `unzip … Missing!`**: setup installs `unzip` (with `apt-get`) before installing Node.js, so Baton actually starts.
+- **`node` is found in new terminals after setup installs it**: fnm is now added to your shell's config, so `cd ~/baton && npm start` works later.
 - **The install line works for private forks**: when the repository needs a sign-in, `install.sh` downloads it with the GitHub CLI (`gh`) if you're signed in.
 
 ## [0.8.0] - 2026-11-08

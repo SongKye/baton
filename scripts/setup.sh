@@ -36,11 +36,23 @@ else
   else
     read -r -p "Install Node.js 22 with fnm (a small Node version manager, installs into your home folder)? [Y/n] " a
     [[ "${a:-Y}" =~ ^[Yy]$ ]] || die "Install Node.js 22+ from https://nodejs.org and run this again."
-    curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
+    # fnm's installer needs unzip, which a fresh Ubuntu (e.g. WSL) doesn't have
+    if ! command -v unzip >/dev/null 2>&1; then
+      if command -v apt-get >/dev/null 2>&1; then
+        say "Installing unzip (needed to install Node.js). Your Linux password may be asked."
+        SUDO=""; (( EUID == 0 )) || SUDO="sudo"
+        $SUDO apt-get update -qq && $SUDO apt-get install -y -qq unzip >/dev/null \
+          || die "Couldn't install unzip. Run 'sudo apt-get install -y unzip' and run this again."
+      else
+        die "Installing Node.js needs unzip. Install it with your package manager and run this again."
+      fi
+    fi
+    # without --skip-shell, fnm adds itself to your shell's config so 'node' works in new terminals too
+    curl -fsSL https://fnm.vercel.app/install | bash
     export PATH="$HOME/.local/share/fnm:$HOME/.fnm:$PATH"
     eval "$(fnm env --shell bash)"
     fnm install 22 && fnm default 22 && fnm use 22
-    say "Added Node via fnm. Open a new terminal later so 'node' is on your PATH everywhere."
+    say "Added Node.js with fnm. Terminals you open from now on find 'node' too."
   fi
   node_ok || die "Node.js is still too old. Install 22.13+ from https://nodejs.org"
   ok "Node.js $(node -v)"
