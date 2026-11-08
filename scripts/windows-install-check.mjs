@@ -60,7 +60,7 @@ try {
     const lnk = run('powershell.exe', ['-NoProfile', '-Command',
       "$l = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'Baton.lnk')); $l.TargetPath; $l.Arguments; $l.WorkingDirectory"]);
     assert.equal(lnk.status, 0, lnk.output);
-    const [target, args, cwd] = lnk.stdout.trim().split(/\r?\n/);
+    const [target, args, cwd] = lnk.stdout.split(/\r?\n/).filter(Boolean);
     assert.match(target, /node\.exe$/i, lnk.output);
     assert.ok(args.includes(path.join(dest, 'server', 'index.js')) && args.endsWith('--open'), lnk.output);
     assert.equal(path.resolve(cwd), path.resolve(dest), lnk.output);
