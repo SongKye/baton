@@ -10,7 +10,7 @@ import readline from 'node:readline';
 import { HOME, DATA_DIR, DAY } from './util.js';
 import { noteClaudeModels } from './models.js';
 import { agyUsage, agyConversationModel, agySkillReads } from './sources/agy.js';
-import { OPENCODE_STORAGE, opencodeUsage } from './sources/opencode.js';
+import { OPENCODE_STORAGE, opencodeUsage, opencodeDbSessions, opencodeSessionId } from './sources/opencode.js';
 import { CLAUDE_HOME, CODEX_HOME } from './env.js';
 
 const WINDOW_DAYS = 31;
@@ -192,7 +192,7 @@ function scanAgy(file) {
 }
 
 async function listOpencodeSessions(minMtime) {
-  const out = [];
+  const out = opencodeDbSessions(minMtime);
   const root = path.join(OPENCODE_STORAGE, 'session');
   for (const proj of await fsp.readdir(root).catch(() => [])) {
     for (const f of await fsp.readdir(path.join(root, proj)).catch(() => [])) {
@@ -210,7 +210,7 @@ async function listOpencodeSessions(minMtime) {
 async function scanOpencode(file) {
   const b = {};
   for (const u of await opencodeUsage(file)) add(b, `${dayKey(u.ts || Date.now())}|${u.model}`, [Math.max(0, u.input), u.cacheWrite, u.cacheRead, u.output]);
-  return { b, sk: [], sid: `opencode:${path.basename(file, '.json')}` };
+  return { b, sk: [], sid: `opencode:${opencodeSessionId(file)}` };
 }
 
 let scanning = null;

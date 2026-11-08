@@ -961,5 +961,7 @@
  "생각 과정": "Thinking",
  "도구 {n}회": "{n} tool calls",
  "생각": "Thinking",
- "📌 고정": "📌 Pinned"
+ "📌 고정": "📌 Pinned",
+ "OpenCode가 고르는 기본 모델 · 따로 설정하지 않아도 돼요": "The model OpenCode picks by default · nothing to set up",
+ "{name} · 무료": "{name} · Free"
 }
