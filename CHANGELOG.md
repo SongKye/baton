@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-11-08
+
+### Fixed
+- **Windows installation no longer fails with an unterminated-string error**: install and setup scripts use ASCII text so Windows PowerShell 5.1 can read them regardless of the system encoding. Windows CI now checks their encoding and parses them with Windows PowerShell.
+- **Windows setup reports failures instead of continuing as if installation succeeded**: invoke `npm.cmd` explicitly, stop on dependency installation errors, and propagate setup/server failures to the installer. Existing files are described as downloaded files, not a completed installation. Windows CI exercises fresh installs, retries, release upgrades, and failure handling.
+
 ## [0.8.3] - 2026-11-08
 
 ### Fixed
