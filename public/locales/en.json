@@ -968,5 +968,6 @@
  "로그인 만료": "Sign-in expired",
  "저장된 로그인이 만료됐어요. 다시 로그인하면 한도도 다시 보여요.": "Your saved sign-in has expired. Sign in again to see your limits too.",
  "OpenCode가 고르는 기본 모델 · 따로 설정하지 않아도 돼요": "The model OpenCode picks by default · nothing to set up",
- "{name} · 무료": "{name} · Free"
+ "{name} · 무료": "{name} · Free",
+ "~/.codex/config.toml의 \"{v}\"는 이 계정에서 쓸 수 없어서 대신 써요": "Used instead of \"{v}\" from ~/.codex/config.toml, which this account can't use"
 }
