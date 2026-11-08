@@ -248,6 +248,59 @@ function simpleCatalog(tool, note) {
   };
 }
 
+// OpenCode: `opencode models --verbose` prints "<provider>/<id>" then that model's JSON (name, cost,
+// variants = the reasoning levels `opencode run --variant` accepts). Use it for readable names, a
+// free-models-first order and per-model effort; fall back to the plain list if it can't be parsed.
+const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const effortRank = (e) => (e === '' ? -1 : EFFORT_ORDER.includes(e) ? EFFORT_ORDER.indexOf(e) : 99);
+const ocList = { at: 0, ok: false, models: null };
+export function parseOpencodeVerbose(text) {
+  const lines = String(text).replace(/\x1b\[[0-9;]*m/g, '').split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const id = lines[i].trim();
+    if (!/^[\w.@-]+\/[\w./:@-]+$/.test(id) || lines[i + 1]?.trim() !== '{') continue;
+    let j = i + 1;
+    while (j < lines.length && lines[j] !== '}') j++;
+    let meta = null;
+    try { meta = JSON.parse(lines.slice(i + 1, j + 1).join('\n')); } catch { /* skip */ }
+    i = j;
+    if (!meta || meta.status === 'deprecated') continue;
+    const c = meta.cost || {};
+    const free = !c.input && !c.output;
+    const efforts = Object.keys(meta.variants || {}).sort((a, b) => effortRank(a) - effortRank(b));
+    const name = String(meta.name || id).replace(free ? /[\s(-]*free\)?$/i : /$^/, '').trim() || id; // "Beam Free" -> "Beam" + our own tag
+    out.push({ id, name, free, efforts });
+  }
+  return out;
+}
+function refreshOpencodeModels() {
+  if (Date.now() - ocList.at < (ocList.ok ? 6 * 3600 * 1000 : 120 * 1000)) return;
+  ocList.at = Date.now();
+  const bin = binFor('opencode');
+  if (!bin) return;
+  runCli(bin, ['models', '--verbose'], { timeout: 60000 }).then(({ stdout }) => {
+    const models = parseOpencodeVerbose(stdout);
+    ocList.ok = models.length > 0;
+    if (ocList.ok) ocList.models = models;
+  }).catch(() => { ocList.ok = false; });
+}
+function opencodeCatalog() {
+  refreshOpencodeModels();
+  if (!ocList.models) return simpleCatalog('opencode', tr('OpenCode가 고르는 기본 모델 · 따로 설정하지 않아도 돼요'));
+  const list = [...ocList.models.filter((m) => m.free), ...ocList.models.filter((m) => !m.free)];
+  const efforts = new Set(['']);
+  for (const m of list) m.efforts.forEach((e) => efforts.add(e));
+  return {
+    models: [
+      { id: '', label: tr('기본값'), short: tr('기본'), desc: tr('OpenCode가 고르는 기본 모델 · 따로 설정하지 않아도 돼요'), efforts: [] },
+      ...list.map((m) => ({ id: m.id, label: m.free ? tr('{name} · 무료', { name: m.name }) : m.name, short: m.name, desc: m.id, efforts: m.efforts })),
+    ],
+    efforts: [...efforts].sort((a, b) => effortRank(a) - effortRank(b)),
+    defaults: { model: null, effort: null },
+  };
+}
+
 /** "From Claude Code - Opus 5.5": who answered, for notifications. */
 export function fromLine(tool, model) {
   let cat = null;
@@ -262,7 +315,7 @@ export function fromLine(tool, model) {
 export function catalogs() {
   return {
     claude: claudeCatalog(), codex: codexCatalog(), agy: agyCatalog(),
-    opencode: simpleCatalog('opencode', tr('opencode 설정(opencode.json)의 기본 모델')),
+    opencode: opencodeCatalog(),
     cursor: simpleCatalog('cursor', tr('Cursor 계정의 기본 모델 (auto)')),
   };
 }

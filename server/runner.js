@@ -112,11 +112,12 @@ function agyCmd({ sessionId, model, effort, perm, prompt, images, cwd }) {
   return { bin: 'agy', args, stdin: null };
 }
 
-function opencodeCmd({ sessionId, model, perm, prompt, images }) {
+function opencodeCmd({ sessionId, model, effort, perm, prompt, images }) {
   // `opencode run` reads the message from stdin when it isn't a TTY; --format json emits one JSON event per line
   const args = ['run', '--format', 'json'];
   if (sessionId) args.push('--session', sessionId);
   if (model) args.push('--model', model);
+  if (model && effort) args.push('--variant', effort); // the model's reasoning variant (low/medium/high/…)
   args.push('--agent', perm === 'plan' ? 'plan' : 'build');
   for (const im of images || []) args.push('--file', im.path);
   return { bin: 'opencode', args, stdin: prompt };
