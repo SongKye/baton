@@ -68,7 +68,31 @@ Baton opens **http://localhost:7420** with a **Get started** screen that walks y
 
 Every step shows whether it's done, and each connection can be checked with **Test connection**.
 
-Existing sessions show up as soon as a CLI is installed. Later: `npm start` (or `npm run open`).
+Existing sessions show up as soon as a CLI is installed. Later, run `npm start` (or `npm run open`) in the Baton folder (`~/baton`).
+
+### Windows: install in WSL, step by step
+
+Codex and Antigravity work best when Baton runs inside WSL (Linux on Windows). You use it from your normal Windows browser.
+
+1. **Turn on WSL** (once). Open PowerShell **as administrator**, run `wsl --install`, and restart Windows. Ubuntu opens and asks you to make a Linux user name and password.
+2. **Install Baton.** In the Ubuntu window, paste the install line:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.sh | bash
+   ```
+   It asks before installing Node.js, then starts Baton and opens **http://localhost:7420** in your Windows browser. Keep the Ubuntu window open while you use Baton; **Ctrl+C** stops it.
+3. **Start it again later.** Open Ubuntu and run:
+   ```bash
+   cd ~/baton && npm start
+   ```
+   Or turn on **Start on login** in Get started so you never need the terminal. In WSL this starts Baton whenever WSL starts (opening Ubuntu once after a reboot is enough). It needs systemd, which new Ubuntu installs have. If Get started says auto-start isn't available, add these two lines to `/etc/wsl.conf` with `sudo nano /etc/wsl.conf`, then run `wsl --shutdown` in PowerShell and open Ubuntu again:
+   ```ini
+   [boot]
+   systemd=true
+   ```
+4. **Update.** Press **Update now** when Baton tells you about a new version, or run the install line again.
+5. **Remove.** Turn off Start on login in Get started, then run `rm -rf ~/baton`. Your CLIs and their sessions stay.
+
+To change Baton's own code, use a `git clone` of `main` instead. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Supported CLIs
 
@@ -180,7 +204,7 @@ Baton is a small Node.js server with no build step. It never stores your convers
 | A CLI shows *Not installed* right after installing | Press ↻ on Get started. On Windows, restart Baton so it sees the new PATH. |
 | Works in my terminal, fails from Baton | Check **Settings → Company setup** — the variable it needs may only exist in a shell Baton didn't read. Add it there. |
 | Port 7420 is taken | `BATON_PORT=7421 npm start` |
-| Windows: Codex / Antigravity misbehave | They work best inside WSL — run `./scripts/setup.sh` in WSL and open `http://localhost:7420` from Windows. |
+| Windows: Codex / Antigravity misbehave | They work best inside WSL. See [Windows: install in WSL](#windows-install-in-wsl-step-by-step). |
 | A dev server won't open on the phone | Vite and friends block unknown hosts — set `server.allowedHosts`. |
 
 ## Contributing

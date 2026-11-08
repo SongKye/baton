@@ -35,7 +35,16 @@ main() {
     die "$dir already exists and is not a Baton install. Pick another folder with BATON_DIR=… and run this again."
   else
     say "Downloading Baton into $dir…"
-    git clone --quiet "$repo" "$dir"
+    # a private repo needs a sign-in: fall back to the GitHub CLI when it is signed in
+    if ! GIT_TERMINAL_PROMPT=0 git clone --quiet "$repo" "$dir" 2>/dev/null; then
+      rm -rf "$dir"
+      local slug="${repo#https://github.com/}"; slug="${slug%.git}"
+      if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && [[ "$slug" != "$repo" ]]; then
+        gh repo clone "$slug" "$dir" -- --quiet || die "Couldn't download Baton from $repo."
+      else
+        die "Couldn't download Baton from $repo. If the repository is private, sign in first with:  gh auth login"
+      fi
+    fi
     release=1
   fi
 

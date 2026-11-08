@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Step-by-step WSL guide in the README**: turning on WSL, installing, starting Baton again, auto-start (and enabling systemd), updating and removing.
+
+### Fixed
+- **The install line works for private forks**: when the repository needs a sign-in, `install.sh` downloads it with the GitHub CLI (`gh`) if you're signed in.
+
 ## [0.8.0] - 2026-11-08
 
 ### Added
