@@ -1,6 +1,6 @@
 {
   "name": "baton",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "One dashboard for your AI coding sessions — Claude Code, Codex, Antigravity, OpenCode and Cursor. Resume any session from desktop or phone.",
   "type": "module",
   "private": true,
