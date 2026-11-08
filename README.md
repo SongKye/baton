@@ -40,23 +40,19 @@ You need **Node.js 22.13+** (the setup scripts can install it).
 <tr><td>
 
 ```bash
-git clone https://github.com/SongKye/baton.git
-cd baton
-./scripts/setup.sh
+curl -fsSL https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.sh | bash
 ```
 
 </td><td>
 
 ```powershell
-git clone https://github.com/SongKye/baton.git
-cd baton
-powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+irm https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.ps1 | iex
 ```
 
 </td></tr>
 </table>
 
-No Git? Download the zip from [Releases](https://github.com/SongKye/baton/releases), unzip, and run the same script.
+This installs the **latest release** into `~/baton` (set `BATON_DIR` to choose another folder) and starts it. Run the same line again any time to move to the newest release. Prefer a zip? Download `baton-vX.Y.Z.zip` from [Releases](https://github.com/SongKye/baton/releases), unzip it, and run `scripts/setup.sh` (or `scripts\setup.ps1`) — zip installs can't update themselves. Working on Baton itself? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Baton opens **http://localhost:7420** with a **Get started** screen that walks you through:
 
@@ -165,7 +161,7 @@ Wide screens get a studio layout with a sidebar; phones keep the compact one. Pi
 
 ## Updates
 
-Baton checks for a new release a few times a day and tells you once: a banner on Home and a notification. **Update now** pulls the new version (`git pull --ff-only`), installs its packages and restarts Baton — sessions and settings stay. If you installed from a zip, or your checkout has local changes, you get the steps instead. Check any time from the version line at the bottom of Settings; turn the alerts off in **Settings → Notifications**.
+Baton checks for a new release a few times a day and tells you once: a banner on Home and a notification. **Update now** switches to the new release, installs its packages and restarts Baton — sessions and settings stay. Installs from the install line only ever move between releases; a checkout of the `main` branch pulls `main` instead. If you installed from a zip, or the Baton folder has local changes, you get the steps instead. Installed with `git clone` before 0.8? Run `git fetch --tags && git checkout v0.8.0` in the Baton folder once, and from then on it follows releases. Check any time from the version line at the bottom of Settings; turn the alerts off in **Settings → Notifications**.
 
 ## How it works
 

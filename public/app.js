@@ -607,8 +607,9 @@ async function updateSheet({ check = false } = {}) {
     return;
   }
   const i = d.install || {};
-  const how = i.canAuto ? `<p class="small muted">${t('버튼을 누르면 새 버전을 받고(git pull) 필요한 패키지를 설치한 뒤 Baton을 다시 켜요. 대화 기록과 설정은 그대로예요.')}</p>`
-    : i.kind === 'git' ? `<p class="small warn-text">${i.dirty ? t('Baton 폴더에 고친 파일이 있어서 자동으로 업데이트하지 않아요.') : t('지금 {b} 브랜치라 자동으로 업데이트하지 않아요.', { b: esc(i.branch || '?') })}</p><p class="small muted">${t('터미널에서 직접 실행하세요:')}</p><code class="copy" data-copy="git pull --ff-only && npm ci --omit=dev">git pull --ff-only && npm ci --omit=dev</code>`
+  const manual = i.manual || 'git pull --ff-only && npm ci --omit=dev';
+  const how = i.canAuto ? `<p class="small muted">${t('버튼을 누르면 새 버전을 받고 필요한 패키지를 설치한 뒤 Baton을 다시 켜요. 대화 기록과 설정은 그대로예요.')}</p>`
+    : i.kind === 'git' ? `<p class="small warn-text">${i.dirty ? t('Baton 폴더에 고친 파일이 있어서 자동으로 업데이트하지 않아요.') : t('지금 {b} 브랜치라 자동으로 업데이트하지 않아요.', { b: esc(i.branch || '?') })}</p><p class="small muted">${t('터미널에서 직접 실행하세요:')}</p><code class="copy" data-copy="${esc(manual)}">${esc(manual)}</code>`
       : `<p class="small muted">${t('zip으로 설치했어요. 새 zip을 받아 압축을 풀고, 기존 data 폴더를 옮긴 뒤 설치 스크립트를 다시 실행하세요.')}</p>`;
   await sheet({
     title: `🎉 Baton v${esc(d.latest)}`,

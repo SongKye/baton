@@ -40,23 +40,19 @@ Baton은 각 CLI가 이미 남기고 있는 세션 기록을 모아서 한 화�
 <tr><td>
 
 ```bash
-git clone https://github.com/SongKye/baton.git
-cd baton
-./scripts/setup.sh
+curl -fsSL https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.sh | bash
 ```
 
 </td><td>
 
 ```powershell
-git clone https://github.com/SongKye/baton.git
-cd baton
-powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+irm https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.ps1 | iex
 ```
 
 </td></tr>
 </table>
 
-Git이 없으면 [Releases](https://github.com/SongKye/baton/releases)에서 zip을 받아 풀고 같은 스크립트를 실행하세요.
+**최신 릴리스**를 `~/baton`에 설치하고 바로 켜요(다른 폴더는 `BATON_DIR`로 지정). 같은 줄을 다시 실행하면 가장 새 릴리스로 바뀌어요. zip이 편하면 [Releases](https://github.com/SongKye/baton/releases)에서 `baton-vX.Y.Z.zip`을 받아 풀고 `scripts/setup.sh`(또는 `scripts\setup.ps1`)를 실행하세요. zip 설치는 스스로 업데이트하지 못해요. Baton 자체를 고치려면 [CONTRIBUTING.md](CONTRIBUTING.md)를 보세요.
 
 **http://localhost:7420** 이 열리고 **시작하기** 화면이 순서대로 안내해요.
 
@@ -164,7 +160,7 @@ Baton은 `127.0.0.1`에서만 열려요. **시작하기 → 폰 연결**이 순�
 
 ## 업데이트
 
-Baton은 하루 몇 번 새 릴리스를 확인하고, 새 버전이 나오면 홈 배너와 알림으로 한 번 알려줘요. **지금 업데이트**를 누르면 새 버전을 받고(`git pull --ff-only`) 패키지를 설치한 뒤 다시 켜져요. 대화 기록과 설정은 그대로예요. zip으로 설치했거나 Baton 폴더에 고친 파일이 있으면 직접 하는 방법을 안내해요. 설정 맨 아래 버전 줄에서 언제든 확인할 수 있고, 알림은 **설정 → 알림**에서 끌 수 있어요.
+Baton은 하루 몇 번 새 릴리스를 확인하고, 새 버전이 나오면 홈 배너와 알림으로 한 번 알려줘요. **지금 업데이트**를 누르면 새 릴리스로 바꾸고 패키지를 설치한 뒤 다시 켜져요. 대화 기록과 설정은 그대로예요. 설치 명령으로 설치했으면 릴리스끼리만 바뀌고, `main` 브랜치를 받아 둔 경우에는 `main`을 받아요. zip으로 설치했거나 Baton 폴더에 고친 파일이 있으면 직접 하는 방법을 안내해요. 0.8 이전에 `git clone`으로 설치했다면 Baton 폴더에서 `git fetch --tags && git checkout v0.8.0`을 한 번 실행하세요. 그다음부터는 릴리스를 따라가요. 설정 맨 아래 버전 줄에서 언제든 확인할 수 있고, 알림은 **설정 → 알림**에서 끌 수 있어요.
 
 ## 동작 방식
 

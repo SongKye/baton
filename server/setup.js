@@ -230,7 +230,7 @@ export async function startJob(action, tool) {
     return job;
   }
   if (action === 'update') {
-    const cmd = updateCommand();
+    const cmd = await updateCommand();
     const job = newJob(tr('Baton 업데이트'));
     job.emit({ t: 'line', stream: 'cmd', text: `$ ${cmd}` });
     attach(job, shellSpawn(cmd));
