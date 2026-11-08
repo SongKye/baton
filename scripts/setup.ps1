@@ -1,3 +1,4 @@
+# Keep this file ASCII-only for Windows PowerShell 5.1 (including irm | iex).
 # Baton setup for Windows (PowerShell).
 #   powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 # Installs Node.js 22 LTS with winget if needed, installs dependencies and opens the dashboard.
@@ -5,15 +6,16 @@
 # dashboard's "Get started" screen. Tip: for Codex/Antigravity, running Baton inside WSL works best.
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
-$Port = if ($env:BATON_PORT) { $env:BATON_PORT } else { '7420' }
 
-function Say($m) { Write-Host "▸ $m" -ForegroundColor DarkYellow }
-function Ok($m)  { Write-Host "✓ $m" -ForegroundColor Green }
+function Say($m) { Write-Host "> $m" -ForegroundColor DarkYellow }
+function Ok($m)  { Write-Host "[OK] $m" -ForegroundColor Green }
 
 function Test-Node {
   $node = Get-Command node -ErrorAction SilentlyContinue
   if (-not $node) { return $false }
-  $v = (& node -p "process.versions.node").Split('.')
+  $version = & node -p "process.versions.node"
+  if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+') { return $false }
+  $v = $version.Split('.')
   return ([int]$v[0] -gt 22) -or ([int]$v[0] -eq 22 -and [int]$v[1] -ge 13)
 }
 
@@ -33,13 +35,15 @@ if (Test-Node) {
   Ok "Node.js $(node -v)"
 }
 
-if (Get-Command git -ErrorAction SilentlyContinue) { Ok "Git found" } else { Say "Git not found — the dashboard can install it (winget)." }
+if (Get-Command git -ErrorAction SilentlyContinue) { Ok "Git found" } else { Say "Git not found - the dashboard can install it (winget)." }
 
-Say "Installing Baton's dependencies…"
-npm install --omit=dev --no-audit --no-fund --loglevel=error
+Say "Installing Baton's dependencies..."
+if (-not (Get-Command npm.cmd -ErrorAction SilentlyContinue)) { throw "npm.cmd was not found. Repair your Node.js installation and run this again." }
+& npm.cmd install --omit=dev --no-audit --no-fund --loglevel=error
+if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed (exit $LASTEXITCODE). Run the installer again to retry." }
 Ok "Dependencies installed"
 
-Say "Starting Baton on http://localhost:$Port  (close this window to stop)"
+Say "Starting Baton (close this window to stop). The server will print and open its address."
 Say "Tip: turn on 'Start Baton when you log in' in Get started so you don't need this window."
-$env:BATON_PORT = $Port
 node --no-warnings server/index.js --open
+if ($LASTEXITCODE -ne 0) { throw "Baton exited with an error (exit $LASTEXITCODE)." }

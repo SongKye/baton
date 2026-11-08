@@ -18,6 +18,7 @@ import { EventEmitter } from 'node:events';
 import crypto from 'node:crypto';
 import { summarizeTool } from './sources/common.js';
 import { getKV, setKV } from './store.js';
+import { codexDefaultFallback } from './providers.js';
 import { clip } from './util.js';
 import { noteMcpStatus } from './mcp.js';
 
@@ -84,6 +85,7 @@ function codexCmd({ sessionId, model, effort, perm, prompt, images }) {
   if (sessionId) args.push('resume');
   for (const im of images || []) args.push(`--image=${im.path}`);
   args.push('--json', '--skip-git-repo-check');
+  model ||= codexDefaultFallback(); // config.toml's model isn't offered on this ChatGPT account
   if (model) args.push('-m', model);
   if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
   if (perm === 'full') args.push('--dangerously-bypass-approvals-and-sandbox');
@@ -110,11 +112,12 @@ function agyCmd({ sessionId, model, effort, perm, prompt, images, cwd }) {
   return { bin: 'agy', args, stdin: null };
 }
 
-function opencodeCmd({ sessionId, model, perm, prompt, images }) {
+function opencodeCmd({ sessionId, model, effort, perm, prompt, images }) {
   // `opencode run` reads the message from stdin when it isn't a TTY; --format json emits one JSON event per line
   const args = ['run', '--format', 'json'];
   if (sessionId) args.push('--session', sessionId);
   if (model) args.push('--model', model);
+  if (model && effort) args.push('--variant', effort); // the model's reasoning variant (low/medium/high/…)
   args.push('--agent', perm === 'plan' ? 'plan' : 'build');
   for (const im of images || []) args.push('--file', im.path);
   return { bin: 'opencode', args, stdin: prompt };
@@ -442,6 +445,7 @@ export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
     } else if (tool === 'codex') {
       bin = 'codex';
       args = ['exec', '--json', '--skip-git-repo-check', '--ephemeral', '-c', 'sandbox_mode="read-only"'];
+      model ||= codexDefaultFallback();
       if (model) args.push('-m', model);
       args.push('-');
     } else if (tool === 'agy') {

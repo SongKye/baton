@@ -54,7 +54,9 @@ irm https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.ps1 | i
 
 **최신 릴리스**를 `~/baton`에 설치하고 바로 켜요(다른 폴더는 `BATON_DIR`로 지정). 같은 줄을 다시 실행하면 가장 새 릴리스로 바뀌어요. zip이 편하면 [Releases](https://github.com/SongKye/baton/releases)에서 `baton-vX.Y.Z.zip`을 받아 풀고 `scripts/setup.sh`(또는 `scripts\setup.ps1`)를 실행하세요. zip 설치는 스스로 업데이트하지 못해요. Baton 자체를 고치려면 [CONTRIBUTING.md](CONTRIBUTING.md)를 보세요.
 
-**http://localhost:7420** 이 열리고 **시작하기** 화면이 순서대로 안내해요.
+**Linux/macOS/WSL은 http://localhost:7420**, **Windows 네이티브는 http://localhost:7421**로 대시보드를 자동으로 열어요. 포트가 사용 중이면 다른 포트를 선택하고 설치 폴더의 `data/listener-<platform>.json`에 저장해 다음 실행과 자동 시작에도 사용해요. 실제 주소는 터미널에 표시돼요. Windows와 WSL은 각 사용자 홈에 독립적으로 설치할 수 있어요. 설치·데이터 폴더는 서로 공유하지 마세요.
+
+**시작하기** 화면이 순서대로 안내해요.
 
 1. **컴퓨터 준비** — OS, Node.js, Git (Windows·macOS는 Git 원클릭 설치)
 2. **AI 연결** — AI를 쓰는 방법을 고르세요
@@ -202,7 +204,7 @@ Baton은 빌드 과정이 없는 작은 Node.js 서버예요. 대화 내용을 �
 |---|---|
 | 설치했는데 *설치 안 됨*으로 보여요 | 시작하기에서 ↻. Windows는 Baton을 다시 실행해야 새 PATH가 반영돼요. |
 | 터미널에선 되는데 Baton에서 실패해요 | **설정 → 회사 환경**을 확인하세요. 필요한 변수가 Baton이 읽지 않은 셸에만 있을 수 있어요. 거기에 추가하세요. |
-| 포트 7420이 이미 사용 중 | `BATON_PORT=7421 npm start` |
+| 포트가 이미 사용 중 | 비어 있는 포트를 자동으로 선택하고 기억해요. `BATON_PORT`를 직접 지정했다면 해제해서 자동 선택을 사용하세요. |
 | Windows에서 Codex·Antigravity가 이상해요 | WSL에서 가장 잘 동작해요. [Windows: WSL에 설치하기](#windows-wsl에-설치하기-단계별)를 보세요. |
 | 폰에서 개발 서버가 안 열려요 | Vite 같은 개발 서버는 외부 주소를 막아요. `server.allowedHosts`를 설정하세요. |
 

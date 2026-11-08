@@ -1,6 +1,6 @@
 {
   "name": "baton",
-  "version": "0.8.2",
+  "version": "0.8.6",
   "description": "One dashboard for your AI coding sessions — Claude Code, Codex, Antigravity, OpenCode and Cursor. Resume any session from desktop or phone.",
   "type": "module",
   "private": true,
@@ -8,7 +8,8 @@
     "start": "node --no-warnings server/index.js",
     "open": "node --no-warnings server/index.js --open",
     "setup": "bash scripts/setup.sh",
-    "i18n:check": "node scripts/i18n-check.mjs"
+    "i18n:check": "node scripts/i18n-check.mjs",
+    "release:check": "node scripts/release-check.mjs"
   },
   "engines": {
     "node": ">=22.13"

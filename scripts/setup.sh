@@ -9,7 +9,6 @@ cd "$(dirname "$0")/.."
 
 NEED_MAJOR=22
 NEED_MINOR=13
-PORT="${BATON_PORT:-7420}"
 OPEN=1
 [[ "${1:-}" == "--no-open" ]] && OPEN=0
 
@@ -67,8 +66,8 @@ npm install --omit=dev --no-audit --no-fund --loglevel=error
 ok "Dependencies installed"
 
 # 4) Start
-say "Starting Baton on http://localhost:${PORT}  (Ctrl+C to stop)"
+say "Starting Baton (Ctrl+C to stop). The server will print and open its address."
 say "Tip: turn on “Start Baton when you log in” in Get started so you don't need this terminal."
 ARGS=(--no-warnings server/index.js)
 (( OPEN )) && ARGS+=(--open)
-exec env BATON_PORT="$PORT" node "${ARGS[@]}"
+exec node "${ARGS[@]}"

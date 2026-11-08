@@ -1,3 +1,4 @@
+# Keep this file ASCII-only for Windows PowerShell 5.1 (including irm | iex).
 # Install the latest Baton release (Windows PowerShell):
 #   irm https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.ps1 | iex
 # Clones Baton into %USERPROFILE%\baton (or $env:BATON_DIR), checks out the newest release tag
@@ -7,8 +8,8 @@
   $ErrorActionPreference = 'Stop'
   $Repo = if ($env:BATON_REPO) { $env:BATON_REPO } else { 'https://github.com/SongKye/baton.git' }
   $Dir = if ($env:BATON_DIR) { $env:BATON_DIR } else { Join-Path $HOME 'baton' }
-  function Say($m) { Write-Host "▸ $m" -ForegroundColor DarkYellow }
-  function Ok($m)  { Write-Host "✓ $m" -ForegroundColor Green }
+  function Say($m) { Write-Host "> $m" -ForegroundColor DarkYellow }
+  function Ok($m)  { Write-Host "[OK] $m" -ForegroundColor Green }
 
   if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     $a = if (Get-Command winget -ErrorAction SilentlyContinue) { Read-Host "Baton needs Git. Install it with winget now? [Y/n]" } else { 'n' }
@@ -22,7 +23,7 @@
   $release = $false
   if (Test-Path (Join-Path $Dir '.git')) {
     if ((git -C $Dir rev-parse --abbrev-ref HEAD) -eq 'HEAD') {
-      Say "Baton is already installed in $Dir. Looking for a newer release…"
+      Say "Baton files found in $Dir. Checking for a newer release before running setup..."
       git -C $Dir fetch --quiet --tags --force origin
       if ($LASTEXITCODE) { throw "Couldn't reach $Repo." }
       $release = $true
@@ -32,7 +33,7 @@
   } elseif (Test-Path $Dir) {
     throw "$Dir already exists and is not a Baton install. Pick another folder with `$env:BATON_DIR and run this again."
   } else {
-    Say "Downloading Baton into $Dir…"
+    Say "Downloading Baton into $Dir..."
     git clone --quiet $Repo $Dir
     if ($LASTEXITCODE) { throw "Couldn't download Baton from $Repo." }
     $release = $true
@@ -43,8 +44,9 @@
     if (-not $tag) { throw "No Baton release found at $Repo." }
     git -C $Dir -c advice.detachedHead=false checkout --quiet $tag
     if ($LASTEXITCODE) { throw "Couldn't switch $Dir to $tag (files changed there?). Run 'git -C $Dir status' to see what changed." }
-    Ok "Baton $tag"
+    Ok "Baton $tag downloaded; running setup next"
   }
 
-  & powershell -ExecutionPolicy Bypass -File (Join-Path $Dir 'scripts\setup.ps1')
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Dir 'scripts\setup.ps1')
+  if ($LASTEXITCODE -ne 0) { throw "Baton setup failed (exit $LASTEXITCODE). Run the installer again to retry." }
 }

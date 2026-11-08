@@ -8,6 +8,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Fixed
 - **No more "MCP connection problem" note on every message for unused claude.ai connectors**: connectors that come attached to your claude.ai account (e.g. Google Calendar) but were never authorized no longer show "Needs auth" in the chat. The MCP panel still shows their status, and real connection failures are still reported.
 
+## [0.8.6] - 2026-11-08
+
+### Fixed
+- **OpenCode on Windows shows readable model names and effort levels**: Windows prints `opencode models --verbose` with CRLF line endings, so Baton couldn't read it and fell back to raw model ids with no effort choice. The list now parses the same as on WSL/macOS/Linux.
+- **OpenCode models appear right after installing or signing in, without restarting Baton**: a missing CLI was remembered until restart and the model list was cached for hours. Baton now notices a newly installed CLI within seconds, refetches the list when an install/sign-in finishes, and also when OpenCode's sign-in (`auth.json`) or `opencode.json` changes from the user's own terminal.
+
+## [0.8.5] - 2026-11-08
+
+### Fixed
+- **Claude Code no longer shows "Ready" with an old, expired sign-in**: a leftover `~/.claude/.credentials.json` from an earlier install counted as signed in. Baton now checks the saved login, and shows "Login expired" with the sign-in button (like Codex) when it was rejected or has been expired for over a week. A credentials file without a Claude login is no longer treated as signed in.
+- **Deleting an OpenCode session from its database now works safely**: the session is archived in place and restored or purged together with the trash, and old JSON copies of a migrated session can't bring it back.
+
+## [0.8.4] - 2026-11-08
+
+### Fixed
+- **Windows installation no longer fails with an unterminated-string error**: install and setup scripts use ASCII text so Windows PowerShell 5.1 can read them regardless of the system encoding. Windows CI now checks their encoding and parses them with Windows PowerShell.
+- **Windows setup reports failures instead of continuing as if installation succeeded**: invoke `npm.cmd` explicitly, stop on dependency installation errors, and propagate setup/server failures to the installer. Existing files are described as downloaded files, not a completed installation. Windows CI exercises fresh installs, retries, release upgrades, and failure handling.
+
+## [0.8.3] - 2026-11-08
+
+### Fixed
+- **Windows and WSL can run independent Baton installations without choosing ports manually**: native Windows defaults to 7421 and Linux/WSL to 7420, with separate fallback port ranges. Baton remembers the selected port across restarts and auto-start, checks installation identity before reusing a running server, and uses the actual port for setup and phone sharing.
+
 ## [0.8.2] - 2026-11-08
 
 ### Fixed

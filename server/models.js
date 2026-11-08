@@ -99,6 +99,23 @@ function claudeCompanyCatalog(prov) {
 }
 
 // ---------------------------------------------------------------- codex
+// Codex only writes models_cache.json after it has run once, so right after signing in there was no
+// list at all. `codex debug models` fetches the catalog for the signed-in account (and refreshes that
+// file), so run it in the background: every 6h once it works, every 2 min while it doesn't.
+const codexList = { at: 0, ok: false, models: null };
+function refreshCodexModels() {
+  if (Date.now() - codexList.at < (codexList.ok ? 6 * 3600 * 1000 : 120 * 1000)) return;
+  codexList.at = Date.now();
+  const bin = binFor('codex');
+  if (!bin) return;
+  runCli(bin, ['debug', 'models'], { timeout: 60000, cwd: HOME }).then(({ stdout }) => {
+    let models = null;
+    try { models = JSON.parse(stdout).models; } catch { /* not json */ }
+    codexList.ok = Boolean(models?.length);
+    if (codexList.ok) codexList.models = models;
+  }).catch(() => { codexList.ok = false; });
+}
+
 function codexCatalog() {
   let cfgModel = null; let cfgEffort = null;
   try {
@@ -107,21 +124,35 @@ function codexCatalog() {
     cfgEffort = cfg.match(/^model_reasoning_effort\s*=\s*"([^"]+)"/m)?.[1] || null;
   } catch { /* ignore */ }
   const prov = codexProvider();
+  if (prov.kind === 'custom' && getKV('codex_default_fallback', null)) setKV('codex_default_fallback', null);
   if (prov.kind === 'custom') {
     return {
       models: [{ id: '', label: tr('기본값 · {model}', { model: cfgModel || prov.label }), short: cfgModel || tr('기본'), desc: `${prov.label}${prov.baseUrl ? ` · ${prov.baseUrl}` : ''}` }],
       efforts: ['', 'minimal', 'low', 'medium', 'high'], defaults: { model: cfgModel, effort: cfgEffort }, provider: prov.label, freeform: true,
     };
   }
-  const j = readJson(path.join(CODEX_HOME, 'models_cache.json')) || {};
-  const list = (j.models || []).filter((m) => m.slug && !/auto-review/.test(m.slug)).sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
+  refreshCodexModels();
+  const cached = readJson(path.join(CODEX_HOME, 'models_cache.json'))?.models;
+  const list = (codexList.models || cached || [])
+    .filter((m) => m.slug && m.visibility !== 'hide' && !/auto-review/.test(m.slug))
+    .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
   const name = (slug) => list.find((m) => m.slug === slug)?.display_name || slug;
   const obs = getKV('observed_default_codex', null);
-  const defModel = cfgModel || obs?.model || list[0]?.slug || null;
+  // An old config.toml can pin a model the account no longer offers (e.g. "gpt-5-codex": "not supported
+  // when using Codex with a ChatGPT account"), which makes every default run fail. When the account's
+  // list is known and doesn't have it, the default sends the account's first model instead (runner reads
+  // codexDefaultFallback(), which re-checks provider/account/config). config.toml itself is left alone.
+  const offered = new Set((codexList.models || cached || []).map((m) => m.slug));
+  const stale = Boolean(prov.subscription && cfgModel && list.length && !offered.has(cfgModel));
+  const fallback = stale ? list[0].slug : null;
+  const want = fallback ? { model: fallback, accountId: prov.accountId, configModel: cfgModel } : null;
+  if (JSON.stringify(getKV('codex_default_fallback', null)) !== JSON.stringify(want)) setKV('codex_default_fallback', want);
+  const defModel = fallback || cfgModel || obs?.model || list[0]?.slug || null;
   const effortFor = (slug) => cfgEffort || list.find((m) => m.slug === slug)?.default_reasoning_level || null;
   const models = [{
     id: '', label: tr('기본값 · {model}', { model: defModel ? name(defModel) : tr('알 수 없음') }), short: defModel ? name(defModel) : tr('기본'),
-    desc: cfgModel ? tr('~/.codex/config.toml의 model = "{v}"', { v: cfgModel }) : tr('Codex 계정 기본값'), defaultEffort: effortFor(defModel),
+    desc: stale ? tr('~/.codex/config.toml의 "{v}"는 이 계정에서 쓸 수 없어서 대신 써요', { v: cfgModel })
+      : cfgModel ? tr('~/.codex/config.toml의 model = "{v}"', { v: cfgModel }) : tr('Codex 계정 기본값'), defaultEffort: effortFor(defModel),
   }];
   const efforts = new Set(['']);
   for (const m of list) {
@@ -189,17 +220,19 @@ function agyCatalog() {
 }
 
 // ---------------------------------------------------------------- opencode / cursor
-// Both list their models with a `models` subcommand; refreshed in the background every 6h.
-const listCache = { opencode: { at: 0, models: [] }, cursor: { at: 0, models: [] } };
+// Both list their models with a `models` subcommand; refreshed in the background every 6h (every minute
+// while the list is still empty). Nothing is cached while the CLI isn't installed, so the list loads as
+// soon as it shows up — no Baton restart needed after installing.
+const listCache = { opencode: { at: 0, models: [], bin: null }, cursor: { at: 0, models: [], bin: null } };
 function refreshList(tool) {
   const c = listCache[tool];
-  if (Date.now() - c.at < 6 * 3600 * 1000) return;
-  c.at = Date.now();
   const bin = binFor(tool);
   if (!bin) return;
+  if (bin === c.bin && Date.now() - c.at < (c.models.length ? 6 * 3600 * 1000 : 60 * 1000)) return;
+  c.at = Date.now(); c.bin = bin;
   runCli(bin, ['models'], { timeout: 30000 }).then(({ stdout }) => {
     const models = [];
-    for (const raw of stdout.split('\n')) {
+    for (const raw of stdout.split(/\r?\n/)) {
       const line = raw.replace(/\x1b\[[0-9;]*m/g, '').trim();
       if (!line || /^(available|models|usage|error)/i.test(line)) continue;
       const m = line.match(/^([\w./:@-]+)(?:\s+[-–—]\s+(.+)|\s{2,}(.+))?$/);
@@ -213,6 +246,78 @@ function simpleCatalog(tool, note) {
   return {
     models: [{ id: '', label: tr('기본값'), short: tr('기본'), desc: note }, ...listCache[tool].models.map((m) => ({ ...m, short: m.label, desc: m.id }))],
     efforts: [''],
+    defaults: { model: null, effort: null },
+  };
+}
+
+// OpenCode: `opencode models --verbose` prints "<provider>/<id>" then that model's JSON (name, cost,
+// variants = the reasoning levels `opencode run --variant` accepts). Use it for readable names, a
+// free-models-first order and per-model effort; fall back to the plain list if it can't be parsed.
+const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const effortRank = (e) => (e === '' ? -1 : EFFORT_ORDER.includes(e) ? EFFORT_ORDER.indexOf(e) : 99);
+const ocList = { at: 0, ok: false, models: null, sig: '' };
+let ocBusy = false;
+// Which models OpenCode offers depends on the binary and the providers it's signed in to (`opencode auth
+// login` in the user's own terminal, or Baton's "connect a server" writing opencode.json). Any change
+// there refetches the list on the next poll instead of waiting out the cache.
+const mtime = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } };
+const XDG_DATA = process.env.XDG_DATA_HOME || path.join(HOME, '.local', 'share');
+const XDG_CONFIG = process.platform !== 'win32' && process.env.XDG_CONFIG_HOME ? process.env.XDG_CONFIG_HOME : path.join(HOME, '.config');
+function opencodeSig(bin) {
+  const cfg = path.join(XDG_CONFIG, 'opencode');
+  return [bin, mtime(path.join(XDG_DATA, 'opencode', 'auth.json')), mtime(path.join(cfg, 'opencode.json')), mtime(path.join(cfg, 'opencode.jsonc'))].join('|');
+}
+/** Forget cached model lists (after an install / sign-in job) so the next /api/state refetches them. */
+export function invalidateModels() {
+  ocList.at = 0; ocList.sig = '';
+  for (const c of Object.values(listCache)) { c.at = 0; c.bin = null; }
+  codexList.at = 0;
+  refreshOpencodeModels(); // start now so the list is usually ready by the UI's next poll
+}
+export function parseOpencodeVerbose(text) {
+  const lines = String(text).replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/); // Windows prints CRLF
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const id = lines[i].trim();
+    if (!/^[\w.@-]+\/[\w./:@-]+$/.test(id) || lines[i + 1]?.trim() !== '{') continue;
+    let j = i + 1;
+    while (j < lines.length && lines[j].trimEnd() !== '}') j++;
+    let meta = null;
+    try { meta = JSON.parse(lines.slice(i + 1, j + 1).join('\n')); } catch { /* skip */ }
+    i = j;
+    if (!meta || meta.status === 'deprecated') continue;
+    const c = meta.cost || {};
+    const free = !c.input && !c.output;
+    const efforts = Object.keys(meta.variants || {}).sort((a, b) => effortRank(a) - effortRank(b));
+    const name = String(meta.name || id).replace(free ? /[\s(-]*free\)?$/i : /$^/, '').trim() || id; // "Beam Free" -> "Beam" + our own tag
+    out.push({ id, name, free, efforts });
+  }
+  return out;
+}
+function refreshOpencodeModels() {
+  const bin = binFor('opencode');
+  if (!bin || ocBusy) return;
+  const sig = opencodeSig(bin);
+  if (sig === ocList.sig && Date.now() - ocList.at < (ocList.ok ? 6 * 3600 * 1000 : 30 * 1000)) return;
+  ocList.at = Date.now(); ocList.sig = sig; ocBusy = true;
+  runCli(bin, ['models', '--verbose'], { timeout: 60000 }).then(({ stdout }) => {
+    const models = parseOpencodeVerbose(stdout);
+    ocList.ok = models.length > 0;
+    if (ocList.ok) ocList.models = models;
+  }).catch(() => { ocList.ok = false; }).finally(() => { ocBusy = false; });
+}
+function opencodeCatalog() {
+  refreshOpencodeModels();
+  if (!ocList.models) return simpleCatalog('opencode', tr('OpenCode가 고르는 기본 모델 · 따로 설정하지 않아도 돼요'));
+  const list = [...ocList.models.filter((m) => m.free), ...ocList.models.filter((m) => !m.free)];
+  const efforts = new Set(['']);
+  for (const m of list) m.efforts.forEach((e) => efforts.add(e));
+  return {
+    models: [
+      { id: '', label: tr('기본값'), short: tr('기본'), desc: tr('OpenCode가 고르는 기본 모델 · 따로 설정하지 않아도 돼요'), efforts: [] },
+      ...list.map((m) => ({ id: m.id, label: m.free ? tr('{name} · 무료', { name: m.name }) : m.name, short: m.name, desc: m.id, efforts: m.efforts })),
+    ],
+    efforts: [...efforts].sort((a, b) => effortRank(a) - effortRank(b)),
     defaults: { model: null, effort: null },
   };
 }
@@ -231,7 +336,7 @@ export function fromLine(tool, model) {
 export function catalogs() {
   return {
     claude: claudeCatalog(), codex: codexCatalog(), agy: agyCatalog(),
-    opencode: simpleCatalog('opencode', tr('opencode 설정(opencode.json)의 기본 모델')),
+    opencode: opencodeCatalog(),
     cursor: simpleCatalog('cursor', tr('Cursor 계정의 기본 모델 (auto)')),
   };
 }

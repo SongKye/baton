@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 7499;
 const BASE = `http://127.0.0.1:${PORT}`;
-const ENDPOINTS = ['/api/state', '/api/home', '/api/sessions', '/api/projects', '/api/setup', '/api/ports', '/api/ports?again=1', '/api/servers', '/api/repos', '/api/skills', '/api/mcp', '/api/mcp/effective?cwd=~', '/api/mention?tool=claude&cwd=~', '/api/usage', '/api/limits', '/api/settings', '/api/env', '/api/trash', '/api/cleanup', '/api/events/after/0', '/i18n.js', '/'];
+const ENDPOINTS = ['/api/instance', '/api/state', '/api/home', '/api/sessions', '/api/projects', '/api/setup', '/api/ports', '/api/ports?again=1', '/api/servers', '/api/repos', '/api/skills', '/api/mcp', '/api/mcp/effective?cwd=~', '/api/mention?tool=claude&cwd=~', '/api/usage', '/api/limits', '/api/settings', '/api/env', '/api/trash', '/api/cleanup', '/api/events/after/0', '/i18n.js', '/'];
 
 const server = spawn(process.execPath, ['--no-warnings', 'server/index.js'], {
   cwd: ROOT, env: { ...process.env, BATON_PORT: String(PORT), BATON_NO_SHELL_ENV: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
@@ -30,7 +30,14 @@ try {
   for (const ep of ENDPOINTS) {
     const t0 = Date.now();
     let status = 0;
-    try { status = (await fetch(BASE + ep, { signal: AbortSignal.timeout(90_000) })).status; } catch (e) { status = `ERR ${e.message}`; }
+    try {
+      const response = await fetch(BASE + ep, { signal: AbortSignal.timeout(90_000) });
+      status = response.status;
+      if (ep === '/api/setup' || ep === '/api/instance') {
+        const body = await response.json();
+        if (body.port !== PORT) throw new Error(`wrong runtime port: ${body.port}`);
+      }
+    } catch (e) { status = `ERR ${e.message}`; }
     const ok = status === 200;
     if (!ok) failed++;
     console.log(`${ok ? '✓' : '✗'} ${ep} ${status} ${Date.now() - t0}ms`);

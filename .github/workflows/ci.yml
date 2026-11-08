@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 jobs:
   test:
@@ -24,15 +25,39 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci --omit=dev
+      - name: Windows PowerShell installer syntax and encoding
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Get-ChildItem scripts/*.ps1 | ForEach-Object {
+            $path = $_.FullName
+            if (@([IO.File]::ReadAllBytes($path) | Where-Object { $_ -gt 127 }).Count) {
+              throw "$path must be ASCII-only for Windows PowerShell 5.1 and irm | iex."
+            }
+            $tokens = $null
+            $parseErrors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          }
       - name: Syntax check
         shell: bash
         run: for f in server/*.js server/sources/*.js public/*.js scripts/*.mjs; do node --check "$f"; done
       - name: Translations complete
         run: npm run i18n:check
+      - name: Windows installation regression checks
+        run: node scripts/windows-install-check.mjs
       - name: Chat image regression checks
         run: node scripts/chat-images-check.mjs
+      - name: OpenCode db / legacy storage checks
+        run: node scripts/opencode-storage-check.mjs
+      - name: OpenCode model list checks (CRLF, refresh after install / sign-in)
+        run: node scripts/opencode-models-check.mjs
+      - name: Codex default-model fallback checks
+        run: node scripts/codex-fallback-check.mjs
       - name: Composer @ picker checks
         if: runner.os != 'Windows' # creates symlinks, which need admin rights there
         run: node scripts/mention-check.mjs
+      - name: Independent installation and port checks
+        run: node scripts/listener-check.mjs
       - name: Boot the server and hit every endpoint
         run: node scripts/ci-boot.mjs

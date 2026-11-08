@@ -54,7 +54,9 @@ irm https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.ps1 | i
 
 This installs the **latest release** into `~/baton` (set `BATON_DIR` to choose another folder) and starts it. Run the same line again any time to move to the newest release. Prefer a zip? Download `baton-vX.Y.Z.zip` from [Releases](https://github.com/SongKye/baton/releases), unzip it, and run `scripts/setup.sh` (or `scripts\setup.ps1`) — zip installs can't update themselves. Working on Baton itself? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Baton opens **http://localhost:7420** with a **Get started** screen that walks you through:
+Baton opens its dashboard automatically: **http://localhost:7420** on Linux/macOS/WSL, **http://localhost:7421** on native Windows. If a port is busy, it selects another port and remembers it in the installation’s `data/listener-<platform>.json`, including for auto-start. The terminal prints the actual address. Windows and WSL can be installed independently in their own home folders; keep their installation/data folders separate.
+
+The **Get started** screen walks you through:
 
 1. **Your computer** — OS, Node.js, Git (one-click Git install on Windows/macOS)
 2. **Connect AI** — pick how you use AI:
@@ -203,7 +205,7 @@ Baton is a small Node.js server with no build step. It never stores your convers
 |---|---|
 | A CLI shows *Not installed* right after installing | Press ↻ on Get started. On Windows, restart Baton so it sees the new PATH. |
 | Works in my terminal, fails from Baton | Check **Settings → Company setup** — the variable it needs may only exist in a shell Baton didn't read. Add it there. |
-| Port 7420 is taken | `BATON_PORT=7421 npm start` |
+| Port is taken | Baton automatically selects and remembers a free port. If you explicitly set `BATON_PORT`, unset it to restore automatic selection. |
 | Windows: Codex / Antigravity misbehave | They work best inside WSL. See [Windows: install in WSL](#windows-install-in-wsl-step-by-step). |
 | A dev server won't open on the phone | Vite and friends block unknown hosts — set `server.allowedHosts`. |
 
