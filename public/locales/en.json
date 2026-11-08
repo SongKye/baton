@@ -969,5 +969,14 @@
  "저장된 로그인이 만료됐어요. 다시 로그인하면 한도도 다시 보여요.": "Your saved sign-in has expired. Sign in again to see your limits too.",
  "OpenCode가 고르는 기본 모델 · 따로 설정하지 않아도 돼요": "The model OpenCode picks by default · nothing to set up",
  "{name} · 무료": "{name} · Free",
- "~/.codex/config.toml의 \"{v}\"는 이 계정에서 쓸 수 없어서 대신 써요": "Used instead of \"{v}\" from ~/.codex/config.toml, which this account can't use"
+ "~/.codex/config.toml의 \"{v}\"는 이 계정에서 쓸 수 없어서 대신 써요": "Used instead of \"{v}\" from ~/.codex/config.toml, which this account can't use",
+ "지금 v{c} · 눌러서 바뀐 점을 보고 업데이트하세요. 끝나면 자동으로 다시 켜져요.": "You have v{c} · See what changed and update. Baton restarts on its own when done.",
+ "최신 버전이에요": "You are up to date",
+ "아직 새 버전을 확인하지 않았어요": "Not checked for updates yet",
+ "Baton 다시 켜기": "Restart Baton",
+ "Baton 서버를 껐다 켜요. 터미널에서 직접 업데이트했거나 뭔가 이상할 때 눌러보세요.": "Stops and starts the Baton server. Use it after updating from a terminal, or when something seems off.",
+ "지금 실행 중인 작업이 {n}개 있어요. 다시 켜면 멈출 수 있어요. 계속할까요?": "{n} task(s) are running now and may stop if you restart. Continue?",
+ "Baton 버전 · 업데이트": "Baton version · Updates",
+ "실행한 뒤 아래 「다시 켜기」를 누르면 새 버전으로 켜져요.": "Then press \"Restart\" below to start the new version.",
+ "새 버전(v{v})은 이미 받아져 있어요. 다시 켜기만 하면 적용돼요.": "The new version (v{v}) is already downloaded. Just restart Baton to use it."
 }

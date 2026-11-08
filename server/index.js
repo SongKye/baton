@@ -91,6 +91,7 @@ function defaultCwd() {
   return store.getSettings().defaultCwd || (fs.statSync(path.join(HOME, 'workspace'), { throwIfNoEntry: false })?.isDirectory() ? '~/workspace' : '~');
 }
 
+const BOOT = Date.now();
 const VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return '?'; } })();
 
 // ---------- routes ----------
@@ -108,6 +109,7 @@ route('GET', '/api/state', async () => ({
   tools: toolsMeta().map((t) => ({ ...t, installed: Boolean(binFor(t.id)) })),
   defaultCwd: defaultCwd(),
   version: VERSION,
+  boot: BOOT, // changes on every start: lets the page tell a restarted server from the old one
   update: updateCached(),
   os: OS_NAME,
 }));
