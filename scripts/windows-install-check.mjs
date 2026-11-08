@@ -55,6 +55,17 @@ try {
   git('-c', 'user.name=Installer Test', '-c', 'user.email=installer@example.invalid', 'commit', '-m', 'Fixture release');
   git('tag', 'v0.0.1');
   success('fresh install via Invoke-Expression, including real npm.cmd');
+  {
+    // the Start menu shortcut (found by Start search) points at this install and opens the dashboard
+    const lnk = run('powershell.exe', ['-NoProfile', '-Command',
+      "$l = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'Baton.lnk')); $l.TargetPath; $l.Arguments; $l.WorkingDirectory"]);
+    assert.equal(lnk.status, 0, lnk.output);
+    const [target, args, cwd] = lnk.stdout.trim().split(/\r?\n/);
+    assert.match(target, /node\.exe$/i, lnk.output);
+    assert.ok(args.includes(path.join(dest, 'server', 'index.js')) && args.endsWith('--open'), lnk.output);
+    assert.equal(path.resolve(cwd), path.resolve(dest), lnk.output);
+    console.log('PASS Start menu shortcut starts this installation');
+  }
   success('repeat installation');
   git('-c', 'user.name=Installer Test', '-c', 'user.email=installer@example.invalid', 'commit', '--allow-empty', '-m', 'Next release');
   git('tag', 'v0.0.2');
