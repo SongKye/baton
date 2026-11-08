@@ -51,7 +51,6 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
   .tabbar .tab-badge { position: static; margin-left: auto; }
   .studio-foot { margin-top: auto; padding: 22px 12px 0; border-top: 1px solid #ffffff20; display: flex; flex-direction: column; gap: 16px; }
   .studio-foot > span { font-size: 8px; letter-spacing: .12em; color: #a8aaa4; }
-  .studio-foot a { font-size: 12px; color: #e2e4dd; }
   main.view { max-width: 1360px; padding: 6px 38px 100px; }
   .topbar { max-width: 1360px; padding: 24px 38px 16px; width: 100%; margin: auto; border-bottom: 1px solid var(--border); }
   .topbar h1 { font-size: 16px; letter-spacing: -.02em; }

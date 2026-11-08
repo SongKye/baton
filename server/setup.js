@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { ROOT } from './util.js';
 import { TOOLS, TOOL_IDS, binFor, installPlan } from './tools.js';
 import { IS_WIN, IS_MAC, IS_WSL, OS_NAME, which, clearWhichCache, runCli, spawnCli, augmentedPath, sh } from './platform.js';
@@ -76,9 +76,9 @@ export async function setupStatus({ fresh = false } = {}) {
     if (bin && id === 'claude') { const p = await claudeProvider().catch(() => null); if (p && !p.subscription) { provider = p.label; logged = true; } }
     if (bin && id === 'codex') { const p = codexProvider(); if (!p.subscription) { provider = p.label; logged = p.configured; } }
     return {
-      id, name: t.name, vendor: t.vendor, docs: t.docs, installed: Boolean(bin), path: bin, version: ver, loggedIn: Boolean(logged), provider,
+      id, name: t.name, vendor: t.vendor, docs: t.docs, installed: Boolean(bin), path: bin, version: ver, loggedIn: Boolean(logged) && logged !== 'expired', loginExpired: logged === 'expired', provider,
       optionalLogin: Boolean(t.optionalLogin), installCmd: plan?.cmd || null, canInstall: Boolean(plan),
-      loginKind: t.login?.kind || null, loginCmd: bin ? `${path.basename(bin).replace(/\.(cmd|exe)$/i, '')} ${t.login.args.join(' ')}` : null,
+      loginKind: t.login?.kind || null, loginCmd: bin ? [path.basename(bin).replace(/\.(cmd|exe)$/i, ''), ...t.login.args].join(' ') : null,
       note: t.note?.[lang()] || t.note?.en,
     };
   }));
@@ -110,7 +110,7 @@ function newJob(label) {
   return job;
 }
 
-function attach(job, child) {
+function attach(job, child, { afterSuccess } = {}) {
   job.child = child;
   const onData = (stream) => (chunk) => {
     const text = String(chunk).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r(?!\n)/g, '\n');
@@ -128,7 +128,79 @@ function attach(job, child) {
   child.stdout?.on('data', onData('out'));
   child.stderr?.on('data', onData('err'));
   child.on('error', (e) => { job.emit({ t: 'line', stream: 'err', text: e.message }); finish(job, -1); });
-  child.on('close', (code) => finish(job, code));
+  child.on('close', async (code) => {
+    if (code === 0 && afterSuccess) {
+      try { await afterSuccess(job); } catch (e) { job.emit({ t: 'line', stream: 'err', text: e.message }); }
+    }
+    finish(job, code);
+  });
+}
+
+// ---------------------------------------------------------------- PATH after install
+// Install jobs run with augmentedPath() (so we can find CLIs under systemd), which means installers
+// like OpenCode's see their bin dir already on PATH and skip editing ~/.bashrc. Baton then finds the
+// CLI, but the user's own terminal says "command not found". After an install, ask a fresh login
+// shell whether it can find the command; if not, link it into ~/.local/bin or add a PATH line.
+const BASE_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+function userShell() { return process.env.SHELL || (IS_MAC ? '/bin/zsh' : '/bin/bash'); }
+
+/** What a newly opened terminal sees: { path: [...dirs], finds: bool } (null if the shell can't be probed). */
+function probeShell(name) {
+  return new Promise((resolve) => {
+    const env = { HOME, USER: os.userInfo().username, SHELL: userShell(), TERM: 'dumb', PATH: BASE_PATH, BATON_SHELL_PROBE: '1' };
+    const script = `printf "__BATON__%s\\n" "$PATH"; command -v ${name} >/dev/null 2>&1 && printf "__FOUND__"`;
+    execFile(userShell(), ['-ilc', script], { env, timeout: 10000 }, (err, stdout) => {
+      const out = String(stdout || '');
+      const at = out.indexOf('__BATON__');
+      if (at < 0) return resolve(null);
+      const line = out.slice(at + 9).split('\n')[0];
+      resolve({ path: line.split(':').filter(Boolean), finds: out.includes('__FOUND__') });
+    });
+  });
+}
+
+function rcFileFor(shell) {
+  const s = path.basename(shell);
+  if (s === 'zsh') return path.join(HOME, '.zshrc');
+  if (s === 'bash') return path.join(HOME, IS_MAC ? '.bash_profile' : '.bashrc');
+  return null;
+}
+
+async function ensureOnShellPath(tool, job) {
+  if (IS_WIN) return;
+  clearWhichCache();
+  const bin = binFor(tool);
+  if (!bin) return;
+  const name = path.basename(bin);
+  const probe = await probeShell(name);
+  if (!probe || probe.finds) return;
+  const say = (text) => job.emit({ t: 'line', stream: 'out', text });
+
+  // 1) ~/.local/bin is already on the user's PATH on most Linux setups: a symlink is the least invasive fix
+  const localBin = path.join(HOME, '.local', 'bin');
+  const link = path.join(localBin, name);
+  if (probe.path.includes(localBin) && !fs.existsSync(link)) {
+    let dangling = false;
+    try { dangling = fs.lstatSync(link).isSymbolicLink(); } catch { /* nothing there */ }
+    if (!dangling) {
+      await fsp.mkdir(localBin, { recursive: true });
+      await fsp.symlink(bin, link);
+      say(tr('터미널에서도 {n} 명령을 찾을 수 있게 {p}에 연결했어요.', { n: name, p: link }));
+      return;
+    }
+  }
+  // 2) otherwise add the bin dir to the shell's rc file
+  const rc = rcFileFor(userShell());
+  const dir = path.dirname(bin);
+  if (rc) {
+    const line = `export PATH="${dir}:$PATH"`;
+    const cur = await fsp.readFile(rc, 'utf8').catch(() => '');
+    if (cur.includes(line)) return; // added on an earlier install; a new terminal will pick it up
+    await fsp.appendFile(rc, `${cur && !cur.endsWith('\n') ? '\n' : ''}\n# Added by Baton so your terminal can find ${name}\n${line}\n`);
+    say(tr('터미널에서도 {n} 명령을 찾을 수 있게 {p}에 PATH를 추가했어요. 이미 열려 있는 터미널은 새로 열어주세요.', { n: name, p: rc }));
+    return;
+  }
+  say(tr('터미널에서 {n} 명령을 찾으려면 PATH에 {p}를 추가해주세요.', { n: name, p: dir }));
 }
 function finish(job, code) {
   if (job.status !== 'running') return;
@@ -209,8 +281,9 @@ async function createJob(action, tool, t) {
     if (!plan) throw new Error(tr('이 OS에서는 자동 설치를 지원하지 않아요. 문서를 참고해주세요.'));
     const job = newJob(`${t.name} ${tr('설치')}`);
     job.emit({ t: 'line', stream: 'cmd', text: `$ ${plan.cmd}` });
-    if (plan.kind === 'npm') attach(job, spawnCli('npm', ['install', '-g', TOOLS[tool].install.npm], { env: childEnv(), stdio: ['ignore', 'pipe', 'pipe'] }));
-    else attach(job, shellSpawn(plan.cmd));
+    const afterSuccess = (j) => ensureOnShellPath(tool, j);
+    if (plan.kind === 'npm') attach(job, spawnCli('npm', ['install', '-g', TOOLS[tool].install.npm], { env: childEnv(), stdio: ['ignore', 'pipe', 'pipe'] }), { afterSuccess });
+    else attach(job, shellSpawn(plan.cmd), { afterSuccess });
     return job;
   }
   if (action === 'login') {

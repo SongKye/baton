@@ -10,6 +10,21 @@ const HOME = os.homedir();
 const XDG_DATA = process.env.XDG_DATA_HOME || path.join(HOME, '.local', 'share');
 const exists = (p) => { try { fs.statSync(p); return true; } catch { return false; } };
 
+const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
+
+// auth.json only proves someone signed in once: ChatGPT tokens go stale (say, a file from last year)
+// and then Codex runs and the limits call fail with 401 while `codex login status` still says
+// "Logged in". Ask the same usage endpoint the limits panel uses; network trouble counts as signed in.
+async function codexTokenOk(tokens) {
+  try {
+    const r = await fetch('https://chatgpt.com/backend-api/wham/usage', {
+      headers: { Authorization: `Bearer ${tokens.access_token}`, 'ChatGPT-Account-Id': tokens.account_id || '', 'User-Agent': 'baton/1.0' },
+      signal: AbortSignal.timeout(6000),
+    });
+    return r.status !== 401;
+  } catch { return true; }
+}
+
 export const TOOL_IDS = ['claude', 'codex', 'agy', 'opencode', 'cursor'];
 
 export const TOOLS = {
@@ -37,7 +52,9 @@ export const TOOLS = {
     install: { npm: '@openai/codex' },
     login: { args: ['login', '--device-auth'], kind: 'device' },
     loggedIn: async (bin) => {
-      if (exists(path.join(CODEX_HOME, 'auth.json'))) return true;
+      const auth = readJson(path.join(CODEX_HOME, 'auth.json'));
+      if (auth?.tokens?.access_token && !auth.OPENAI_API_KEY) return (await codexTokenOk(auth.tokens)) ? true : 'expired';
+      if (auth) return true;
       const r = await runCli(bin, ['login', 'status'], { timeout: 15000 });
       return /logged in/i.test(r.stdout + r.stderr);
     },
@@ -48,7 +65,7 @@ export const TOOLS = {
     bins: ['agy'],
     docs: 'https://antigravity.google/docs/cli/features',
     install: { unix: 'curl -fsSL https://antigravity.google/cli/install.sh | bash' },
-    login: { args: ['-p=/usage', '--output-format', 'json'], kind: 'browser' }, // any command triggers the Google sign-in flow
+    login: { args: [], kind: 'terminal' }, // print mode (-p) now refuses unauthenticated; sign-in only runs in interactive `agy`
     loggedIn: async () => exists(path.join(HOME, '.gemini', 'antigravity-cli', 'antigravity-oauth-token')),
     note: { ko: 'Google 계정 전용이에요 (외부 LLM 연결은 지원하지 않아요). Windows는 WSL에서 쓰는 걸 권장해요.', en: 'Google account only (no external LLMs). On Windows, WSL is recommended.' },
   },

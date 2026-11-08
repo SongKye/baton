@@ -2861,7 +2861,7 @@ async function viewSetup() {
   const toolCard = (x) => {
     const state = !x.installed ? 'missing' : x.loggedIn ? 'ready' : x.optionalLogin ? 'ready' : 'login';
     const badge = x.provider && x.installed ? `<span class="pill ${x.loggedIn ? 'ok' : 'warn'}">${esc(x.provider)}</span>` : state === 'ready' ? `<span class="pill ok">${x.loggedIn ? t('사용 준비 완료') : t('설치됨')}</span>`
-      : state === 'login' ? `<span class="pill warn">${t('로그인 필요')}</span>` : `<span class="pill">${t('설치 안 됨')}</span>`;
+      : state === 'login' ? `<span class="pill warn">${x.loginExpired ? t('로그인 만료') : t('로그인 필요')}</span>` : `<span class="pill">${t('설치 안 됨')}</span>`;
     const btns = [];
     if (!x.installed && x.canInstall) btns.push(`<button class="btn sm primary" data-job="install" data-tool="${x.id}">${t('원클릭 설치')}</button>`);
     if (x.installed && !x.loggedIn && x.loginKind !== 'terminal') btns.push(`<button class="btn sm ${state === 'login' ? 'primary' : ''}" data-job="login" data-tool="${x.id}">${LOGIN_LABEL[x.id] || t('구독 계정으로 로그인')}</button>`);
@@ -2871,6 +2871,7 @@ async function viewSetup() {
       <div class="sh"><span class="tool-avatar ${x.id}">${esc(TOOL[x.id]?.short || x.name[0])}</span>
         <div class="st"><b>${esc(x.name)}</b><span>${esc(x.vendor)}${x.version ? ` · v${esc(x.version)}` : ''}</span></div>${badge}</div>
       ${x.note ? `<p class="small muted">${esc(x.note)}</p>` : ''}
+      ${x.loginExpired ? `<p class="small warn-text">${t('저장된 로그인이 만료됐어요. 다시 로그인하면 한도도 다시 보여요.')}</p>` : ''}
       ${state === 'login' && LOGIN_HINT[x.id] ? `<p class="small login-hint">${LOGIN_HINT[x.id]}</p>` : ''}
       ${!x.installed && x.installCmd ? `<details class="pcmd"><summary>${t('실행될 명령')}</summary><code>${esc(x.installCmd)}</code></details>` : ''}
       ${!x.installed && !x.canInstall ? `<p class="small warn-text">${t('이 OS에서는 자동 설치를 지원하지 않아요. 문서를 참고해주세요.')}</p>` : ''}
