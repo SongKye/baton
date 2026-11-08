@@ -65,7 +65,24 @@ say "Installing Baton's dependencies…"
 npm install --omit=dev --no-audit --no-fund --loglevel=error
 ok "Dependencies installed"
 
-# 4) Start
+# 4) The `baton` command: start Baton again later (or open the dashboard) without remembering the folder or port
+link_command() {
+  local bin="$HOME/.local/bin" target="$PWD/scripts/baton" current
+  chmod +x "$target" 2>/dev/null || true
+  if [[ -e "$bin/baton" || -L "$bin/baton" ]]; then
+    current="$(readlink "$bin/baton" 2>/dev/null || true)"
+    # only replace our own link (possibly from another Baton folder), never someone else's `baton`
+    [[ "$current" == */scripts/baton ]] || { say "$bin/baton already exists, so the 'baton' command was not added. Start Baton with: $target"; return 0; }
+  fi
+  mkdir -p "$bin" && ln -sfn "$target" "$bin/baton" || { say "Couldn't add the 'baton' command. Start Baton with: $target"; return 0; }
+  case ":$PATH:" in
+    *":$bin:"*) ok "Added the 'baton' command. Type 'baton' in a terminal to start Baton again later." ;;
+    *) ok "Added the 'baton' command. Open a new terminal and type 'baton' to start Baton again later (if it isn't found there, run $bin/baton)." ;;
+  esac
+}
+link_command
+
+# 5) Start
 say "Starting Baton (Ctrl+C to stop). The server will print and open its address."
 say "Tip: turn on “Start Baton when you log in” in Get started so you don't need this terminal."
 ARGS=(--no-warnings server/index.js)

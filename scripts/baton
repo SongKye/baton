@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# The `baton` command (setup.sh links it into ~/.local/bin):
+# starts Baton and opens the dashboard, or just opens the dashboard when Baton is already running.
+# Baton then runs in this terminal; Ctrl+C stops it.
+set -euo pipefail
+cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.."
+command -v node >/dev/null 2>&1 || { echo "baton: Node.js was not found. Run $PWD/scripts/setup.sh to install it." >&2; exit 1; }
+exec node --no-warnings server/index.js --open "$@"
