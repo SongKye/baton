@@ -388,7 +388,6 @@
  "Codex 계정 기본값": "Your Codex account default",
  "기본값으로 보냈을 때 실제로 쓰인 모델": "The model actually used when sending with the default",
  "아직 확인 전 · 한 번 보내면 실제 모델을 알려드려요": "Not checked yet · send once and I'll show the real model",
- "opencode 설정(opencode.json)의 기본 모델": "Default model from your opencode config (opencode.json)",
  "Cursor 계정의 기본 모델 (auto)": "Your Cursor account default (auto)",
  "주간 · Opus": "Weekly · Opus",
  "주간 · Sonnet": "Weekly · Sonnet",
