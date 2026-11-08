@@ -961,5 +961,8 @@
  "생각 과정": "Thinking",
  "도구 {n}회": "{n} tool calls",
  "생각": "Thinking",
- "📌 고정": "📌 Pinned"
+ "📌 고정": "📌 Pinned",
+ "터미널에서도 {n} 명령을 찾을 수 있게 {p}에 연결했어요.": "Linked {n} into {p} so your terminal can find it too.",
+ "터미널에서도 {n} 명령을 찾을 수 있게 {p}에 PATH를 추가했어요. 이미 열려 있는 터미널은 새로 열어주세요.": "Added {n} to PATH in {p} so your terminal can find it. Open a new terminal for it to take effect.",
+ "터미널에서 {n} 명령을 찾으려면 PATH에 {p}를 추가해주세요.": "To run {n} from your terminal, add {p} to your PATH."
 }
