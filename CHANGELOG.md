@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- **No more "MCP connection problem" note on every message for unused claude.ai connectors**: connectors that come attached to your claude.ai account (e.g. Google Calendar) but were never authorized no longer show "Needs auth" in the chat. The MCP panel still shows their status, and real connection failures are still reported.
+
 ## [0.8.2] - 2026-11-08
 
 ### Fixed

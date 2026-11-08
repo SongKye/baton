@@ -1278,8 +1278,11 @@ function liveRun(container, runId, { onSession, onDone } = {}) {
     } else if (ev.t === 'tool_done') {
       const s = lastSeg(); if (s?.type === 'tools') { const it = [...s.items].reverse().find((x) => x.tool && x.tool.done == null); if (it) { it.tool.done = true; it.tool.error = ev.error; } }
     } else if (ev.t === 'mcp') {
-      // only speak up when something is wrong — a healthy MCP list would just be noise
-      const bad = (ev.servers || []).filter((x) => /fail|auth/i.test(x.status || ''));
+      // only speak up when something is wrong — a healthy MCP list would just be noise.
+      // claude.ai connectors that were never authorized (Gmail/Calendar/Drive come attached to the
+      // account) report needs-auth on every run; that isn't a problem until you use one, so the MCP
+      // panel shows it and the chat stays quiet
+      const bad = (ev.servers || []).filter((x) => /fail|auth/i.test(x.status || '') && !(/auth/i.test(x.status) && /^claude\.ai /.test(x.name || '')));
       if (bad.length) {
         const n = document.createElement('div');
         n.className = 'mcp-note';
