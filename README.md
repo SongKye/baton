@@ -1,224 +1,140 @@
 <div align="center">
 
-# 🏃 Baton
+<img src="public/baton-mark.svg" width="64" height="64" alt="">
 
-**One dashboard for all your AI coding sessions.**
-Claude Code · Codex · Antigravity · OpenCode · Cursor — on your desktop and your phone.
+# Baton
+
+### Many coding agents. One place to pick up where you left off.
+
+Claude Code · Codex · Antigravity · OpenCode (beta)<br>
+**Bring your AI work together. Keep it moving from your desktop or phone.**
 
 [![CI](https://github.com/SongKye/baton/actions/workflows/ci.yml/badge.svg)](https://github.com/SongKye/baton/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/SongKye/baton?include_prereleases)](https://github.com/SongKye/baton/releases)
-![Node](https://img.shields.io/badge/node-%E2%89%A5%2022.13-339933)
-![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows%20%7C%20WSL-555)
-![License](https://img.shields.io/badge/license-MIT-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-English · [한국어](README.ko.md)
+[Quick start](#quick-start) · [Why Baton?](#why-baton) · [On your phone](#on-your-phone) · [User guide](docs/guide.md)
+
+**English** · [한국어](README.ko.md)
 
 </div>
 
----
+Baton is an **AI coding dashboard that runs on your computer**. It brings together the sessions your tools already write and runs those same CLIs when you continue a conversation. From CLI installation to sessions, connected services and MCP configuration, keep what you need organized by project.
 
-Vibe coding means juggling many projects across many agents — and forgetting where you left off.
-Baton reads the session files your CLIs already write, puts them in one place, and lets you pick any of them back up from a browser — or your phone.
+| Install with a click | Organize by project | Set up your tools easily |
+|:---|:---|:---|
+| CLI installation, sign-in and connection checks | Sessions, service links and MCP in one place | Add MCP servers across multiple CLIs |
 
-- 🗂 **Every session, one list** — titles, previews, search, pins, and which ones are running right now (even in a terminal)
-- 💬 **Continue anywhere** — streaming chat, tool calls, photos; choose model, reasoning effort and permissions per message; answer the agent's questions with a tap
-- 🧭 **"Where was I?"** — AI briefs per project (done / next / ready-to-send prompts) and a daily nudge for forgotten projects
-- 🔀 **Spread the load** — open a new session in the same project with another CLI, or hand a session over when one runs out of tokens
-- 📊 **Limits & usage** — live subscription limits and token usage per CLI and model
-- 🔌 **MCP servers** — add popular servers to every CLI in one tap, and see which ones each CLI loads in each folder, whether they connect, and which tools agents actually call
-- 🖥 **Dev servers · 🔗 linked services** — each project's dev servers (on / off, kept running across restarts), its GitHub repo and links to the Vercel, Firebase or Supabase dashboards it uses
-- 🧩 **Skills · 🧹 cleanup** — which skills agents actually use, and one-tap cleanup of throwaway sessions
-- 🔔 **Notifications** — your phone buzzes whenever a session finishes (Baton or PC terminal) or the agent has a question; on a desktop, cards pop up in the corner. Mute a session or a whole project from its ⋯ menu
-- 🏢 **Any backend** — subscriptions, API keys, Amazon Bedrock, Google Vertex, LLM gateways and self-hosted models
+[![Baton desktop dashboard showing active sessions, usage limits and recent projects](docs/images/desktop-en.png)](docs/images/desktop-en.png)
+
+<sub>Real Baton UI with fictional example data. Forest theme · desktop view. Click the image for a closer look.</sub>
 
 ## Quick start
 
-You need **Node.js 22.13+** (the setup scripts can install it).
+**One install command → connect your AI in the browser → start a conversation.** No build step or separate database to install.
 
-<table>
-<tr><th>macOS · Linux · WSL</th><th>Windows (PowerShell)</th></tr>
-<tr><td>
+### 1. Install
+
+**macOS · Linux · WSL** — paste into your terminal:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.sh | bash
 ```
 
-</td><td>
+**Windows** — paste into PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.ps1 | iex
 ```
 
-</td></tr>
+Requires Git and **Node.js 22.13+**. The setup script can help install Node.js. On macOS, Linux and WSL, install Git first; on Windows, the installer offers to install Git if `winget` is available. [Installation help · WSL · ZIP](docs/guide.md#quick-start)
+
+### 2. Set up your coding tools with a click
+
+In **Get started → Connect AI**, choose a tool and press **Install**. Baton uses its official installation method and guides you through sign-in and connection testing. Depending on the tool, you finish sign-in in a browser or terminal. Installation availability varies by OS.
+
+You can also connect an API key, company account or local model instead of a subscription.
+
+Already using a CLI? Its existing sessions appear automatically.
+
+### 3. Pick up your work
+
+Open an existing conversation in **Sessions**, or choose **New session**, pick a tool and working folder, and send a message. When the first reply arrives, you're ready.
+
+| Open it again | How |
+|---|---|
+| macOS · Linux · WSL | Type `baton` in a terminal |
+| Windows | Click **Baton** in the Start menu or on the desktop |
+| Start automatically | Enable **Get started → Start on login** |
+
+<sub>Installs into the <code>baton</code> folder in your home directory. The default address is <a href="http://localhost:7420">localhost:7420</a> on macOS/Linux/WSL and <a href="http://localhost:7421">localhost:7421</a> on Windows. If the port is busy, Baton picks another; the terminal prints the actual address. Using Codex or Antigravity on Windows? See the <a href="docs/guide.md#windows-install-in-wsl-step-by-step">WSL setup guide</a>.</sub>
+
+## Why Baton?
+
+**Set up your coding tools, see each project's work and keep it moving—all in one place.**
+
+| What gets easier | What you can do |
+|---|---|
+| **Install coding tools with a click** | Install CLIs, sign in and test connections from Get started, without hunting down installation commands. |
+| **See everything by project** | Bring together sessions across CLIs, the GitHub repository, dashboard links for services such as Vercel, Firebase and Supabase, dev servers and the project's effective MCP configuration. |
+| **Follow background work** | See sessions running in your terminal, including sessions launched in the background by another tool, and follow their progress. |
+| **Clean up sessions easily** | Search titles, conversations and folders; pin important sessions. Review cleanup candidates or select multiple sessions to hide or move to the trash. |
+| **Set up MCP without the repetition** | Choose a server and the CLIs to add it to, or copy an existing configuration to another CLI. Inspect project settings, connection status and actual tool calls. |
+| **Pick up the next task** | Read a project brief of what's done and what's next. Check tool limits and hand work to another CLI with a summary of the context when needed. |
+| **Continue from your phone** | Get completion and question alerts, continue chatting, send photos and answer the agent's questions. |
+
+Skill usage and dev server start/stop controls are also included. [Explore the features →](docs/guide.md)
+
+## On your phone
+
+<table>
+<tr>
+<td width="300" align="center">
+<img src="docs/images/mobile-en.png" width="280" alt="Baton on a phone: search sessions across CLIs and see their running status">
+</td>
+<td valign="top">
+<h3>Your desktop work, within reach.</h3>
+<p>Find a session, continue a conversation, send a photo or answer the agent's questions. Get a notification when the reply is ready.</p>
+<ol>
+<li>Install <b>Tailscale</b> on your computer and phone; sign in with the same account.</li>
+<li>Open <b>Get started → Phone → Share to my devices</b> and scan the QR code.</li>
+<li><b>Add to Home Screen</b> and enable notifications.</li>
+</ol>
+<p>Connect through your own Tailscale network. <b>Your computer and Baton must stay running.</b> On iOS, notifications require adding the app to your home screen.</p>
+<p><a href="docs/guide.md#use-it-from-your-phone">Phone setup details →</a></p>
+<sub>Real mobile UI · fictional example data</sub>
+</td>
+</tr>
 </table>
 
-This installs the **latest release** into `~/baton` (set `BATON_DIR` to choose another folder) and starts it. Run the same line again any time to move to the newest release. Prefer a zip? Download `baton-vX.Y.Z.zip` from [Releases](https://github.com/SongKye/baton/releases), unzip it, and run `scripts/setup.sh` (or `scripts\setup.ps1`) — zip installs can't update themselves. Working on Baton itself? See [CONTRIBUTING.md](CONTRIBUTING.md).
+## Supported tools
 
-Baton opens its dashboard automatically: **http://localhost:7420** on Linux/macOS/WSL, **http://localhost:7421** on native Windows. If a port is busy, it selects another port and remembers it in the installation’s `data/listener-<platform>.json`, including for auto-start. The terminal prints the actual address. Windows and WSL can be installed independently in their own home folders; keep their installation/data folders separate.
+| Tool | Existing sessions · chat · new sessions | Photos | Live limits | Token usage |
+|---|:---:|:---:|:---:|:---:|
+| **Claude Code** | ✓ | ✓ | ✓ | ✓ |
+| **Codex** | ✓ | ✓ | ✓ | ✓ |
+| **Antigravity** | ✓ | ✓ | ✓ | ✓ |
+| **OpenCode** | Beta | ✓ | — | ✓ |
 
-The **Get started** screen walks you through:
+OpenCode is in beta and has not yet been verified against a live install. Capabilities depend on the CLI and backend.
 
-1. **Your computer** — OS, Node.js, Git (one-click Git install on Windows/macOS)
-2. **Connect AI** — pick how you use AI:
-   - *Subscription* — one-click install of each CLI with its vendor's official installer, then sign in (sign-in link, device code and code paste are handled in the page)
-   - *API key* — paste it; Baton recognizes Anthropic, OpenAI, OpenRouter and Groq keys and connects the right CLI
-   - *Company account* — Bedrock, Vertex, Azure OpenAI or a company gateway
-   - *Models on your computer* — Ollama, LM Studio, vLLM, LiteLLM, llama.cpp and Jan are found automatically
-3. **Add tools (MCP)** (optional) — one tap adds a server to all your CLIs
-4. **Phone** (optional) — step by step with Tailscale, then scan a QR code
-5. **Start on login** (optional) — systemd / launchd / Windows Startup
+**Cursor — unverified and not officially supported.** Integration code exists, but it has not been directly tested or validated, and there are currently no plans for official support. It is excluded from the supported list above because its behavior is not guaranteed.
 
-Every step shows whether it's done, and each connection can be checked with **Test connection**.
+Bring a subscription, **API key, Bedrock, Vertex, Azure OpenAI, company gateway or local model**. Each backend connects through a compatible CLI. [Choose your connection →](docs/guide.md#bring-your-own-model)
 
-Existing sessions show up as soon as a CLI is installed.
+## How it runs
 
-**Closed the dashboard or stopped Baton?** You don't need to remember the port or the folder:
+Baton is a **Node.js server and browser UI**. It reads CLI session files and runs the corresponding CLI when you send a message. Its settings, pins and briefs live in the installation's `data/` folder. AI requests go through your chosen CLI and its configured provider.
 
-- **Windows** — click **Baton** in the Start menu (or the Baton icon on the desktop). It starts Baton in a minimized window (close that window to stop it), or just opens the dashboard when Baton is already running.
-- **macOS · Linux · WSL** — open a terminal and type `baton`. Same behavior; **Ctrl+C** stops it. (The installer adds this command to `~/.local/bin`; if it isn't found, run `~/baton/scripts/baton`.)
+Baton listens on `127.0.0.1` by default; phone access uses Tailscale. [Access control and security →](SECURITY.md)
 
-### Windows: install in WSL, step by step
+## Find out more
 
-Codex and Antigravity work best when Baton runs inside WSL (Linux on Windows). You use it from your normal Windows browser.
-
-1. **Turn on WSL** (once). Open PowerShell **as administrator**, run `wsl --install`, and restart Windows. Ubuntu opens and asks you to make a Linux user name and password.
-2. **Install Baton.** In the Ubuntu window, paste the install line:
-   ```bash
-   curl -fsSL https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.sh | bash
-   ```
-   It asks before installing Node.js, then starts Baton and opens **http://localhost:7420** in your Windows browser. Keep the Ubuntu window open while you use Baton; **Ctrl+C** stops it.
-3. **Start it again later.** Open Ubuntu and type:
-   ```bash
-   baton
-   ```
-   This starts Baton and opens the dashboard, or just opens the dashboard if Baton is already running.
-   Or turn on **Start on login** in Get started so you never need the terminal. In WSL this starts Baton whenever WSL starts (opening Ubuntu once after a reboot is enough). It needs systemd, which new Ubuntu installs have. If Get started says auto-start isn't available, add these two lines to `/etc/wsl.conf` with `sudo nano /etc/wsl.conf`, then run `wsl --shutdown` in PowerShell and open Ubuntu again:
-   ```ini
-   [boot]
-   systemd=true
-   ```
-4. **Update.** Check for a new version at the bottom of Settings and press **Update now**, or run the install line again.
-5. **Remove.** Turn off Start on login in Get started, then run `rm -rf ~/baton ~/.local/bin/baton`. Your CLIs and their sessions stay.
-
-To change Baton's own code, use a `git clone` of `main` instead. See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Supported CLIs
-
-| | Sessions | Chat & new sessions | Photos | Live limits | Token usage | Backends |
-|---|:-:|:-:|:-:|:-:|:-:|---|
-| **Claude Code** | ✅ | ✅ | ✅ | ✅ | ✅ | Subscription · API key · Bedrock · Vertex · gateway / own server |
-| **Codex** | ✅ | ✅ | ✅ | ✅ | ✅ | ChatGPT · API key · Azure OpenAI · gateway / own server |
-| **Antigravity** | ✅ | ✅ | ✅ | ✅ | ✅ | Google account |
-| **OpenCode** | beta | beta | ✅ | — | ✅ | Free models · any OpenAI-compatible server |
-| **Cursor** | beta | beta | ✅ | — | — | Cursor account |
-
-*beta* — implemented from the tools' documented formats; not yet verified against a live install.
-
-## Bring your own model
-
-Not everyone uses a subscription. In **Get started → Connect AI**, choose *API key*, *Company account* or *Models on your computer*:
-
-| You have… | Use | Baton writes |
-|---|---|---|
-| An Anthropic API key | Claude Code → *Anthropic API key* | `~/.claude/settings.json` (`env`) |
-| AWS Bedrock access | Claude Code → *Amazon Bedrock* | `CLAUDE_CODE_USE_BEDROCK`, region, profile, model |
-| GCP Vertex access | Claude Code → *Google Vertex AI* | `CLAUDE_CODE_USE_VERTEX`, project, region, model |
-| A gateway / self-hosted model with the **Anthropic Messages API** (e.g. LiteLLM) | Claude Code → *LLM gateway · your own server* | `ANTHROPIC_BASE_URL`, token, model |
-| An OpenAI API key | Codex → *OpenAI API key* | `codex login --with-api-key` |
-| Azure OpenAI / gateway / server with the **OpenAI Responses API** | Codex → *Your own server* | `~/.codex/config.toml` provider |
-| Ollama, vLLM, LM Studio… (**chat completions** only) | OpenCode → *OpenAI-compatible server* | `opencode.json` provider |
-
-Every write backs up the existing file first, and the CLI behaves the same in your terminal.
-Forms that take a server address load its model list (`/v1/models`) so you can pick a model instead of typing it. After connecting, Baton sends a one-line prompt through it to test.
-
-> Codex only speaks the Responses API (`wire_api = "chat"` was removed). For chat-only servers use OpenCode, or put a Responses-capable proxy such as LiteLLM in front.
-
-### Company machines
-
-- **Your shell's environment is used.** Baton reads your login shell (`~/.bashrc`, `~/.zshrc`) at startup and passes it to every CLI, so `AWS_PROFILE`, `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, etc. work even when Baton runs as a background service. Add anything else in **Settings → Company setup · CLI environment**.
-- Relocated configs (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) are followed.
-- Bedrock / API / gateway setups show "no subscription limits" instead of errors, the model picker offers what that backend understands, and every picker accepts a free-form model id.
-
-## MCP servers
-
-### Add one in a tap
-
-In **Get started → Add tools** or with **＋** on **Tools → MCP servers**, pick a server and the CLIs to add it to:
-Context7, Playwright, Chrome DevTools, GitHub, Filesystem, Memory, Sequential Thinking, Fetch, Notion, Linear, Sentry, Supabase, Figma — or your own command / URL.
-Baton writes each CLI's own global config (`claude mcp add-json -s user`, `~/.codex/config.toml`, `mcp_config.json`, `opencode.json`, `~/.cursor/mcp.json`) and keeps a `.baton-backup` of the previous file.
-On a server's page, **Add to other CLIs** copies it (keys included — they stay on your computer) and **Delete** removes it.
-
-### See what's loaded and used
-
-**Tools → MCP servers** lists every MCP server your CLIs can see, grouped by where it's configured:
-
-| CLI | Global | Per project |
-|---|---|---|
-| Claude Code | `~/.claude.json` (user), plugins, `managed-mcp.json`, claude.ai connectors | `.mcp.json` (shared, needs approval) · `~/.claude.json` → `projects` (local, just you) |
-| Codex | `~/.codex/config.toml` `[mcp_servers.*]` | `.codex/config.toml` |
-| Antigravity | `~/.gemini/config/mcp_config.json`, plugins | `.agents/plugins/*/mcp_config.json` |
-| OpenCode | `~/.config/opencode/opencode.json` `mcp` | `opencode.json` |
-| Cursor | `~/.cursor/mcp.json` | `.cursor/mcp.json` |
-
-- **What does the agent load here?** A project page and the 🔌 chip in a chat show the servers that apply in that folder. The closest scope wins (local > project > global), and servers that are off, not yet approved, or overridden are marked.
-- **What did it actually use?** Calls are read from Claude Code and Codex transcripts: count, tools, last used, and which sessions used them. Servers nobody calls just cost context.
-- **Is it connected?** ↻ / *Check connections* runs `claude mcp list` in that folder. Sessions started from Baton also record each server's status, and a failed or unauthenticated server is flagged while the reply streams.
-- Environment variables and header values are never shown in the browser, and token-looking arguments and URL parameters are masked.
-
-## Use it from your phone
-
-Baton listens on `127.0.0.1` only. **Get started → Phone** walks you through it:
-
-1. Install [Tailscale](https://tailscale.com/download) on your computer and sign in.
-2. Install Tailscale on your phone (scan the QR code) and sign in with the same account. Baton notices when your phone joins.
-3. Press **Share to my devices**, then scan the QR code with your phone camera. It's reachable only inside your own tailnet, never the public internet.
-4. **Add to Home Screen** and turn on notifications in Settings (iOS allows web push only for home-screen apps).
-
-There is no password: Baton trusts the Tailscale identity of the request. To allow only specific accounts, start Baton with `BATON_ALLOWED_LOGINS=me@example.com`. See [SECURITY.md](SECURITY.md).
-
-## Questions from the agent
-
-When an agent needs you to choose, you answer in the chat:
-
-- **Claude Code** — its question tool (AskUserQuestion) shows up as a card with the options, multi-select and your own text — one question per page, then a review page and Submit. The reply continues once you answer. If you're not looking, your phone gets a notification.
-- **Every CLI** — when a reply ends with a question and a short list of choices, the choices become buttons. Tapping one sends it as your next message. Several numbered questions with choices get the same one-per-page card, and your answers go back as one message.
-
-## Working folders
-
-Browse subfolders when starting a session or moving its working folder, and search projects by name or path. The default working folder is `workspace` under the **home of the account running Baton**, if that directory exists; otherwise it is the home folder. Baton does not create `workspace` automatically. Choose a different folder in **Settings → Working folders → Default working folder → Change** to use it for new sessions. On a phone, the browser still shows folders inside the home directory of the computer running Baton.
-
-## Look and feel
-
-Wide screens get a studio layout with a sidebar; phones keep the compact one. Pick a color palette (Default, Forest, Nord, Dracula, Tokyo Night, Monokai, Rosé Pine) and light / dark / system brightness in **Settings → Appearance & language**.
-
-## Updates
-
-Automatic release checks and new-version alerts (Home banner, inbox and push) are disabled and cannot be enabled. **Update now** switches to the new release, installs its packages and restarts Baton — sessions and settings stay. Installs from the install line only ever move between releases; a checkout of the `main` branch pulls `main` instead. If you installed from a zip, or the Baton folder has local changes, you get the steps instead. Installed with `git clone` before 0.8? Run `git fetch --tags && git checkout v0.8.0` in the Baton folder once, and from then on it follows releases. Check manually any time from **Settings → Baton version · Updates**.
-
-## How it works
-
-```
- your CLIs ──write──▶ session files (~/.claude, ~/.codex, …) ──read──▶ Baton ──▶ browser / phone
-                                                       ▲                 │
-                                                       └── claude -p --resume, codex exec resume, … ◀── you send a message
-```
-
-Baton is a small Node.js server with no build step. It never stores your conversations — it reads the CLIs' own files and runs the CLIs themselves. Its own state (pins, briefs, settings) lives in `data/` on your computer.
-
-## Troubleshooting
-
-| Problem | Fix |
+| Looking for… | Read |
 |---|---|
-| A CLI shows *Not installed* right after installing | Press ↻ on Get started. On Windows, restart Baton so it sees the new PATH. |
-| Works in my terminal, fails from Baton | Check **Settings → Company setup** — the variable it needs may only exist in a shell Baton didn't read. Add it there. |
-| Port is taken | Baton automatically selects and remembers a free port. If you explicitly set `BATON_PORT`, unset it to restore automatic selection. |
-| Windows: Codex / Antigravity misbehave | They work best inside WSL. See [Windows: install in WSL](#windows-install-in-wsl-step-by-step). |
-| A dev server won't open on the phone | Vite and friends block unknown hosts — set `server.allowedHosts`. |
+| Installation · WSL · ZIP · reopening | [Installation guide](docs/guide.md#quick-start) |
+| Your own models · company setup · MCP | [User guide](docs/guide.md#bring-your-own-model) |
+| Updates · troubleshooting | [Updates](docs/guide.md#updates) · [Troubleshooting](docs/guide.md#troubleshooting) |
+| Contributing · release history | [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) |
 
-## Contributing
-
-Issues and PRs are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
-
-## License
-
-[MIT](LICENSE) — free to use, modify and share; keep the copyright notice.
+[MIT licensed](LICENSE) · Free to use, modify and share. Keep the copyright notice.
