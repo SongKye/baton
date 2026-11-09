@@ -194,4 +194,3 @@ Baton is a small Node.js server with no build step. It reads the CLIs' own sessi
 | Port is taken | Baton automatically selects and remembers a free port. If you explicitly set `BATON_PORT`, unset it to restore automatic selection. |
 | Windows: Codex / Antigravity misbehave | They work best inside WSL. See [Windows: install in WSL](#windows-install-in-wsl-step-by-step). |
 | A dev server won't open on the phone | Vite and friends block unknown hosts — set `server.allowedHosts`. |
-

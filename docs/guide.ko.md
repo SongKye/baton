@@ -193,4 +193,3 @@ Baton은 빌드 과정이 없는 작은 Node.js 서버예요. CLI가 남긴 세�
 | 포트가 이미 사용 중 | 비어 있는 포트를 자동으로 선택하고 기억해요. `BATON_PORT`를 직접 지정했다면 해제해서 자동 선택을 사용하세요. |
 | Windows에서 Codex·Antigravity가 이상해요 | WSL에서 가장 잘 동작해요. [Windows: WSL에 설치하기](#windows-wsl에-설치하기-단계별)를 보세요. |
 | 폰에서 개발 서버가 안 열려요 | Vite 같은 개발 서버는 외부 주소를 막아요. `server.allowedHosts`를 설정하세요. |
-
