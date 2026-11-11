@@ -751,7 +751,7 @@ async function viewProject([id]) {
   head.insertAdjacentHTML('afterbegin', `<a class="icon-btn" href="#/projects" style="margin-left:-10px">${ICON.back}</a>`);
   v.innerHTML = '<div class="skeleton" style="height:160px;margin-top:10px"></div>';
   let selecting = false, noteEditing = false, reloadAfterNote = false;
-  const PAGE = 5;
+  const PAGE = 4;
   let page = 0; // survives reloads (status change, memo save…)
   const sel = new Set();
   G.cleanup = () => document.body.classList.remove('selecting');
@@ -864,7 +864,7 @@ async function viewProject([id]) {
     const bindChecks = () => $$('#plist [data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); c.onchange = () => { c.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); drawBar(); }; });
     bindChecks();
     drawBar();
-    // pages of 5; sessions picked while selecting stay picked across pages
+    // pages of 4; sessions picked while selecting stay picked across pages
     const bindPager = () => $$('#ppager [data-pg]', v).forEach((b) => (b.onclick = () => {
       page = Math.max(0, Math.min(pages - 1, page + Number(b.dataset.pg)));
       $('#plist').innerHTML = listHtml();

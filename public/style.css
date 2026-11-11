@@ -1030,7 +1030,7 @@ body.chat-mode .layout-return { display: none; }
 svg.i.inl { width: 1.15em; height: 1.15em; vertical-align: -0.2em; margin-right: 5px; stroke-width: 1.8; }
 .mcpchip svg.i.inl { margin-right: 3px; }
 .update-row { background: var(--accent-soft); border-radius: 12px; }
-/* project page: session list in pages of 5 */
+/* project page: session list in pages of 4 */
 .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 10px; }
 .pager:empty { display: none; }
 .pager .btn[disabled] { opacity: .4; }
