@@ -751,8 +751,8 @@ async function viewProject([id]) {
   head.insertAdjacentHTML('afterbegin', `<a class="icon-btn" href="#/projects" style="margin-left:-10px">${ICON.back}</a>`);
   v.innerHTML = '<div class="skeleton" style="height:160px;margin-top:10px"></div>';
   let selecting = false, noteEditing = false, reloadAfterNote = false;
-  const PAGE = 40;
-  let limit = PAGE; // grows with 「더 보기」 and survives reloads (status change, memo save…)
+  const PAGE = 5;
+  let page = 0; // survives reloads (status change, memo save…)
   const sel = new Set();
   G.cleanup = () => document.body.classList.remove('selecting');
   const load = async () => {
@@ -766,8 +766,10 @@ async function viewProject([id]) {
     sub.textContent = p.path;
     head.querySelector('.icon-btn[href="#/inbox"]')?.replaceWith(Object.assign(document.createElement('button'), { className: 'icon-btn', id: 'pmore', innerHTML: ICON.more }));
     const human = d.sessions.filter((s) => !s.automated);
-    const listHtml = () => d.sessions.slice(0, limit).map((s) => (selecting ? selRow(s, { showProject: false }) : sessionRow(s, { showProject: false }))).join('') || `<div class="empty">${t('세션이 없어요')}</div>`;
-    const moreLabel = () => `${t('더 보기')} · ${t('{n}개 남음', { n: Math.max(0, d.sessions.length - limit) })}`;
+    const pages = Math.max(1, Math.ceil(d.sessions.length / PAGE));
+    page = Math.min(page, pages - 1);
+    const listHtml = () => d.sessions.slice(page * PAGE, (page + 1) * PAGE).map((s) => (selecting ? selRow(s, { showProject: false }) : sessionRow(s, { showProject: false }))).join('') || `<div class="empty">${t('세션이 없어요')}</div>`;
+    const pagerHtml = () => (pages > 1 ? `<button class="btn sm ghost" data-pg="-1" ${page ? '' : 'disabled'}>‹ ${t('이전')}</button><span class="pg-n">${page + 1} / ${pages}</span><button class="btn sm ghost" data-pg="1" ${page < pages - 1 ? '' : 'disabled'}>${t('다음')} ›</button>` : '');
     const latest = human[0] || d.sessions[0];
     const b = d.brief;
     const briefHtml = b ? `
@@ -813,7 +815,7 @@ async function viewProject([id]) {
       <div class="section"><div class="section-h"><h2>${t('세션')}</h2><span class="count">${d.sessions.length}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span>
         ${d.sessions.length ? `<button class="more" id="pselbtn">${selecting ? t('완료') : t('선택')}</button>` : ''}</div>
         <div class="card list" id="plist">${listHtml()}</div>
-        <button class="btn block ghost" id="psmore" style="margin-top:10px;${d.sessions.length > limit ? '' : 'display:none'}">${moreLabel()}</button>
+        <div class="pager" id="ppager">${pagerHtml()}</div>
         <div style="display:flex;gap:8px;margin-top:10px">
           ${latest ? `<a class="btn block" href="#/s/${latest.tool}/${encodeURIComponent(latest.id)}">${t('최근 세션 열기')}</a>` : ''}
           <a class="btn block primary" href="#/new?cwd=${encodeURIComponent(p.path)}">${t('새 세션')}</a>
@@ -856,19 +858,20 @@ async function viewProject([id]) {
     $('#pnotecard').onclick = editNote;
     $('#punmute') && ($('#punmute').onclick = async () => { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { muted: false } }); toast(t('알림을 다시 켰어요')); load(); });
     // session list: ⋯ / long-press menu, or checkboxes for bulk trash
-    const shown = () => d.sessions.slice(0, limit);
+    const shown = () => d.sessions.slice(page * PAGE, (page + 1) * PAGE);
     const drawBar = () => { $('#pcount').textContent = sel.size; $('#ptrash').disabled = !sel.size; $('#phide').disabled = !sel.size; };
     if (!selecting) attachLongPress($('#plist'));
     const bindChecks = () => $$('#plist [data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); c.onchange = () => { c.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); drawBar(); }; });
     bindChecks();
     drawBar();
-    $('#psmore').onclick = () => {
-      limit += PAGE;
+    // pages of 5; sessions picked while selecting stay picked across pages
+    const bindPager = () => $$('#ppager [data-pg]', v).forEach((b) => (b.onclick = () => {
+      page = Math.max(0, Math.min(pages - 1, page + Number(b.dataset.pg)));
       $('#plist').innerHTML = listHtml();
-      $('#psmore').style.display = d.sessions.length > limit ? '' : 'none'; // .btn's display beats [hidden]
-      $('#psmore').textContent = moreLabel();
-      bindChecks();
-    };
+      $('#ppager').innerHTML = pagerHtml();
+      bindChecks(); bindPager();
+    }));
+    bindPager();
     $('#pselbtn') && ($('#pselbtn').onclick = () => { selecting = !selecting; sel.clear(); document.body.classList.toggle('selecting', selecting); load(); });
     $('#pall').onclick = () => {
       const ok = shown().filter((s) => !s.live);
