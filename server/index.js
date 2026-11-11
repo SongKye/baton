@@ -18,7 +18,7 @@ import { startWatcher } from './watch.js';
 import { listPorts, listPortsCached, invalidatePorts, shareToPhone, unshare, stopPort } from './ports.js';
 import { listServers, startServer, stopServer, removeServer, addServer, serverLogs, observe as observeServers, startServerWatch } from './servers.js';
 import { projectServices, reposReport, addLink, removeLink } from './links.js';
-import { skillsReport, skillDetail, pickableSkills } from './skills.js';
+import { skillsReport, skillDetail, pickableSkills, projectSkills } from './skills.js';
 import { targetsPreview, startDraft, draftStatus, cancelDraft, saveSkill, skillSource, copySkill, deleteSkill } from './skill-create.js';
 import { mentionFiles } from './mention.js';
 import { mcpReport, mcpDetail, mcpEffective, checkMcp, invalidateMcp, mcpForPicker } from './mcp.js';
@@ -331,6 +331,12 @@ route('POST', '/api/projects/:pid/meta', async (req, url, { pid }) => {
   if ('snoozeDays' in b) patch.snooze_until = b.snoozeDays ? Date.now() + Number(b.snoozeDays) * DAY : null;
   if (b.status === 'active') patch.snooze_until = patch.snooze_until ?? null;
   return store.patchProjectMeta(id, patch);
+});
+
+route('GET', '/api/projects/:pid/skills', async (req, url, { pid }) => {
+  const id = decodeURIComponent(pid);
+  if (!(await projectsList()).some((x) => x.id === id)) return [404, { error: tr('프로젝트를 찾을 수 없어요') }];
+  return projectSkills(id);
 });
 
 route('POST', '/api/projects/:pid/brief', async (req, url, { pid }) => {

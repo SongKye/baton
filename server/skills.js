@@ -229,9 +229,11 @@ export function skillReaders(skillDir, project) {
   });
 }
 
-export async function skillsReport() {
+/** `project` (optional): also count uses in sessions inside that folder -> hereUses / hereLast. */
+export async function skillsReport({ project = null } = {}) {
   if (Date.now() - cache.at > 60_000) cache = { at: Date.now(), list: await discover() };
-  const skills = cache.list.map((s) => ({ ...s, id: Buffer.from(s.path).toString('base64url'), uses: 0, lastUsed: null, sessions: [] }));
+  const inProject = (cwd) => Boolean(project && cwd && (cwd === project || cwd.startsWith(project + path.sep)));
+  const skills = cache.list.map((s) => ({ ...s, id: Buffer.from(s.path).toString('base64url'), uses: 0, lastUsed: null, sessions: [], hereUses: 0, hereLast: null }));
   const byPath = new Map(skills.map((s) => [s.path, s]));
   const unknown = new Map();
   for (const u of await skillUses()) {
@@ -248,11 +250,12 @@ export async function skillsReport() {
     if (!s && u.cmd) continue; // built-in slash commands (/model, /clear …) are not skills
     if (!s) {
       const k = `${u.tool}:${u.name}`;
-      s = unknown.get(k) || { tool: u.tool, name: u.name, description: '', path: u.path || null, scope: 'unlisted', scopeLabel: u.tool === 'claude' ? tr('Claude Code 내장') : tr('목록에 없는 스킬'), kind: 'skill', id: Buffer.from(`unlisted:${k}`).toString('base64url'), uses: 0, lastUsed: null, sessions: [] };
+      s = unknown.get(k) || { tool: u.tool, name: u.name, description: '', path: u.path || null, scope: 'unlisted', scopeLabel: u.tool === 'claude' ? tr('Claude Code 내장') : tr('목록에 없는 스킬'), kind: 'skill', id: Buffer.from(`unlisted:${k}`).toString('base64url'), uses: 0, lastUsed: null, sessions: [], hereUses: 0, hereLast: null };
       unknown.set(k, s);
     }
     s.uses++;
     if (!s.lastUsed || u.ts > s.lastUsed) s.lastUsed = u.ts;
+    if (inProject(u.cwd)) { s.hereUses++; if (!s.hereLast || u.ts > s.hereLast) s.hereLast = u.ts; }
     const ex = s.sessions.find((x) => x.key === u.session);
     if (ex) { ex.n++; ex.ts = Math.max(ex.ts, u.ts); } else s.sessions.push({ key: u.session, ts: u.ts, n: 1, cwd: u.cwd });
   }
@@ -261,6 +264,31 @@ export async function skillsReport() {
     sessions: s.sessions.sort((a, b) => b.ts - a.ts).slice(0, 12),
   }));
   return { skills: list, scannedAt: cache.at };
+}
+
+/**
+ * Skills as seen from one project: `local` = the project's own skill folders (one entry per name, with every
+ * CLI that reads it), `global` = what agents also load everywhere. Usage counts are for this project only.
+ */
+export async function projectSkills(root) {
+  const { skills } = await skillsReport({ project: root });
+  const local = new Map();
+  for (const s of skills.filter((x) => x.scope === 'project' && x.project === root)) {
+    const k = `${s.kind}:${s.name}`;
+    const readers = s.kind === 'command' ? ['claude'] : skillReaders(path.dirname(s.path), root);
+    const cur = local.get(k);
+    if (!cur) { local.set(k, { id: s.id, name: s.name, kind: s.kind, description: s.description, readers, paths: [s.pathShort], uses: s.hereUses, lastUsed: s.hereLast }); continue; }
+    // the same skill saved in two folders (e.g. .claude/skills + .agents/skills for different CLIs) -> one row
+    for (const r of readers) if (!cur.readers.includes(r)) cur.readers.push(r);
+    cur.paths.push(s.pathShort);
+    cur.uses += s.hereUses;
+    if (s.hereLast > (cur.lastUsed || 0)) cur.lastUsed = s.hereLast;
+  }
+  const global = skills
+    .filter((s) => ['global', 'synced', 'plugin', 'builtin'].includes(s.scope) || (s.scope === 'unlisted' && s.hereUses))
+    .map((s) => ({ id: s.id, name: s.alias || s.name, kind: s.kind, tool: s.tool, scope: s.scope, scopeLabel: s.scopeLabel, description: String(s.description || '').slice(0, 200), uses: s.hereUses, lastUsed: s.hereLast }));
+  const byUse = (a, b) => (b.lastUsed || 0) - (a.lastUsed || 0) || a.name.localeCompare(b.name);
+  return { local: [...local.values()].sort(byUse), global: global.sort((a, b) => b.uses - a.uses || byUse(a, b)) };
 }
 
 export async function skillDetail(id) {

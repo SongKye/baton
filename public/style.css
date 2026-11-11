@@ -635,6 +635,19 @@ a.setting { color: inherit; text-decoration: none; }
 .sk-done .kv { display: flex; flex-direction: column; gap: 1px; }
 .sk-done code { font-size: 12.5px; overflow-wrap: anywhere; }
 .section-h button.more { background: none; border: 0; padding: 0; cursor: pointer; }
+/* project page: project-only skills / MCP up front, global ones folded */
+.sk-empty { padding: 18px 16px; font-size: 13px; line-height: 1.5; }
+.sk-padd { margin-top: 8px; text-decoration: none; }
+.sk-padd svg.i { width: 16px; height: 16px; }
+.psk-m { flex-wrap: wrap; align-items: center; }
+.psk-m .tool-badge { font-size: 10.5px; }
+.fold { margin-top: 10px; }
+.fold > summary { list-style: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); cursor: pointer; font-size: 14px; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: '›'; display: inline-block; width: 10px; color: var(--text-3); font-weight: 700; transition: transform .15s; }
+.fold[open] > summary::before { transform: rotate(90deg); }
+.fold > summary .small { flex-basis: 100%; padding-left: 18px; }
+.fold-b { padding-top: 10px; }
 .card.list > .opt-row { width: 100%; text-align: left; padding: 12px 14px; display: flex; gap: 12px; align-items: center; background: none; border: 0; border-bottom: 1px solid var(--border); cursor: pointer; }
 .card.list > .opt-row:last-child { border-bottom: 0; }
 .card.list > .opt-row:active { background: var(--surface-2); }

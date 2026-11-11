@@ -819,9 +819,11 @@ async function viewProject([id]) {
           <a class="btn block primary" href="#/new?cwd=${encodeURIComponent(p.path)}">${t('새 세션')}</a>
         </div>
       </div>
+      <div class="section" id="pskills"></div>
       <div class="section" id="pmcp"></div>
       ${gitHtml}
       <div class="bulkbar" id="pbar" ${selecting ? '' : 'hidden'}><button class="btn sm ghost" id="pall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="pcount">0</b>' })}</span><button class="btn sm" id="phide">${t('숨기기')}</button><button class="btn primary danger-fill" id="ptrash">${t('휴지통으로')}</button></div>`;
+    loadProjectSkills($('#pskills'), p);
     loadProjectMcp($('#pmcp'), p.path);
     if ($('#psrv')) bindServers($('#psrv'), () => load());
     bindServices($('#psvc'), p.id, () => load());
@@ -2654,16 +2656,25 @@ const skToolsLabel = (tools) => tools.map((x) => TOOL[x]?.name || x).join(', ');
 
 async function viewSkillNew(_, params) {
   const editId = params.get('edit') || '';
-  const v = shell({ title: editId ? t('스킬 고치기') : t('새 스킬 만들기'), fab: false, right: `<a class="icon-btn" href="${editId ? `#/skill/${editId}` : '#/skills'}" aria-label="${t('목록')}">${ICON.back}</a>` });
+  // opened from a project page (?project=<root>): the skill goes into that project, and back leads there
+  const fromProject = params.get('project') || '';
+  const backHref = editId ? `#/skill/${editId}` : fromProject ? `#/p/${encodeURIComponent(fromProject)}` : '#/skills';
+  const v = shell({ title: editId ? t('스킬 고치기') : t('새 스킬 만들기'), fab: false, right: `<a class="icon-btn" href="${backHref}" aria-label="${t('뒤로')}">${ICON.back}</a>` });
   const installed = INSTALLED().filter((x) => TOOL[x]);
   let S = null;
   try { S = JSON.parse(sessionStorage.getItem(SK_KEY) || 'null'); } catch { S = null; }
   // a different skill (or new vs. edit) starts over; so does coming back after a save (the result screen is shown once)
   if (S && ((S.editId || '') !== editId || S.stage === 'done')) S = null;
   const fresh = () => ({
-    stage: 'ask', request: '', scope: params.get('project') ? 'project' : store.get('skscope', 'global'), project: params.get('project') || store.get('skproject', ''),
+    stage: 'ask', request: '', scope: fromProject ? 'project' : store.get('skscope', 'global'), project: fromProject ? shortPath(fromProject) : store.get('skproject', ''),
     tools: store.get('sktools', installed).filter((x) => installed.includes(x)), writer: store.get('skwriter', ''), job: null, draft: null, feedback: '', editId: '', error: '',
   });
+  // a draft meant for somewhere else is still open: nothing written yet -> just retarget it; otherwise ask (banner)
+  let otherDraft = false;
+  if (S && fromProject && !editId && !(S.scope === 'project' && S.project === shortPath(fromProject))) {
+    if (S.stage === 'ask' && !S.draft) { S.scope = 'project'; S.project = shortPath(fromProject); }
+    else otherDraft = true;
+  }
   if (!S) S = fresh();
   if (!S.tools.length) S.tools = installed.slice();
   const keep = () => sessionStorage.setItem(SK_KEY, JSON.stringify(S));
@@ -2681,7 +2692,6 @@ async function viewSkillNew(_, params) {
 
   let timer = null;
   G.cleanup = () => clearInterval(timer);
-  const projLabel = () => (S.project ? `${projectName(S.project)} · ${S.project}` : t('프로젝트를 골라주세요'));
 
   // ---- where it goes (asks the server, which owns the folder rules)
   let whereSerial = 0;
@@ -2736,7 +2746,9 @@ async function viewSkillNew(_, params) {
   const bindToolChecks = (root, onChange) => $$('[data-sktool]', root).forEach((c) => (c.onchange = () => {
     S.tools = $$('[data-sktool]', root).filter((x) => x.checked).map((x) => x.dataset.sktool); store.set('sktools', S.tools); keep(); onChange();
   }));
-  const errBanner = () => (S.error ? `<div class="section"><div class="banner warn"><span>${esc(S.error)}</span></div></div>` : '');
+  const errBanner = () => (otherDraft ? `<div class="section"><div class="banner warn"><span>${t('다른 곳({where})에 넣으려던 초안이 있어서 이어서 보여드려요', { where: esc(S.scope === 'project' ? S.project : t('전역')) })}</span><button class="btn sm" id="skfresh">${t('{name}용으로 새로 만들기', { name: esc(projectName(fromProject)) })}</button></div></div>` : '')
+    + (S.error ? `<div class="section"><div class="banner warn"><span>${esc(S.error)}</span></div></div>` : '');
+  const bindFresh = () => $('#skfresh', v) && ($('#skfresh', v).onclick = () => { otherDraft = false; S = fresh(); keep(); draw(); });
 
   function drawAsk() {
     v.innerHTML = `${errBanner()}
@@ -2788,6 +2800,7 @@ async function viewSkillNew(_, params) {
       S.stage = 'review'; keep(); draw();
     });
     drawWhere($('#skwhere', v));
+    bindFresh();
     if (!S.request) setTimeout(() => req.focus(), 50);
   }
 
@@ -2882,6 +2895,7 @@ async function viewSkillNew(_, params) {
     };
     $('#sksave', v).onclick = () => save();
     drawWhere($('#skwhere', v));
+    bindFresh();
   }
 
   async function save(overwrite = false) {
@@ -2920,7 +2934,7 @@ async function viewSkillNew(_, params) {
           <button class="opt-row" data-call><span class="oi">${glyph('edit')}</span><div class="l"><b>${esc(skillText(tool, r.name))}</b><span>${t('{tool}에서 이름으로 불러서 써보기', { tool: TOOL[tool].name })}</span></div><span>›</span></button>
         </div>
         <p class="small muted">${t('{tool} 새 채팅이 열려요 · {where}', { tool: TOOL[tool].name, where: esc(cwd || t('기본 작업 폴더')) })}</p></div>` : ''}
-      <div class="section pact sk-actions">${r.listed ? `<a class="btn" href="#/skill/${r.id}">${t('스킬 보기')}</a>` : ''}<button class="btn ghost" id="skagain">${t('다른 스킬 만들기')}</button><a class="btn ghost" href="#/skills">${t('스킬 목록')}</a></div>
+      <div class="section pact sk-actions">${r.listed ? `<a class="btn" href="#/skill/${r.id}">${t('스킬 보기')}</a>` : ''}<button class="btn ghost" id="skagain">${t('다른 스킬 만들기')}</button>${fromProject ? `<a class="btn ghost" href="#/p/${encodeURIComponent(fromProject)}">${t('프로젝트로 돌아가기')}</a>` : `<a class="btn ghost" href="#/skills">${t('스킬 목록')}</a>`}</div>
       ${!r.listed ? `<p class="small muted" style="text-align:center">${t('이 폴더는 아직 Baton 프로젝트가 아니라서 스킬 목록에는 안 보여요. 그 폴더에서 세션을 시작하면 나타나요.')}</p>` : ''}`;
     $$('[data-try]', v).forEach((b) => (b.onclick = () => { sessionStorage.removeItem(SK_KEY); skTry(tool, tries[+b.dataset.try], cwd); }));
     $('[data-call]', v) && ($('[data-call]', v).onclick = () => { sessionStorage.removeItem(SK_KEY); skTry(tool, `${skillText(tool, r.name)} `, cwd); });
@@ -3087,18 +3101,27 @@ async function mcpQuickSheet() {
 }
 
 /** "Which MCP servers does each CLI load here?" — used on the project page and in the chat sheet. */
-function mcpEffectiveHtml(d, { session = false, only } = {}) {
+/** `pick` keeps only some servers (e.g. project-only ones); with `hideEmpty`, CLIs left with none are skipped. */
+function mcpEffectiveHtml(d, { session = false, only, pick = null, hideEmpty = false } = {}) {
   const tools = Object.entries(d.tools).filter(([k]) => !only || k === only);
-  return tools.map(([tool, x]) => {
-    const on = x.servers.filter((s) => s.enabled === true);
-    const rest = x.servers.filter((s) => s.enabled !== true);
+  const html = tools.map(([tool, x]) => {
+    const list = pick ? x.servers.filter(pick) : x.servers;
+    if (hideEmpty && !list.length) return '';
+    const on = list.filter((s) => s.enabled === true);
+    const rest = list.filter((s) => s.enabled !== true);
     return `<div class="mcp-tool">
       <div class="mcp-th"><span class="tool-badge ${tool}">${TOOL[tool].name}</span><span class="small muted">${on.length ? t('{n}개 불러옴', { n: on.length }) : t('MCP 없음')}${x.checkedAt ? ` · ${t('확인 {when}', { when: ago(x.checkedAt) })}` : ''}</span>
         ${tool === 'claude' ? `<button class="btn sm ghost" data-mcpcheck="${tool}">${t('연결 확인')}</button>` : ''}</div>
-      ${x.servers.length ? `<div class="card list">${[...on, ...rest].map((s) => mcpRow(s, { session, here: true })).join('')}</div>` : ''}
+      ${list.length ? `<div class="card list">${[...on, ...rest].map((s) => mcpRow(s, { session, here: true })).join('')}</div>` : ''}
     </div>`;
-  }).join('') || `<div class="card empty"><b>${t('설치된 CLI가 없어요')}</b></div>`;
+  }).join('');
+  return html || (hideEmpty ? '' : `<div class="card empty"><b>${t('설치된 CLI가 없어요')}</b></div>`);
 }
+// A folded block whose open/closed state is remembered per key (the same for every project).
+const fold = (key, summary, inner) => `<details class="fold" data-fold="${key}" ${store.get(`fold:${key}`, false) ? 'open' : ''}><summary>${summary}</summary><div class="fold-b">${inner}</div></details>`;
+const bindFolds = (root) => $$('details[data-fold]', root).forEach((d) => (d.ontoggle = () => store.set(`fold:${d.dataset.fold}`, d.open)));
+// project-only config (Claude local scope, .mcp.json and the like) vs. servers every folder gets
+const mcpIsLocal = (s) => s.scope === 'local' || s.scope === 'project';
 function bindMcpCheck(el, cwd, reload) {
   $$('[data-mcpcheck]', el).forEach((b) => (b.onclick = async (e) => {
     e.preventDefault();
@@ -3113,13 +3136,45 @@ async function loadProjectMcp(box, cwd) {
   const draw = async () => {
     try {
       const d = await api(`/api/mcp/effective?cwd=${encodeURIComponent(cwd)}`);
-      const total = Object.values(d.tools).reduce((n, x) => n + x.servers.filter((s) => s.enabled === true).length, 0);
-      box.innerHTML = `<div class="section-h"><h2>${t('MCP 서버')}</h2><span class="count">${total}</span><a class="more" href="#/mcp">${t('전체 ›')}</a></div>
-        <p class="small muted" style="margin:-4px 2px 8px">${t('이 폴더에서 작업할 때 각 CLI가 불러오는 MCP예요')}</p>${mcpEffectiveHtml(d)}`;
+      const all = Object.values(d.tools).flatMap((x) => x.servers);
+      const localOn = all.filter((s) => mcpIsLocal(s) && s.enabled === true).length;
+      const glob = all.filter((s) => !mcpIsLocal(s));
+      const globOn = glob.filter((s) => s.enabled === true).length, globUsed = glob.filter((s) => s.uses).length;
+      const localHtml = mcpEffectiveHtml(d, { pick: mcpIsLocal, hideEmpty: true });
+      box.innerHTML = `<div class="section-h"><h2>${t('MCP 서버')}</h2><span class="count">${localOn}</span><a class="more" href="#/mcp">${t('전체 ›')}</a></div>
+        <p class="small muted" style="margin:-4px 2px 8px">${t('이 프로젝트에만 설정된 MCP예요. 전역 MCP는 아래를 펼쳐서 보세요')}</p>
+        ${localHtml || `<div class="card empty sk-empty"><b>${t('이 프로젝트 전용 MCP가 없어요')}</b>${t('프로젝트 폴더의 .mcp.json이나 claude mcp add -s local로 넣은 서버가 여기에 보여요')}</div>`}
+        ${glob.length ? fold('pmcp-global', `<b>${t('전역 MCP {n}개', { n: globOn })}</b>${globUsed ? `<span class="flag run">${t('이 프로젝트에서 호출 {n}개', { n: globUsed })}</span>` : ''}<span class="small muted">${t('모든 폴더에서 불러와요')}</span>`, mcpEffectiveHtml(d, { pick: (s) => !mcpIsLocal(s), hideEmpty: true })) : ''}`;
       bindMcpCheck(box, cwd, draw);
+      bindFolds(box);
     } catch { box.remove(); }
   };
   await draw();
+}
+// Project page: the project's own skills up front, the global ones folded away.
+function pskRow(s, global = false) {
+  const all = (global ? [s.tool] : s.readers).filter((k) => TOOL[k]);
+  const mine = all.filter((k) => INSTALLED().includes(k)); // CLIs not on this machine are just noise
+  const badges = (mine.length ? mine : all).map((k) => `<span class="tool-badge ${k}">${TOOL[k].name}</span>`).join('');
+  return `<a class="srow skrow" href="#/skill/${s.id}">
+    <div class="body"><div class="t"><span class="tt">${s.kind === 'command' ? '/' : ''}${esc(s.name)}</span>${s.uses ? `<span class="flag run">${t('{n}회', { n: s.uses })}</span>` : ''}</div>
+      ${s.description ? `<div class="p">${esc(s.description)}</div>` : ''}
+      <div class="m psk-m">${badges}${global ? `<span>${esc(s.scopeLabel)}</span>` : ''}<span>${s.lastUsed ? t('이 프로젝트에서 마지막 사용 {when}', { when: ago(s.lastUsed) }) : t('이 프로젝트에서 쓴 기록 없음')}</span></div></div></a>`;
+}
+async function loadProjectSkills(box, p) {
+  if (!box) return;
+  try {
+    const d = await api(`/api/projects/${encodeURIComponent(p.id)}/skills`);
+    const usedG = d.global.filter((s) => s.uses).length;
+    box.innerHTML = `<div class="section-h"><h2>${t('스킬')}</h2><span class="count">${d.local.length}</span><a class="more" href="#/skills">${t('전체 ›')}</a></div>
+      <p class="small muted" style="margin:-4px 2px 8px">${t('이 프로젝트 폴더에만 있는 스킬이에요. 에이전트는 이 폴더에서 작업할 때만 봐요')}</p>
+      ${d.local.length ? `<div class="card list">${d.local.map((s) => pskRow(s)).join('')}</div>`
+        : `<div class="card empty sk-empty"><b>${t('이 프로젝트 전용 스킬이 없어요')}</b>${t('배포·테스트·릴리스처럼 이 프로젝트에서 자주 하는 작업을 스킬로 만들어두면 에이전트가 매번 같은 방식으로 해요')}</div>`}
+      <a class="btn block ghost sk-padd" href="#/skills/new?project=${encodeURIComponent(p.id)}">${ICON.plus}${t('이 프로젝트용 스킬 만들기')}</a>
+      ${d.global.length ? fold('pskills-global', `<b>${t('전역 스킬 {n}개', { n: d.global.length })}</b>${usedG ? `<span class="flag run">${t('이 프로젝트에서 쓰인 것 {n}개', { n: usedG })}</span>` : ''}<span class="small muted">${t('모든 폴더에서 불러와요')}</span>`,
+        `<div class="card list">${d.global.map((s) => pskRow(s, true)).join('')}</div>`) : ''}`;
+    bindFolds(box);
+  } catch { box.remove(); }
 }
 async function mcpSessionSheet(session) {
   const cwd = session.cwd || session.project;
