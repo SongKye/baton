@@ -61,6 +61,8 @@ jobs:
         run: node scripts/mention-check.mjs
       - name: New skill (create / edit / copy / delete) checks
         run: node scripts/skill-create-check.mjs
+      - name: Add MCP (templates, per-project config, protocol test, install job) checks
+        run: node scripts/mcp-install-check.mjs
       - name: Independent installation and port checks
         run: node scripts/listener-check.mjs
       - name: Boot the server and hit every endpoint

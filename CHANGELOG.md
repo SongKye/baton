@@ -10,7 +10,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Your own skills can now be edited (by hand or with AI), copied to other CLIs and deleted from the skill page. Overwritten and deleted skills are backed up in `data/skill-backups` for 30 days.
 - **Skills on the project page**: each project now lists its own skills (one row per skill, with the CLIs that read it and how often it was used there), plus a **New skill for this project** button. Global skills are folded away underneath.
 
+- **Add an MCP server from what its developer gave you, tested before it's added**: Tools → MCP servers → **＋** (also from Get started and a project page). Paste the URL and token, an install command (`claude|codex|agy mcp add …`), a README excerpt or a config snippet for another client: snippets and commands are read directly, anything else by an AI CLI with token-looking values masked first. The review screen shows exactly what goes into each CLI, in that CLI's own format, checked by re-reading it. Well-known servers moved to **Pick a well-known MCP**. Baton then starts the server itself and checks `initialize` + `tools/list` (stdio, streamable HTTP and legacy SSE), writes it into each chosen CLI in that CLI's own format, and asks each CLI whether it sees it (`claude mcp get`, `codex mcp get`, `agy mcp list`, or the config file). A failed test writes nothing; the AI can read the (secret-free) log and propose a fix.
+- **Project-only MCP servers**: add a server for one project instead of globally — Claude Code local scope (or a shared `.mcp.json`), the project's `.codex/config.toml` (with an opt-in to mark the folder trusted, which Codex requires), an Antigravity workspace plugin, the project's `opencode.json` and `.cursor/mcp.json`. Warns when a token would go into a file git doesn't ignore.
+- MCP server page: **Test connection** for an existing server; **Add to other CLIs** keeps a project server in its project (or copies it globally); project servers of Codex, Antigravity, OpenCode and Cursor can be deleted too.
+
 ### Fixed
+- OpenCode configs in the newer `mcp.servers` layout are read correctly (and written in that layout); remote servers with header keys set `"oauth": false`. Cursor stdio entries include `"type": "stdio"`.
 - Antigravity skills in `~/.gemini/config/skills` and a project's `.agents/skills`, and OpenCode / Cursor skills in their own folders, now appear on the Skills page and in the @ picker.
 - Skill descriptions written as YAML block scalars (`description: >-`) no longer show a stray `>-`.
 

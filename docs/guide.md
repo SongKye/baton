@@ -43,7 +43,7 @@ The **Get started** screen walks you through:
    - *API key* — paste it; Baton recognizes Anthropic, OpenAI, OpenRouter and Groq keys and connects the right CLI
    - *Company account* — Bedrock, Vertex, Azure OpenAI or a company gateway
    - *Models on your computer* — Ollama, LM Studio, vLLM, LiteLLM, llama.cpp and Jan are found automatically
-3. **Add tools (MCP)** (optional) — one tap adds a server to all your CLIs
+3. **Add tools (MCP)** (optional) — pick one; Baton tests the connection and adds it to each CLI in its own format
 4. **Phone** (optional) — step by step with Tailscale, then scan a QR code
 5. **Start on login** (optional) — systemd / launchd / Windows Startup
 
@@ -121,12 +121,25 @@ Forms that take a server address load its model list (`/v1/models`) so you can p
 
 ## MCP servers
 
-### Add one in a tap
+### Add, test, done
 
-In **Get started → Add tools** or with **＋** on **Tools → MCP servers**, pick a server and the CLIs to add it to:
-Context7, Playwright, Chrome DevTools, GitHub, Filesystem, Memory, Sequential Thinking, Fetch, Notion, Linear, Sentry, Supabase, Figma — or your own command / URL.
-Baton writes each CLI's own global config (`claude mcp add-json -s user`, `~/.codex/config.toml`, `mcp_config.json`, `opencode.json`, `~/.cursor/mcp.json`) and keeps a `.baton-backup` of the previous file.
-On a server's page, **Add to other CLIs** copies it (keys included — they stay on your computer) and **Delete** removes it.
+Start from **＋** on **Tools → MCP servers**, **Get started → Add tools**, or **Add an MCP for this project** on a project page.
+
+1. **Paste what you were given** — whatever the MCP server's developer handed you: a server URL and token, an install command (`claude mcp add …`, `codex mcp add …`), part of a README, a config JSON for another tool (Claude, Cursor, VS Code, OpenCode) or Codex TOML. Config JSON / TOML and install commands are read directly, without AI; anything else is read by an AI CLI. Token-looking values are masked before the AI sees them and only filled into the form. Well-known servers (Context7, Playwright, GitHub, Notion …) are under **Pick a well-known MCP**.
+2. **Where** — **every folder (global)** or **only this project**, and which CLIs.
+3. **Check the values and each CLI's config** — tokens and keys stay on that screen until they're written into the config files. Below, each CLI's config is shown in that CLI's own format exactly as it will be written (file, and for Claude Code the command), and Baton re-reads it to check the format.
+4. **Add and test** — Baton runs the server itself (or calls its URL) and checks it connects and lists its tools; if it does, Baton writes it into each CLI in that CLI's own format and asks each CLI whether it sees it (`claude mcp get`, `codex mcp get`, `agy mcp list`, otherwise by reading the config file). A failed test writes nothing; **Ask the AI to fix it** sends it the log (secrets masked) and it proposes a corrected config.
+
+| CLI | Global | Only this project |
+|---|---|---|
+| Claude Code | `claude mcp add-json -s user` | `-s local` (just you, not in git) · or, if you choose to share with the team, `.mcp.json` (approved the first time you open it) |
+| Codex | `~/.codex/config.toml` | `<project>/.codex/config.toml` — Codex reads it only in **trusted folders** (Baton can mark the folder trusted if you tick it) |
+| Antigravity | `~/.gemini/config/mcp_config.json` | the `<project>/.agents/plugins/baton-mcp/` workspace plugin |
+| OpenCode | `~/.config/opencode/opencode.json` | `<project>/opencode.json` (in the newer `mcp.servers` layout when the file already uses it) |
+| Cursor | `~/.cursor/mcp.json` | `<project>/.cursor/mcp.json` |
+
+The previous file is kept as `.baton-backup`. You're warned when a token would land in a project file git doesn't ignore.
+On a server's page, **Test connection** checks an existing server the same way, **Add to other CLIs** copies it as is — into the same project or globally (keys included — they stay on your computer) — and **Delete** removes it.
 
 ### See what's loaded and used
 

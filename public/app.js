@@ -382,6 +382,67 @@ function drawRunPill() {
 
 setInterval(() => { if (document.visibilityState === 'visible') loadState(); }, 5000);
 
+/**
+ * Phone web views (iOS WebKit especially) sometimes stop painting after a big screen swap — chat → list —
+ * or when the keyboard closes late, leaving only the app's dark window background until a finger drag
+ * scrolls the page. Do that scroll ourselves: a 1px round trip over two frames, plus a one-frame
+ * compositing layer on #app, makes the compositor commit and paint the current screen again.
+ */
+let repaintQueued = false;
+function repaint() {
+  if (repaintQueued) return;
+  repaintQueued = true;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const se = document.scrollingElement || document.documentElement;
+    const y = se.scrollTop, room = se.scrollHeight - se.clientHeight;
+    const nudge = room > 0 ? (y > 0 ? y - 1 : 1) : null;
+    if (nudge != null) window.scrollTo(0, nudge);
+    app.style.willChange = 'opacity'; // opacity, not transform: transform would re-anchor the fixed FAB
+    requestAnimationFrame(() => {
+      if (nudge != null && Math.round(se.scrollTop) === nudge) window.scrollTo(0, y);
+      app.style.willChange = '';
+      repaintQueued = false;
+    });
+  }));
+}
+// The keyboard can finish closing after the chat is gone (its listeners are removed): repaint once it settles.
+(() => {
+  const vv = window.visualViewport;
+  let timer = null;
+  vv?.addEventListener('resize', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { if (window.innerHeight - vv.height <= 120) repaint(); }, 200); // keyboard down
+  });
+  window.addEventListener('pageshow', repaint);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') repaint(); });
+})();
+
+// ---------------------------------------------------------------- back keeps your place
+// Each history entry remembers where you were (page scroll + a few list states, e.g. which page of
+// sessions). Opening a chat and coming back lands where you left, not at the top of page 1.
+// New entries start empty, so links still open screens at the top.
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; // we restore after the async render
+function entryState() { const st = history.state; return st && typeof st === 'object' ? st : {}; }
+function remember(patch) { try { history.replaceState({ ...entryState(), ...patch }, ''); } catch { /* replaceState rate limit */ } }
+let scrollSaveTimer = null;
+const saveScroll = () => { clearTimeout(scrollSaveTimer); scrollSaveTimer = null; if (!document.body.classList.contains('chat-mode')) remember({ y: Math.round(window.scrollY) }); };
+window.addEventListener('scroll', () => { clearTimeout(scrollSaveTimer); scrollSaveTimer = setTimeout(saveScroll, 150); }, { passive: true });
+document.addEventListener('click', (e) => { if (e.target.closest?.('a[href^="#"]')) saveScroll(); }, true); // tap right after a fling
+/** Scroll back to `y` once the screen is tall enough (lists can still be growing); a touch cancels it. */
+function restoreScroll(y) {
+  let cancelled = false;
+  const stop = () => { cancelled = true; };
+  window.addEventListener('touchstart', stop, { once: true, passive: true });
+  const until = Date.now() + 1200, navCount = G.navCount;
+  const step = () => {
+    if (cancelled || navCount !== G.navCount) return;
+    window.scrollTo(0, y);
+    if (Math.abs(window.scrollY - y) > 2 && Date.now() < until) requestAnimationFrame(step);
+    else window.removeEventListener('touchstart', stop);
+  };
+  step();
+}
+
 // ---------------------------------------------------------------- router
 const routes = [
   [/^#?\/?$/, viewHome, 'home'],
@@ -401,6 +462,7 @@ const routes = [
   [/^#\/skills\/new$/, viewSkillNew, 'tools'],
   [/^#\/skill\/(.+)$/, viewSkill, 'tools'],
   [/^#\/mcp$/, viewMcps, 'tools'],
+  [/^#\/mcp\/new$/, viewMcpNew, 'tools'],
   [/^#\/mcp\/(.+)$/, viewMcp, 'tools'],
   [/^#\/cleanup$/, viewCleanup, 'tools'],
   [/^#\/trash$/, viewTrash, 'tools'],
@@ -413,6 +475,8 @@ async function render() {
   const [hash, qs] = raw.split('?');
   const params = new URLSearchParams(qs || '');
   if (G.cleanup) { try { G.cleanup(); } catch { /* ignore */ } G.cleanup = null; }
+  clearTimeout(scrollSaveTimer); scrollSaveTimer = null; // a pending save belongs to the screen we just left
+  G.restore = entryState(); // what this entry remembered (empty when it's a new screen)
   G.navCount = (G.navCount || 0) + 1;
   const navCount = G.navCount;
   for (const [re, fn, tab, sideTab] of routes) {
@@ -424,6 +488,7 @@ async function render() {
     window.scrollTo(0, 0);
     try { await fn(m.slice(1).map(decodeURIComponent), params); drawRunPill(); }
     catch (e) { console.error(e); if (navCount === G.navCount) app.innerHTML = `<div class="empty" style="padding-top:30vh"><b>${t('불러오지 못했어요')}</b>${esc(e.message)}<br><br><button class="btn" onclick="location.reload()">${t('다시 시도')}</button></div>`; }
+    if (navCount === G.navCount) { if (G.restore.y > 0) restoreScroll(G.restore.y); repaint(); }
     return;
   }
   location.hash = '#/';
@@ -752,7 +817,7 @@ async function viewProject([id]) {
   v.innerHTML = '<div class="skeleton" style="height:160px;margin-top:10px"></div>';
   let selecting = false, noteEditing = false, reloadAfterNote = false;
   const PAGE = 4;
-  let page = 0; // survives reloads (status change, memo save…)
+  let page = G.restore.ppage || 0; // survives reloads (status change, memo save…) and Back from a chat
   const sel = new Set();
   G.cleanup = () => document.body.classList.remove('selecting');
   const load = async () => {
@@ -807,7 +872,7 @@ async function viewProject([id]) {
       </div>
       <div class="section" id="briefbox">${d.briefPending ? `<div class="card brief"><div class="phase"><div class="spinner"></div>${t('정리하는 중이에요…')}</div></div>` : briefHtml}</div>
       ${p.muted ? `<div class="section"><div class="banner">🔕 ${t('이 프로젝트는 알림이 꺼져 있어요')} <button class="btn sm" id="punmute">${t('다시 켜기')}</button></div></div>` : ''}
-      <div class="section" id="pnote"><div class="section-h"><h2>${t('메모')}</h2></div>
+      <div class="section" id="pnote"><div class="section-h"><h2>${t('메모')}</h2><button class="more" id="pnotefold" hidden></button></div>
         ${p.note ? `<button class="card memo" id="pnotecard" title="${t('눌러서 고치기')}">${esc(p.note)}</button>`
           : `<button class="memo-empty" id="pnotecard">📝 ${t('메모 남기기')}<span>${t('다음에 돌아왔을 때 볼 메모')}</span></button>`}</div>
       ${srvHtml}
@@ -826,7 +891,7 @@ async function viewProject([id]) {
       ${gitHtml}
       <div class="bulkbar" id="pbar" ${selecting ? '' : 'hidden'}><button class="btn sm ghost" id="pall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="pcount">0</b>' })}</span><button class="btn sm" id="phide">${t('숨기기')}</button><button class="btn primary danger-fill" id="ptrash">${t('휴지통으로')}</button></div>`;
     loadProjectSkills($('#pskills'), p);
-    loadProjectMcp($('#pmcp'), p.path);
+    loadProjectMcp($('#pmcp'), p.path, p.id);
     if ($('#psrv')) bindServers($('#psrv'), () => load());
     bindServices($('#psvc'), p.id, () => load());
     // memo: tap it to edit right there
@@ -856,6 +921,18 @@ async function viewProject([id]) {
       };
     };
     $('#pnotecard').onclick = editNote;
+    // long memo: fold it to a few lines, with a toggle in the header (remembered per project)
+    const memo = $('.card.memo', v), fold = $('#pnotefold');
+    if (memo && memo.scrollHeight > 190) {
+      const key = `baton.noteOpen.${id}`;
+      const paint = () => {
+        const open = localStorage.getItem(key) === '1';
+        memo.classList.toggle('folded', !open);
+        fold.textContent = open ? t('접기') : t('펼치기');
+      };
+      fold.hidden = false; paint();
+      fold.onclick = () => { localStorage.setItem(key, localStorage.getItem(key) === '1' ? '0' : '1'); paint(); };
+    }
     $('#punmute') && ($('#punmute').onclick = async () => { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { muted: false } }); toast(t('알림을 다시 켰어요')); load(); });
     // session list: ⋯ / long-press menu, or checkboxes for bulk trash
     const shown = () => d.sessions.slice(page * PAGE, (page + 1) * PAGE);
@@ -867,6 +944,7 @@ async function viewProject([id]) {
     // pages of 4; sessions picked while selecting stay picked across pages
     const bindPager = () => $$('#ppager [data-pg]', v).forEach((b) => (b.onclick = () => {
       page = Math.max(0, Math.min(pages - 1, page + Number(b.dataset.pg)));
+      remember({ ppage: page });
       $('#plist').innerHTML = listHtml();
       $('#ppager').innerHTML = pagerHtml();
       bindChecks(); bindPager();
@@ -966,7 +1044,7 @@ async function viewSessions() {
       ? `<div class="small muted" style="margin:0 2px 8px">${t('{n}개', { n: total })}</div><div class="card list">${items.map((s) => (selecting ? selRow(s) : sessionRow(s))).join('')}</div>
          ${items.length < total ? `<button class="btn block ghost" id="smore" style="margin-top:10px">${t('더 보기')}</button>` : ''}`
       : `<div class="empty"><b>${q ? t('검색 결과가 없어요') : f.hidden ? t('숨긴 세션이 없어요') : t('세션이 없어요')}</b></div>`;
-    const more = $('#smore'); if (more) more.onclick = async () => { offset += 50; await fetchPage(); draw(); };
+    const more = $('#smore'); if (more) more.onclick = async () => { offset += 50; await fetchPage(); remember({ soff: offset }); draw(); };
     if (!selecting) attachLongPress($('#slist'));
     $$('[data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); c.onchange = () => { c.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); drawBar(); }; });
     drawBar();
@@ -983,7 +1061,14 @@ async function viewSessions() {
     sel.clear(); await reload();
   };
   G.cleanup = () => document.body.classList.remove('selecting');
-  const reload = async () => { store.set('sfilter', f); drawChips(); offset = 0; await fetchPage(); drawChips(); draw(); };
+  let reach = G.restore.soff || 0; // Back from a chat: load as far as you had scrolled with 더 보기
+  const reload = async () => {
+    store.set('sfilter', f); drawChips(); offset = 0; await fetchPage();
+    while (offset < reach && items.length < total) { offset += 50; await fetchPage(); }
+    if (!reach) remember({ soff: 0 });
+    reach = 0;
+    drawChips(); draw();
+  };
   let searchTimer;
   $('#sq').oninput = (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { q = e.target.value.trim(); sessionStorage.setItem('sq', q); reload(); }, 220); };
   await reload();
@@ -1271,8 +1356,19 @@ function setupViewport() {
   apply();
   vv?.addEventListener('resize', apply);
   vv?.addEventListener('scroll', apply);
-  return () => { vv?.removeEventListener('resize', apply); vv?.removeEventListener('scroll', apply); document.documentElement.style.setProperty('--vvh', '100dvh'); };
+  return () => {
+    vv?.removeEventListener('resize', apply); vv?.removeEventListener('scroll', apply);
+    // Leaving with the keyboard up or the message list still coasting: end both before the screen is
+    // swapped. Otherwise the phone finishes them against a layout that no longer exists and can leave
+    // the next screen unpainted (black) until the next touch-scroll.
+    const f = document.activeElement;
+    if (f && f !== document.body && f.matches?.('input, textarea, select, [contenteditable]')) f.blur();
+    const sc = $('#scroll'); if (sc) sc.style.overflowY = 'hidden'; // stops momentum scrolling now
+    document.body.classList.remove('kb-open');
+    document.documentElement.style.setProperty('--vvh', '100dvh');
+  };
 }
+
 
 /** Live run renderer. Appends a streaming block to `container`. */
 function liveRun(container, runId, { onSession, onDone } = {}) {
@@ -2982,7 +3078,7 @@ function mcpRow(s, { session = false, here = false } = {}) {
 async function viewMcps() {
   const v = shell({ title: t('MCP 서버'), fab: false, right: `<button class="icon-btn" id="madd" aria-label="${t('추가')}">${ICON.plus}</button><button class="icon-btn" id="mcheck" aria-label="${t('연결 확인')}">${ICON.refresh}</button>` });
   v.innerHTML = '<div class="section"><div class="skeleton" style="height:300px"></div></div>';
-  $('#madd').onclick = () => mcpQuickSheet();
+  $('#madd').onclick = () => { location.hash = '#/mcp/new'; };
   let d = await api('/api/mcp');
   const f = store.get('mcpfilter', { tool: '', used: false });
   let q = sessionStorage.getItem('mcpq') || '';
@@ -3004,7 +3100,7 @@ async function viewMcps() {
         const [tool, label] = k.split('|');
         return `<div class="section"><div class="section-h"><h2><span class="tool-badge ${tool}">${TOOL[tool].name}</span> ${esc(label)}</h2><span class="count">${items.length}</span></div>
           <div class="card list">${items.map((s) => mcpRow(s)).join('')}</div></div>`;
-      }).join('') : `<div class="empty"><b>${d.servers.length ? t('조건에 맞는 MCP 서버가 없어요') : t('설정된 MCP 서버가 없어요')}</b>${d.servers.length ? '' : t('CLI에 MCP를 추가하면 여기에 나타나요 (예: claude mcp add …)')}</div>`)
+      }).join('') : `<div class="empty"><b>${d.servers.length ? t('조건에 맞는 MCP 서버가 없어요') : t('설정된 MCP 서버가 없어요')}</b>${d.servers.length ? '' : t('오른쪽 위 + 버튼으로 추가하거나, CLI에서 추가한 MCP도 여기에 나타나요')}</div>`)
       + `<p class="small muted" style="text-align:center;line-height:1.6;margin-top:16px">${t('호출 기록은 Claude Code와 Codex 세션에서 읽어요')}<br>${t('↻ 버튼은 claude mcp list로 실제 연결 상태와 claude.ai 커넥터를 확인해요')}</p>`;
   };
   v.innerHTML = `${searchBox('mcpq', q, t('서버 이름·도구·명령·위치 검색'))}<div class="chips" id="mcpf"></div><div id="mcplist"></div>`;
@@ -3066,22 +3162,46 @@ async function viewMcp([id]) {
       <div class="card list">${s.tools.map((x) => `<div class="srow"><div class="body"><div class="t"><span class="tt mono">${esc(x.name)}</span><span class="flag run">${t('{n}회', { n: x.n })}</span></div></div></div>`).join('')}</div></div>` : ''}
     <div class="section"><div class="section-h"><h2>${t('쓴 세션')}</h2><span class="count">${s.sessions.length}</span></div>${sessions}</div>
     ${['user', 'local', 'project'].includes(s.scope) && s.file ? `<div class="section"><div class="pact">
+      <button class="btn sm" id="mtest">${t('연결 테스트')}</button>
       <button class="btn sm" id="mcopy">${t('다른 CLI에도 추가')}</button>
-      ${s.scope === 'user' || s.tool === 'claude' ? `<button class="btn sm ghost danger" id="mrm">${t('삭제')}</button>` : ''}</div></div>` : ''}`;
+      ${s.tool === 'claude' || /\.(json|toml)$/.test(s.file) ? `<button class="btn sm ghost danger" id="mrm">${t('삭제')}</button>` : ''}</div>
+      <div id="mtestout"></div></div>` : ''}`;
+  $('#mtest', v) && ($('#mtest', v).onclick = async () => {
+    const b = $('#mtest', v), out = $('#mtestout', v);
+    b.disabled = true; b.innerHTML = `<span class="spinner sm"></span>${t('테스트 중…')}`;
+    out.innerHTML = s.command && /^(npx|uvx|docker)\b/.test(s.command) ? `<p class="small muted">${t('처음 실행하면 패키지를 내려받느라 1분쯤 걸릴 수 있어요.')}</p>` : '';
+    try {
+      const r = await api('/api/mcp/test', { body: { id: s.id } });
+      out.innerHTML = `<div class="card sk-notes"><b>${r.status === 'ok' ? `✅ ${t('연결됐어요 · 도구 {n}개', { n: r.tools.length })}` : r.status === 'auth' ? `🔑 ${t('서버는 응답했어요 · 처음 쓸 때 로그인이 필요해요')}` : `❌ ${esc(r.error || t('연결 실패'))}`}</b>
+        ${r.hint ? `<p class="small">${esc(r.hint)}</p>` : ''}
+        ${r.tools?.length ? `<div class="mn-tools">${r.tools.slice(0, 40).map((n) => `<code>${esc(n)}</code>`).join('')}</div>` : ''}
+        ${r.log && r.status !== 'ok' ? `<details class="jdetails"><summary>${t('자세한 로그')}</summary><pre class="jlog">${esc(r.log)}</pre></details>` : ''}</div>`;
+    } catch (e) { out.innerHTML = ''; toast(e.message, true); }
+    b.disabled = false; b.textContent = t('연결 테스트');
+  });
   $('#mcopy', v) && ($('#mcopy', v).onclick = async () => {
-    const targets = INSTALLED().filter((k) => k !== s.tool || s.scope !== 'user');
+    const inProject = ['local', 'project'].includes(s.scope) && s.project;
+    let scope = inProject ? 'project' : 'global';
     const tools = await sheet({
       title: t('{name}을(를) 다른 CLI에도 추가', { name: s.name }),
-      body: `<div class="pwform"><p class="small muted">${t('설정(키·토큰 포함)을 그대로 복사해서 각 CLI의 전역 설정에 넣어요.')}</p><div class="chips">${targets.map((k) => `<label class="chip check"><input type="checkbox" data-tool="${k}" ${k !== s.tool ? 'checked' : ''}>${TOOL[k].name}</label>`).join('')}</div></div>`,
+      body: `<div class="pwform"><p class="small muted">${t('설정(키·토큰 포함)을 그대로 복사해서 각 CLI 방식에 맞게 넣어요.')}</p>
+        ${inProject ? `<div class="seg mn-seg"><button data-sc="project" class="on">${t('이 프로젝트에서만')}</button><button data-sc="global">${t('모든 폴더 (전역)')}</button></div>` : ''}
+        <div class="chips" id="mcopytools"></div></div>`,
       footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('추가')}</button>`,
       onMount: (el, close) => {
+        const drawTools = () => {
+          const same = (scope === 'global') === (s.scope === 'user');
+          $('#mcopytools', el).innerHTML = INSTALLED().filter((k) => !(k === s.tool && same)).map((k) => `<label class="chip check"><input type="checkbox" data-tool="${k}" ${k !== s.tool ? 'checked' : ''}>${TOOL[k].name}</label>`).join('');
+        };
+        $$('[data-sc]', el).forEach((b) => (b.onclick = () => { scope = b.dataset.sc; $$('[data-sc]', el).forEach((x) => x.classList.toggle('on', x === b)); drawTools(); }));
+        drawTools();
         $('[data-x]', el).onclick = () => close(undefined);
         $('[data-ok]', el).onclick = () => close($$('[data-tool]', el).filter((c) => c.checked).map((c) => c.dataset.tool));
       },
     });
     if (!tools?.length) return;
     try {
-      const r = await api('/api/mcp/copy', { body: { id: s.id, tools } });
+      const r = await api('/api/mcp/copy', { body: { id: s.id, tools, scope } });
       const bad = r.results.filter((x) => !x.ok);
       if (bad.length) toast(bad.map((x) => `${TOOL[x.tool].name}: ${x.error}`).join(' · '), true);
       else toast(t('✅ {name} 추가했어요 · {list}', { name: r.name, list: r.results.map((x) => TOOL[x.tool].name).join(', ') }));
@@ -3094,13 +3214,442 @@ async function viewMcp([id]) {
   });
 }
 
-/** Pick a preset (or custom) and add it. */
-async function mcpQuickSheet() {
-  const [{ presets }, rep] = await Promise.all([api('/api/mcp/presets'), api('/api/mcp').catch(() => ({ servers: [] }))]);
-  const where = (id) => [...new Set(rep.servers.filter((x) => x.name === id && x.scope === 'user').map((x) => x.tool))];
-  const id = await pick(t('어떤 MCP를 추가할까요?'), [...presets.map((p) => ({ value: p.id, icon: glyph(p.icon), label: `${p.name}${where(p.id).length ? ' ✓' : ''}`, desc: p.desc })), { value: '__custom', icon: glyph('edit'), label: t('직접 추가'), desc: t('실행 명령이나 URL을 알고 있을 때') }]);
-  if (!id) return;
-  await mcpAddSheet(id === '__custom' ? null : presets.find((p) => p.id === id), id === '__custom' ? [] : where(id), () => render());
+// ---------------------------------------------------------------- NEW MCP SERVER
+// Say what you want (or pick a preset / type it yourself) -> an AI CLI works out the config -> fill in your keys
+// -> Baton tests the server, writes it into each chosen CLI (globally or for one project) and asks each CLI whether
+// it now sees it. A failed test goes back to the AI with the (secret-free) output. The flow lives in sessionStorage;
+// secret values only in memory (MCP_SECRETS), never stored.
+const MCP_KEY = 'mcpnew';
+const MCP_SECRETS = {};
+const MCP_EXAMPLES = () => [
+  [t('URL + 토큰'), `${t('서버 주소:')} https://mcp.example.com/mcp\n${t('토큰: (받은 토큰을 여기에 붙여넣기)')}`],
+  [t('설정 JSON'), '{\n  "mcpServers": {\n    "my-server": {\n      "command": "npx",\n      "args": ["-y", "@example/mcp-server"],\n      "env": { "EXAMPLE_API_KEY": "..." }\n    }\n  }\n}'],
+  [t('설치 명령'), 'claude mcp add --transport http my-server https://mcp.example.com/mcp --header "Authorization: Bearer ..."'],
+];
+const linkify = (s) => esc(s).replace(/https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)]/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+const mcpLauncher = (target) => /^(npx|uvx|docker|bunx|pnpm)\b/.test(String(target || '').trim());
+
+async function viewMcpNew(_, params) {
+  const fromProject = params.get('project') || '';
+  const fromSetup = params.get('from') === 'setup';
+  const origin = ['project', 'preset', 'manual'].map((k) => params.get(k) || '').join('|');
+  const backHref = fromProject ? `#/p/${encodeURIComponent(fromProject)}` : fromSetup ? '#/setup' : '#/mcp';
+  const v = shell({ title: t('MCP 추가'), fab: false, right: `<a class="icon-btn" href="${backHref}" aria-label="${t('뒤로')}">${ICON.back}</a>` });
+  const installed = INSTALLED().filter((x) => TOOL[x]);
+  let S = null;
+  try { S = JSON.parse(sessionStorage.getItem(MCP_KEY) || 'null'); } catch { S = null; }
+  // an entry point with a purpose (a preset, a project, "type it yourself") starts over; so does coming back after a success
+  if (S && ((origin !== '||' && S.origin !== origin) || (S.stage === 'result' && S.result?.status === 'done' && mcpOutcome(S.result) === 'ok'))) S = null;
+  const fresh = () => ({
+    origin, stage: 'ask', request: '', scope: fromProject ? 'project' : store.get('mcpscope', 'global'), project: fromProject ? shortPath(fromProject) : store.get('mcpproject', ''),
+    share: false, tools: store.get('mcptools', installed).filter((x) => installed.includes(x)), writer: store.get('mcpwriter', ''),
+    draft: null, values: {}, trustCodex: false, job: null, result: null, feedback: '', error: '',
+  });
+  if (S && (!Array.isArray(S.tools) || (S.draft && !S.draft.form))) S = null;
+  if (!S) S = fresh();
+  if (!S.tools.length) S.tools = installed.slice();
+  const keep = () => sessionStorage.setItem(MCP_KEY, JSON.stringify(S));
+  let projects = null;
+  const loadProjects = async () => { if (!projects) { try { projects = (await api('/api/projects')).items.filter((p) => p.id && shortPath(p.id) !== '~'); } catch { projects = []; } } return projects; };
+  if (S.scope === 'project' && !S.project) { const ps = await loadProjects(); S.project = ps[0] ? shortPath(ps[0].id) : ''; }
+  let presetList = null;
+  const loadPresets = async () => {
+    if (!presetList) {
+      presetList = (await api('/api/mcp/presets')).presets;
+      if (presetList.some((p) => !p.form)) { presetList = null; throw new Error(t('Baton 서버가 이 화면보다 예전 버전이에요. Baton을 다시 시작한 뒤 새로고침해주세요')); }
+    }
+    return presetList;
+  };
+  const fromPreset = (p) => ({ form: p.form, summary: p.desc, docs: p.docs, notes: p.missing ? [t('이 서버는 {x}가 필요해요. 먼저 설치해주세요.', { x: p.missing })] : [], assumptions: [], tryPrompts: [], source: 'preset', presetId: p.id });
+  const blank = () => ({ form: { name: '', transport: 'stdio', target: '', pairs: '', inputs: [], oauth: false }, source: 'manual', notes: [], assumptions: [], tryPrompts: [] });
+  if (!S.draft && params.get('preset')) {
+    const p = (await loadPresets()).find((x) => x.id === params.get('preset'));
+    if (p) { S.draft = fromPreset(p); S.stage = 'review'; }
+  }
+  if (!S.draft && params.get('manual')) { S.draft = blank(); S.stage = 'review'; }
+  keep();
+
+  let timer = null;
+  G.cleanup = () => { clearInterval(timer); clearTimeout(prevTimer); };
+  const ctx = () => ({ tools: S.tools, scope: S.scope, project: S.project, share: S.share && S.scope === 'project' && S.tools.includes('claude') });
+
+  const pickProject = async () => {
+    const ps = await loadProjects();
+    const opts = [...ps.slice(0, 30).map((p) => ({ value: shortPath(p.id), label: p.name || projectName(p.id), desc: shortPath(p.id), icon: glyph('folder') })), { value: '__other', label: t('다른 폴더 고르기…'), icon: glyph('search') }];
+    let val = await pick(t('어느 프로젝트에서 쓸까요?'), opts, S.project);
+    if (val === '__other') val = await folderPicker(S.project || G.state?.defaultCwd || '~', { allowNew: false });
+    if (!val) return;
+    S.project = shortPath(val); store.set('mcpproject', S.project); keep(); draw();
+  };
+
+  // ---- background jobs (AI draft, install + test), polled
+  const startJob = async (path, body, kind) => {
+    S.error = '';
+    try {
+      const j = await api(path, { body });
+      S.job = { id: j.id, kind, tool: j.tool || null, startedAt: j.startedAt, back: S.stage === 'result' ? 'review' : S.stage, fixing: Boolean(body.failure) };
+      if (kind === 'install') S.result = j;
+      if (kind === 'draft' && j.status !== 'running') { settle(j); return; } // a pasted snippet is read at once
+      S.stage = kind === 'draft' ? 'writing' : 'installing'; keep(); draw();
+    } catch (e) { toast(e.message, true); }
+  };
+  const poll = async () => {
+    if (!S.job) return;
+    let j;
+    try { j = await api(`/api/mcp/jobs/${S.job.id}`); }
+    catch (e) { if (e.status === 404) { S.error = t('작업이 사라졌어요 (Baton이 다시 시작됐어요). 다시 시도해주세요'); S.stage = S.job.back || 'ask'; S.job = null; keep(); draw(); } return; }
+    if (S.stage === 'installing') { S.result = j; keep(); drawSteps(); }
+    if (j.status === 'running') return;
+    settle(j);
+  };
+  const settle = (j) => {
+    clearInterval(timer);
+    if (S.job.kind === 'draft') {
+      if (j.status === 'done') {
+        const prev = S.draft?.form;
+        const { prefill = {}, ...draft } = j.draft;
+        if (S.job.back === 'ask') { S.values = {}; for (const k of Object.keys(MCP_SECRETS)) delete MCP_SECRETS[k]; } // a new paste starts with fresh answers
+        S.draft = { ...draft, source: draft.pasted ? 'pasted' : 'ai', fixed: S.job.fixing };
+        for (const i of S.draft.form.inputs) if (prefill[i.key]) { if (i.secret) MCP_SECRETS[i.key] = prefill[i.key]; else S.values[i.key] = prefill[i.key]; }
+        // keep answers the user already typed for inputs that kept their key
+        if (prev) for (const i of prev.inputs || []) if (!S.draft.form.inputs.some((x) => x.key === i.key)) { delete S.values[i.key]; delete MCP_SECRETS[i.key]; }
+        S.feedback = ''; S.stage = 'review';
+      } else { S.error = j.error || t('MCP 설정을 만들지 못했어요'); S.stage = S.job.back || 'ask'; }
+    } else if (j.status === 'error') { S.error = j.error; S.stage = 'review'; }
+    else S.stage = 'result';
+    S.job = null; keep(); draw();
+  };
+  const tick = (el) => { const s = Math.floor((Date.now() - S.job.startedAt) / 1000); if (el) el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+  const runPoll = () => { clearInterval(timer); let n = 0; timer = setInterval(() => { tick($('#mntime')); if (++n % 2 === 0) poll(); }, 1000); };
+
+  const values = () => {
+    const out = {};
+    for (const i of S.draft?.form.inputs || []) out[i.key] = i.secret ? (MCP_SECRETS[i.key] || '') : (S.values[i.key] ?? '');
+    return out;
+  };
+  const missingInputs = () => (S.draft?.form.inputs || []).filter((i) => i.required && !String(values()[i.key] || i.default || '').trim());
+  const hasSecrets = () => (S.draft?.form.inputs || []).some((i) => i.secret && MCP_SECRETS[i.key]) || /(token|secret|password|key|authorization)\s*[=:]\s*(?!\{\{)\S/i.test(S.draft?.form.pairs || '');
+  const install = (force = false) => {
+    const miss = missingInputs();
+    if (miss.length && S.stage !== 'review') { S.stage = 'review'; keep(); draw(); }
+    if (miss.length) { toast(t('{name}을(를) 입력해주세요', { name: miss[0].label }), true); $(`[data-in="${miss[0].key}"]`, v)?.focus(); return; }
+    if (!S.tools.length) { toast(t('추가할 CLI를 하나 이상 골라주세요'), true); return; }
+    startJob('/api/mcp/install', { ...ctx(), form: S.draft.form, values: values(), trustCodex: S.trustCodex, force }, 'install');
+  };
+  const askFix = (failure) => {
+    if (!failure && !S.feedback?.trim()) { toast(t('무엇을 바꿀지 적어주세요'), true); $('#mnfb', v)?.focus(); return; }
+    startJob('/api/mcp/drafts', { ...ctx(), request: S.request, writer: S.writer, previous: S.draft.form, feedback: S.feedback || '', failure: failure || '' }, 'draft');
+  };
+
+  const toolChecks = () => `<div class="chips wrap">${installed.map((k) => `<label class="chip check"><input type="checkbox" data-mntool="${k}" ${S.tools.includes(k) ? 'checked' : ''}>${TOOL[k].name}</label>`).join('')}</div>`;
+  const bindToolChecks = (root, onChange) => $$('[data-mntool]', root).forEach((c) => (c.onchange = () => {
+    S.tools = $$('[data-mntool]', root).filter((x) => x.checked).map((x) => x.dataset.mntool); store.set('mcptools', S.tools); keep(); onChange();
+  }));
+  const errBanner = () => (S.error ? `<div class="section"><div class="banner warn"><span>${esc(S.error)}</span></div></div>` : '');
+  const whereHtml = () => `
+    <div class="choice-grid">
+      <button class="choice ${S.scope === 'global' ? 'on' : ''}" data-scope="global"><span class="ci">${glyph('globe')}</span><b>${t('모든 폴더 (전역)')}</b><span>${t('어느 프로젝트에서 작업하든 에이전트가 쓸 수 있어요')}</span></button>
+      <button class="choice ${S.scope === 'project' ? 'on' : ''}" data-scope="project"><span class="ci">${glyph('folder')}</span><b>${t('이 프로젝트에서만')}</b><span>${t('그 프로젝트 폴더에서 작업할 때만 불러와요')}</span></button>
+    </div>
+    ${S.scope === 'project' ? `<div class="card list"><button class="opt-row" id="mnproj"><span class="oi">${glyph('folder')}</span><div class="l"><b>${esc(S.project ? projectName(S.project) : t('프로젝트 고르기'))}</b><span>${esc(S.project || t('MCP를 넣을 프로젝트 폴더'))}</span></div><span>›</span></button></div>
+      ${S.tools.includes('claude') ? `<label class="chip check mn-share"><input type="checkbox" id="mnshare" ${S.share ? 'checked' : ''}>${t('Claude Code: 팀과 공유 (.mcp.json으로 git에 올리기)')}</label>` : ''}` : ''}`;
+  const bindWhere = (after) => {
+    $$('[data-scope]', v).forEach((b) => (b.onclick = async () => {
+      S.scope = b.dataset.scope; store.set('mcpscope', S.scope);
+      if (S.scope === 'project' && !S.project) { const ps = await loadProjects(); S.project = ps[0] ? shortPath(ps[0].id) : ''; }
+      keep(); after();
+    }));
+    $('#mnproj', v) && ($('#mnproj', v).onclick = pickProject);
+    $('#mnshare', v) && ($('#mnshare', v).onchange = (e) => { S.share = e.target.checked; keep(); drawPlan(); drawPreview(); });
+  };
+
+  // ---- what will change, per CLI (the server owns the file rules)
+  let planSerial = 0;
+  async function drawPlan() {
+    const box = $('#mnplan', v);
+    if (!box) return;
+    const id = ++planSerial;
+    if (!S.tools.length) { box.innerHTML = `<span class="warn-text small">${t('추가할 CLI를 하나 이상 골라주세요')}</span>`; return; }
+    if (S.scope === 'project' && !S.project) { box.innerHTML = `<span class="warn-text small">${t('프로젝트 폴더를 골라주세요')}</span>`; return; }
+    try {
+      const c = ctx();
+      const r = await api(`/api/mcp/targets?${new URLSearchParams({ tools: c.tools.join(','), scope: c.scope, project: c.project, share: c.share ? '1' : '', name: S.draft?.form.name || '' })}`);
+      if (id !== planSerial) return;
+      const secret = hasSecrets();
+      box.innerHTML = r.targets.map((x) => `<div class="mn-target">
+          <div class="t"><span class="tool-badge ${x.tool}">${TOOL[x.tool].name}</span><code>${esc(x.file)}</code>${x.replaces ? `<span class="flag warn">${t('기존 설정을 바꿔요')}</span>` : ''}</div>
+          ${x.error ? `<span class="small warn-text">${esc(x.error)}</span>` : x.note ? `<span class="small muted">${esc(x.note)}</span>` : ''}
+          ${x.tool === 'codex' && x.trusted === false ? `<label class="chip check"><input type="checkbox" id="mntrust" ${S.trustCodex ? 'checked' : ''}>${t('Codex에서 이 폴더를 신뢰한다고 표시하기 (Codex가 이 폴더의 설정·훅을 따르게 돼요)')}</label>` : ''}
+          ${secret && x.git && !x.git.ignored ? `<span class="small warn-text">${t('이 파일은 git이 무시하지 않아요. 커밋하면 키·토큰이 같이 올라가요')}</span>` : ''}
+        </div>`).join('');
+      $('#mntrust', box) && ($('#mntrust', box).onchange = (e) => { S.trustCodex = e.target.checked; keep(); });
+    } catch (e) { if (id === planSerial) box.innerHTML = `<span class="warn-text small">${esc(e.message)}</span>`; }
+  }
+
+  function drawAsk() {
+    v.innerHTML = `${errBanner()}
+      <div class="section sknew">
+        <p class="sk-desc" style="margin-top:4px">${t('등록하고 싶은 MCP에 대해 받은 정보를 그대로 붙여넣으세요. 서버 URL·토큰, 설치 명령, README 일부, 다른 도구용 설정 JSON 무엇이든 돼요. CLI마다 다른 설정 형식으로 바꿔서 보여드리고, 확인한 뒤 등록해요.')}</p>
+        <textarea id="mnreq" class="sk-text mono" rows="8" spellcheck="false" placeholder="${esc(`${t('예:')}\n${t('서버 주소:')} https://mcp.example.com/mcp\n${t('토큰: abcd…')}\n\n${t('또는 개발자가 준 설정 JSON / claude mcp add … 명령')}`)}">${esc(S.request)}</textarea>
+        <div class="chips wrap sk-ex"><span class="small muted">${t('예시:')}</span>${MCP_EXAMPLES().map(([l], i) => `<button class="chip" data-ex="${i}">${esc(l)}</button>`).join('')}</div>
+        <p class="small muted">${t('설정 JSON이나 설치 명령은 AI 없이 바로 읽어요. 그 밖의 글은 AI가 읽는데, 토큰처럼 보이는 값은 AI에게 보내기 전에 가려요.')}</p>
+      </div>
+      <div class="section"><div class="section-h"><h2>${t('어디에서 쓸까요?')}</h2></div>${whereHtml()}</div>
+      <div class="section"><div class="section-h"><h2>${t('어느 CLI에 추가할까요?')}</h2></div>${toolChecks()}
+        <p class="small muted">${t('CLI마다 MCP 설정 방식이 달라도 Baton이 각자에 맞게 넣어요.')}</p></div>
+      <div class="section"><label class="sk-row"><span>${t('설정을 찾을 AI')}</span><select id="mnwriter"><option value="">${t('자동 (요약에 쓰는 CLI)')}</option>${installed.map((k) => `<option value="${k}" ${S.writer === k ? 'selected' : ''}>${TOOL[k].name}</option>`).join('')}</select></label></div>
+      <div class="section pact sk-actions">
+        <button class="btn primary" id="mngo">${glyph('spark')}${t('설정 만들기')}</button>
+        ${S.draft ? `<button class="btn" id="mndraft">${t('설정으로 돌아가기')}</button>` : ''}
+      </div>
+      <div class="section pact sk-actions mn-alt">
+        <button class="btn ghost" id="mnpresets">${glyph('book')}${t('잘 알려진 MCP에서 고르기')}</button>
+        <button class="btn ghost" id="mnmanual">${glyph('edit')}${t('칸을 직접 채우기')}</button>
+      </div>`;
+    const req = $('#mnreq', v);
+    req.oninput = () => { S.request = req.value; keep(); };
+    $$('[data-ex]', v).forEach((b) => (b.onclick = () => { req.value = MCP_EXAMPLES()[+b.dataset.ex][1]; S.request = req.value; keep(); req.focus(); }));
+    bindWhere(draw);
+    bindToolChecks(v, draw);
+    $('#mnwriter', v).onchange = (e) => { S.writer = e.target.value; store.set('mcpwriter', S.writer); keep(); };
+    $('#mngo', v).onclick = () => {
+      if (!S.request.trim()) { toast(t('등록할 MCP 정보를 붙여넣어 주세요'), true); req.focus(); return; }
+      if (!S.tools.length) { toast(t('추가할 CLI를 하나 이상 골라주세요'), true); return; }
+      startJob('/api/mcp/drafts', { ...ctx(), request: S.request, writer: S.writer }, 'draft');
+    };
+    $('#mndraft', v) && ($('#mndraft', v).onclick = () => { S.stage = 'review'; keep(); draw(); });
+    $('#mnmanual', v).onclick = () => { S.draft = blank(); S.values = {}; S.stage = 'review'; keep(); draw(); };
+    $('#mnpresets', v).onclick = async () => {
+      let ps;
+      try { ps = await loadPresets(); } catch (e) { toast(e.message, true); return; }
+      const id = await pick(t('잘 알려진 MCP'), ps.map((p) => ({ value: p.id, icon: glyph(p.icon), label: p.name, desc: `${p.desc}${p.oauth ? ` · ${t('로그인 필요')}` : ''}${p.missing ? ` · ${t('{x} 필요', { x: p.missing })}` : ''}` })));
+      if (!id) return;
+      S.draft = fromPreset(ps.find((p) => p.id === id)); S.values = {}; S.stage = 'review'; keep(); draw();
+    };
+    if (!S.request) setTimeout(() => req.focus(), 50);
+  }
+
+  function drawWriting() {
+    const tool = TOOL[S.job.tool]?.name || S.job.tool || 'AI';
+    v.innerHTML = `<div class="section"><div class="card sk-writing jobbox">
+        <div class="jhead"><div class="spinner"></div><div class="jt"><b>${S.job.fixing ? t('{tool}가 테스트 결과를 보고 고치는 중…', { tool: esc(tool) }) : t('{tool}가 MCP 설정을 찾는 중…', { tool: esc(tool) })}</b><span class="jsub">${t('보통 30초~2분 걸려요. 다른 화면에 다녀와도 계속해요.')}</span></div><span class="jtime" id="mntime">0:00</span></div>
+        ${S.request ? `<p class="small muted sk-quote">${esc(clip1(S.request, 300))}</p>` : ''}
+        <div class="pact"><button class="btn sm ghost" id="mncancel">${t('취소')}</button></div>
+      </div></div>`;
+    tick($('#mntime'));
+    runPoll();
+    $('#mncancel', v).onclick = async () => {
+      clearInterval(timer);
+      await api(`/api/mcp/jobs/${S.job.id}/cancel`, { body: {} }).catch(() => {});
+      S.stage = S.job.back || 'ask'; S.job = null; keep(); draw();
+    };
+  }
+
+  function drawReview() {
+    const d = S.draft, f = d.form;
+    const http = f.transport !== 'stdio';
+    const inputs = f.inputs || [];
+    const inputHtml = (i) => `<label class="field"><span>${esc(i.label)}${i.required ? '' : ` <em class="muted">${t('선택')}</em>`}</span>
+        <input data-in="${esc(i.key)}" type="${i.secret ? 'password' : 'text'}" value="${esc(i.secret ? (MCP_SECRETS[i.key] || '') : (S.values[i.key] ?? i.default ?? ''))}" placeholder="${esc(i.ph || '')}" autocomplete="off" spellcheck="false" autocapitalize="off">
+        ${i.help ? `<small class="muted">${linkify(i.help)}</small>` : ''}</label>`;
+    v.innerHTML = `${errBanner()}
+      <div class="section">
+        ${d.fixed && d.diagnosis ? `<div class="banner ${d.fixable === false ? 'warn' : 'link'}"><span>${d.fixable === false ? '⚠️' : '🔧'} ${esc(d.diagnosis)}</span></div>` : ''}
+        ${d.summary ? `<div class="banner link" style="margin-top:8px"><span>${d.source === 'ai' ? '✨ ' : d.source === 'pasted' ? '📋 ' : ''}${esc(d.summary)}</span></div>` : ''}
+        ${d.confidence === 'low' ? `<div class="banner warn" style="margin-top:8px"><span>${t('AI가 이 서버를 확실히 알지 못해요. 등록 전에 테스트로 확인해요')}</span></div>` : ''}
+        ${d.notes?.length ? `<div class="card sk-notes"><b>${t('알아둘 것')}</b><ul>${d.notes.map((x) => `<li>${linkify(x)}</li>`).join('')}</ul></div>` : ''}
+        ${d.assumptions?.length ? `<div class="card sk-notes"><b>${t('AI가 정한 것 — 다르면 아래에서 고쳐 달라고 하세요')}</b><ul>${d.assumptions.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+        ${d.docs ? `<p class="small"><a href="${esc(d.docs)}" target="_blank" rel="noopener">${t('공식 문서')} ↗</a></p>` : ''}
+      </div>
+      ${inputs.length ? `<div class="section sk-form"><div class="section-h"><h2>${t('입력할 값')}</h2></div>${inputs.map(inputHtml).join('')}
+        <small class="muted">${t('키·토큰은 이 화면에만 있다가 CLI 설정 파일에 바로 저장돼요. AI에게는 보내지 않아요.')}</small></div>` : ''}
+      <div class="section">
+        <details class="card mn-adv" ${d.source === 'manual' || !inputs.length ? 'open' : ''}><summary><b>${t('서버 설정')}</b><code>${esc(f.name || t('<이름>'))}</code></summary>
+          <div class="sk-form mn-advb">
+            <label class="field"><span>${t('이름')}</span><input id="mnname" value="${esc(f.name)}" placeholder="my-server" autocomplete="off" spellcheck="false" autocapitalize="off"><small class="muted">${t('영어·숫자·-·_ · 에이전트가 이 이름으로 서버를 불러요')}</small></label>
+            <label class="field"><span>${t('방식')}</span><select id="mntype">${[['stdio', t('로컬 실행 (명령)')], ['http', t('원격 (HTTP URL)')], ['sse', t('원격 (예전 SSE)')]].map(([k, l]) => `<option value="${k}" ${f.transport === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+            <label class="field"><span>${http ? 'URL' : t('실행 명령')}</span><input id="mntarget" class="mono" value="${esc(f.target)}" placeholder="${http ? 'https://example.com/mcp' : 'npx -y @scope/server'}" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+            <label class="field"><span>${http ? t('헤더 (한 줄에 하나, 이름: 값)') : t('환경 변수 (한 줄에 하나, KEY=값)')}</span><textarea id="mnpairs" class="sk-text mono" rows="3" spellcheck="false" placeholder="${http ? 'Authorization: Bearer {{TOKEN}}' : 'API_KEY={{API_KEY}}'}">${esc(f.pairs)}</textarea>
+              ${inputs.length ? `<small class="muted">${t('{{KEY}}는 위 “입력할 값”으로 바뀌어요')}</small>` : ''}</label>
+          </div></details>
+        ${mcpLauncher(f.target) && !http ? `<p class="small muted">${t('처음 실행하면 패키지를 내려받느라 테스트가 1분쯤 걸릴 수 있어요.')}</p>` : ''}
+      </div>
+      <div class="section">
+        <div class="section-h"><h2>${t('어디에 넣을까요?')}</h2></div>
+        ${whereHtml()}
+        <div style="margin-top:10px">${toolChecks()}</div>
+        <div class="card sk-path" id="mnplan" style="margin-top:10px"></div>
+      </div>
+      <div class="section">
+        <div class="section-h"><h2>${t('CLI별로 들어갈 설정')}</h2></div>
+        <p class="small muted" style="margin:-4px 2px 8px">${t('CLI마다 형식이 달라서 각자에 맞게 바꿔 넣어요. 키·토큰은 ‹이름›이나 •••로 가려서 보여줘요.')}</p>
+        <div id="mnprev"><div class="skeleton" style="height:80px"></div></div>
+      </div>
+      <div class="section">
+        <div class="section-h"><h2>${t('AI에게 고쳐 달라고 하기')}</h2></div>
+        <textarea id="mnfb" class="sk-text" rows="2" placeholder="${esc(t('예: 읽기 전용으로 해줘 / 원격 서버 말고 로컬로 / 다른 패키지로'))}">${esc(S.feedback || '')}</textarea>
+        <div class="pact" style="margin-top:8px"><button class="btn" id="mnrefine">${glyph('spark')}${t('AI로 고치기')}</button></div>
+      </div>
+      <div class="section pact sk-actions">
+        <button class="btn primary" id="mninstall">${t('등록하고 테스트')}</button>
+        <button class="btn ghost" id="mnreset">${t('처음부터')}</button>
+      </div>`;
+    $$('[data-in]', v).forEach((el) => (el.oninput = () => {
+      const i = inputs.find((x) => x.key === el.dataset.in);
+      if (i?.secret) MCP_SECRETS[i.key] = el.value; else S.values[el.dataset.in] = el.value;
+      keep();
+      if (i?.secret) drawPlan(); else schedulePreview();
+    }));
+    const bindF = (sel, k, redraw) => { $(sel, v).oninput = (e) => { f[k] = e.target.value; keep(); if (redraw) redraw(); schedulePreview(); }; };
+    bindF('#mnname', 'name', drawPlan);
+    bindF('#mntarget', 'target');
+    bindF('#mnpairs', 'pairs', drawPlan);
+    $('#mnname', v).onblur = (e) => { const c = e.target.value.trim().replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, ''); if (c !== e.target.value) { e.target.value = c; f.name = c; keep(); drawPlan(); } };
+    $('#mntype', v).onchange = (e) => { f.transport = e.target.value; keep(); drawReview(); };
+    $('#mnfb', v).oninput = (e) => { S.feedback = e.target.value; keep(); };
+    bindWhere(drawReview);
+    bindToolChecks(v, drawReview);
+    $('#mnrefine', v).onclick = () => askFix('');
+    $('#mninstall', v).onclick = () => install(false);
+    $('#mnreset', v).onclick = () => {
+      if (!confirm(t('지금 설정을 버리고 처음부터 할까요?'))) return;
+      const req = S.request; S = fresh(); S.request = req; keep(); draw();
+    };
+    drawPlan();
+    drawPreview();
+  }
+
+  let prevSerial = 0, prevTimer = null;
+  async function drawPreview() {
+    const box = $('#mnprev', v);
+    if (!box) return;
+    const id = ++prevSerial;
+    try {
+      const r = await api('/api/mcp/preview', { body: { ...ctx(), form: S.draft.form, values: { ...S.values } } });
+      if (id !== prevSerial) return;
+      box.innerHTML = r.items.map((x, i) => `<details class="card mn-prev" ${i === 0 ? 'open' : ''}><summary><span class="tool-badge ${x.tool}">${TOOL[x.tool].name}</span>${x.file ? `<code>${esc(x.file)}</code>` : ''}${x.error ? `<span class="flag err">${t('넣을 수 없어요')}</span>` : x.problems.length ? `<span class="flag err">${t('형식 오류')}</span>` : `<span class="flag ok">${t('형식 확인')}</span>`}</summary>
+        ${x.error ? `<p class="small warn-text">${esc(x.error)}</p>` : `${x.command ? `<p class="small muted">${t('Claude Code 명령으로 넣어요:')}</p><pre class="mn-code">${esc(x.command)}</pre><p class="small muted">${t('→ 들어가는 내용')}</p>` : ''}<pre class="mn-code">${esc(x.text)}</pre>${x.problems.length ? `<p class="small warn-text">${esc(x.problems.join(', '))}</p>` : ''}`}</details>`).join('') || `<span class="small muted">${t('추가할 CLI를 하나 이상 골라주세요')}</span>`;
+    } catch (e) { if (id === prevSerial) box.innerHTML = `<p class="small muted">${esc(e.message)}</p>`; }
+  }
+  const schedulePreview = () => { clearTimeout(prevTimer); prevTimer = setTimeout(drawPreview, 400); };
+
+  // ---- install progress / result
+  const ST_ICON = { ok: '✅', warn: '⚠️', fail: '❌', run: '<span class="spinner sm"></span>', wait: '◻️', skip: '➖' };
+  const probeLine = (p) => {
+    if (!p) return '';
+    if (p.status === 'ok') return t('연결됐어요 · 도구 {n}개{server} · {s}', { n: p.tools.length, server: p.server?.name ? ` · ${p.server.name}${p.server.version ? ` ${p.server.version}` : ''}` : '', s: fmtDur(p.ms || 0) });
+    if (p.status === 'auth') return t('서버는 응답했어요 · 처음 쓸 때 로그인이 필요해요');
+    return `${p.error || t('연결 실패')}${p.hint ? ` — ${p.hint}` : ''}`;
+  };
+  const toolState = (x, probe) => {
+    if (!x.write) return 'wait';
+    if (!x.write.ok) return 'fail';
+    if (!x.verify) return 'run';
+    if (x.verify.status !== 'ok') return x.verify.status;
+    return probe?.status === 'fail' ? 'warn' : 'ok';
+  };
+  function stepsHtml(j) {
+    const p = j.probe;
+    const stepP = !p ? 'run' : p.status === 'ok' ? 'ok' : p.status === 'auth' ? 'warn' : 'fail';
+    const rows = j.results.map((x) => {
+      const st = j.status === 'probe-failed' ? 'skip' : toolState(x, p);
+      const detail = !x.write ? (j.status === 'probe-failed' ? t('테스트에 실패해서 등록하지 않았어요') : t('기다리는 중')) : !x.write.ok ? x.write.error
+        : x.verify ? x.verify.detail : t('{tool}에게 확인하는 중…', { tool: TOOL[x.tool].name });
+      return `<div class="mn-step"><span class="st">${ST_ICON[st] || ''}</span><div class="l"><b><span class="tool-badge ${x.tool}">${TOOL[x.tool].name}</span>${x.write?.replaced ? ` <span class="flag">${t('기존 설정을 바꿨어요')}</span>` : ''}</b>
+        ${x.write?.file ? `<code>${esc(x.write.file)}</code>` : ''}<span class="small ${st === 'fail' ? 'warn-text' : 'muted'}">${esc(detail || '')}${x.verify?.how === 'file' && x.verify.status === 'ok' ? ` · ${t('설정 파일로 확인')}` : ''}</span></div></div>`;
+    }).join('');
+    return `<div class="mn-step"><span class="st">${ST_ICON[stepP]}</span><div class="l"><b>${t('연결 테스트')}</b><span class="small ${stepP === 'fail' ? 'warn-text' : 'muted'}">${p ? esc(probeLine(p)) : t('서버를 실행해서 도구 목록을 받아보는 중…')}</span>
+      ${p?.tools?.length ? `<div class="mn-tools">${p.tools.slice(0, 40).map((n) => `<code>${esc(n)}</code>`).join('')}${p.tools.length > 40 ? `<span class="small muted">+${p.tools.length - 40}</span>` : ''}</div>` : ''}
+      ${p?.log && p.status !== 'ok' ? `<details class="jdetails"><summary>${t('자세한 로그')}</summary><pre class="jlog">${esc(p.log)}</pre></details>` : ''}</div></div>${rows}`;
+  }
+  function drawSteps() { const box = $('#mnsteps', v); if (box && S.result) box.innerHTML = stepsHtml(S.result); }
+
+  function drawInstalling() {
+    v.innerHTML = `<div class="section"><div class="card jobbox mn-run">
+        <div class="jhead"><div class="spinner"></div><div class="jt"><b>${t('{name} 등록하고 테스트하는 중…', { name: esc(S.draft.form.name) })}</b><span class="jsub">${t('서버를 직접 실행해 보고, CLI마다 등록한 뒤 잘 보이는지 확인해요')}</span></div><span class="jtime" id="mntime">0:00</span></div>
+        <div id="mnsteps" class="mn-steps">${S.result ? stepsHtml(S.result) : ''}</div>
+      </div></div>`;
+    tick($('#mntime'));
+    runPoll();
+  }
+
+  /** The test output as text for the AI (already secret-free on the server). */
+  const failureText = (j) => [
+    `test: ${j.probe?.status || '?'}${j.probe?.error ? ` — ${j.probe.error}` : ''}${j.probe?.hint ? ` (${j.probe.hint})` : ''}`,
+    j.probe?.log ? `server output:\n${j.probe.log}` : '',
+    ...j.results.filter((x) => x.write && (!x.write.ok || (x.verify && x.verify.status !== 'ok'))).map((x) => `${TOOL[x.tool].name}: ${x.write.ok ? x.verify.detail : `write failed — ${x.write.error}`}`),
+  ].filter(Boolean).join('\n');
+
+  function drawResult() {
+    const j = S.result, d = S.draft;
+    const out = mcpOutcome(j);
+    const okTools = j.results.filter((x) => x.write?.ok).map((x) => x.tool);
+    const tryTool = okTools.find((x) => installed.includes(x));
+    const cwd = j.where?.project || '';
+    const tries = d.tryPrompts?.length ? d.tryPrompts : [`${mcpText(j.name)} `];
+    const head = j.status === 'probe-failed' ? `❌ ${t('연결 테스트에 실패해서 아직 아무 데도 등록하지 않았어요')}`
+      : out === 'ok' ? `✅ ${t('{name} 연결됐어요', { name: esc(j.name) })}`
+      : out === 'auth' ? `🔑 ${t('{name} 등록했어요 · 처음 쓸 때 로그인이 필요해요', { name: esc(j.name) })}`
+      : `⚠️ ${t('{name} 등록했지만 확인할 게 있어요', { name: esc(j.name) })}`;
+    const auth = j.probe?.status === 'auth' || j.results.some((x) => x.verify?.code === 'auth');
+    // something the config itself got wrong (the AI can help) vs. a step only the user can take (trust, approve, sign in)
+    const configProblem = j.status === 'probe-failed' || j.probe?.status === 'fail' || j.results.some((x) => (x.write && !x.write.ok) || x.verify?.status === 'fail');
+    const trustWarn = j.results.some((x) => x.verify?.code === 'trust');
+    v.innerHTML = `<div class="section"><div class="card sk-done">
+        <b class="sk-done-h">${head}</b>
+        <span class="small muted">${j.where?.scope === 'project' ? t('{p} 프로젝트에서만', { p: esc(j.where.project) }) : t('모든 폴더 (전역)')}${j.forced ? ` · ${t('테스트 실패를 무시하고 등록함')}` : ''}</span>
+        <div class="mn-steps">${stepsHtml(j)}</div>
+        ${(j.warnings || []).map((w) => `<span class="small warn-text">⚠️ ${t('{file}은(는) git이 무시하지 않아요. 커밋하면 키·토큰이 같이 올라가요 — .gitignore에 넣는 걸 권해요', { file: esc(w.file) })}</span>`).join('')}
+        ${auth && j.status === 'done' ? `<div class="card sk-notes"><b>${t('로그인하는 법')}</b><ul>
+          ${okTools.includes('claude') ? `<li>${t('Claude Code: 터미널에서 claude → /mcp → {name} 골라서 로그인', { name: esc(j.name) })}</li>` : ''}
+          ${okTools.includes('codex') ? `<li>${t('Codex: 터미널에서 {cmd}', { cmd: `<code>codex mcp login ${esc(j.name)}</code>` })}</li>` : ''}
+          ${okTools.some((x) => !['claude', 'codex'].includes(x)) ? `<li>${t('다른 CLI는 처음 쓸 때 로그인 창이 떠요')}</li>` : ''}</ul></div>` : ''}
+      </div></div>
+      ${configProblem ? `<div class="section pact sk-actions">
+        <button class="btn primary" id="mnfix">${glyph('spark')}${t('AI에게 고쳐 달라고 하기')}</button>
+        <button class="btn" id="mnedit">${t('설정 고치기')}</button>
+        ${j.status === 'probe-failed' ? `<button class="btn ghost" id="mnforce">${t('그래도 등록')}</button>` : `<button class="btn ghost" id="mnretry">${t('다시 테스트')}</button>`}
+      </div>` : out !== 'ok' ? `<div class="section pact sk-actions">
+        ${trustWarn ? `<button class="btn primary" id="mntrustfix">${t('Codex에서 이 폴더를 신뢰하고 다시 확인')}</button>` : ''}
+        <button class="btn ${trustWarn ? '' : 'primary'}" id="mnretry">${t('다시 확인')}</button>
+      </div>` : ''}
+      ${tryTool && j.status === 'done' && out !== 'fail' ? `<div class="section"><div class="section-h"><h2>${t('바로 써보기')}</h2></div><div class="card list">
+        ${tries.map((p, i) => `<button class="opt-row" data-try="${i}"><span class="oi">${glyph('spark')}</span><div class="l"><b>${esc(p)}</b><span>${t('{tool} 새 채팅이 열려요 · {where}', { tool: TOOL[tryTool].name, where: esc(cwd || t('기본 작업 폴더')) })}</span></div><span>›</span></button>`).join('')}
+        </div><p class="small muted">${t('새로 시작하는 세션부터 이 MCP를 불러와요.')}</p></div>` : ''}
+      <div class="section pact sk-actions"><a class="btn ghost" href="#/mcp">${t('MCP 목록')}</a><button class="btn ghost" id="mnagain">${t('다른 MCP 추가')}</button>${fromProject ? `<a class="btn ghost" href="#/p/${encodeURIComponent(fromProject)}">${t('프로젝트로 돌아가기')}</a>` : fromSetup ? `<a class="btn ghost" href="#/setup">${t('설정으로 돌아가기')}</a>` : ''}</div>`;
+    $('#mnfix', v) && ($('#mnfix', v).onclick = () => askFix(failureText(j)));
+    $('#mnedit', v) && ($('#mnedit', v).onclick = () => { S.stage = 'review'; keep(); draw(); });
+    $('#mnforce', v) && ($('#mnforce', v).onclick = () => { if (confirm(t('연결 테스트에 실패했지만 그래도 CLI 설정에 넣을까요? (예: 아직 켜지 않은 앱의 서버)'))) install(true); });
+    $('#mnretry', v) && ($('#mnretry', v).onclick = () => install(false));
+    $('#mntrustfix', v) && ($('#mntrustfix', v).onclick = () => {
+      if (!confirm(t('Codex에서 {p} 폴더를 신뢰한다고 표시할까요? Codex가 이 폴더의 설정·훅을 따르게 돼요.', { p: j.where.project }))) return;
+      S.trustCodex = true; keep(); install(false);
+    });
+    $$('[data-try]', v).forEach((b) => (b.onclick = () => { sessionStorage.removeItem(MCP_KEY); skTry(tryTool, tries[+b.dataset.try], cwd); }));
+    $('#mnagain', v).onclick = () => { sessionStorage.removeItem(MCP_KEY); if (origin !== '||') location.hash = '#/mcp/new'; else { S = fresh(); keep(); draw(); } };
+  }
+
+  let shownStage = null;
+  function draw() {
+    clearInterval(timer);
+    if (shownStage && shownStage !== S.stage) window.scrollTo(0, 0);
+    shownStage = S.stage;
+    if (S.stage === 'writing' && S.job) drawWriting();
+    else if (S.stage === 'installing' && S.job) drawInstalling();
+    else if (S.stage === 'review' && S.draft?.form) drawReview();
+    else if (S.stage === 'result' && S.result && S.draft?.form) drawResult();
+    else { S.stage = 'ask'; drawAsk(); }
+  }
+  draw();
+}
+/** ok: test passed and every CLI sees it · auth: needs sign-in · fail / partial otherwise. */
+function mcpOutcome(j) {
+  if (!j || j.status !== 'done') return 'fail';
+  const w = j.results.filter((x) => x.write);
+  if (!w.length || w.every((x) => !x.write.ok)) return 'fail';
+  if (j.probe?.status === 'fail' || w.some((x) => !x.write.ok || x.verify?.status === 'fail')) return 'partial';
+  if (j.probe?.status === 'auth' || w.some((x) => x.verify?.code === 'auth')) return 'auth';
+  return w.every((x) => x.verify?.status === 'ok') ? 'ok' : 'partial';
 }
 
 /** "Which MCP servers does each CLI load here?" — used on the project page and in the chat sheet. */
@@ -3134,7 +3683,7 @@ function bindMcpCheck(el, cwd, reload) {
     reload();
   }));
 }
-async function loadProjectMcp(box, cwd) {
+async function loadProjectMcp(box, cwd, pid = cwd) {
   if (!box) return;
   const draw = async () => {
     try {
@@ -3146,7 +3695,8 @@ async function loadProjectMcp(box, cwd) {
       const localHtml = mcpEffectiveHtml(d, { pick: mcpIsLocal, hideEmpty: true });
       box.innerHTML = `<div class="section-h"><h2>${t('MCP 서버')}</h2><span class="count">${localOn}</span><a class="more" href="#/mcp">${t('전체 ›')}</a></div>
         <p class="small muted" style="margin:-4px 2px 8px">${t('이 프로젝트에만 설정된 MCP예요. 전역 MCP는 아래를 펼쳐서 보세요')}</p>
-        ${localHtml || `<div class="card empty sk-empty"><b>${t('이 프로젝트 전용 MCP가 없어요')}</b>${t('프로젝트 폴더의 .mcp.json이나 claude mcp add -s local로 넣은 서버가 여기에 보여요')}</div>`}
+        ${localHtml || `<div class="card empty sk-empty"><b>${t('이 프로젝트 전용 MCP가 없어요')}</b>${t('DB·이 서비스의 API처럼 이 프로젝트에서만 필요한 도구는 프로젝트용으로 넣으면 다른 폴더의 컨텍스트를 아낄 수 있어요')}</div>`}
+        <a class="btn block ghost sk-padd" href="#/mcp/new?project=${encodeURIComponent(pid)}">${ICON.plus}${t('이 프로젝트용 MCP 추가')}</a>
         ${glob.length ? fold('pmcp-global', `<b>${t('전역 MCP {n}개', { n: globOn })}</b>${globUsed ? `<span class="flag run">${t('이 프로젝트에서 호출 {n}개', { n: globUsed })}</span>` : ''}<span class="small muted">${t('모든 폴더에서 불러와요')}</span>`, mcpEffectiveHtml(d, { pick: (s) => !mcpIsLocal(s), hideEmpty: true })) : ''}`;
       bindMcpCheck(box, cwd, draw);
       bindFolds(box);
@@ -3379,7 +3929,7 @@ async function viewSetup() {
       <div class="choice-grid" id="aimodes">${AI_MODES.map(([id, icon, title, desc]) => `<button class="choice ${aiMode === id ? 'on' : ''}" data-mode="${id}"><span class="ci">${icon}</span><b>${title}</b><span>${desc}</span></button>`).join('')}</div>
       <div id="aipanel"></div></div>
 
-    <div class="section">${stepH(2, 'mcp', t('AI에 도구 붙이기 (MCP)'), t('브라우저 조작, 최신 문서 검색, GitHub·노션 연동 같은 능력을 더해줘요. 고르면 설치된 CLI 모두에 한 번에 추가해요.'), true)}
+    <div class="section">${stepH(2, 'mcp', t('AI에 도구 붙이기 (MCP)'), t('브라우저 조작, 최신 문서 검색, GitHub·노션 연동 같은 능력을 더해줘요. 고르면 실제로 연결되는지 테스트까지 하고 CLI마다 맞게 추가해요.'), true)}
       <div id="mcppresets"><div class="skeleton" style="height:140px"></div></div></div>
 
     <div class="section">${stepH(3, 'phone', t('폰에서 쓰기'), remote ? '' : t('PC에서 돌아가는 AI를 밖에서도 폰으로 이어서 써요. 순서대로 따라 하면 돼요.'), true)}${phoneSteps()}</div>
@@ -3471,9 +4021,9 @@ async function viewSetup() {
         <span class="pi">${glyph(p.icon)}</span><span class="pb"><b>${esc(p.name)}</b><span>${esc(p.desc)}</span>
         <span class="ptags">${w.length ? `<em class="ok">✓ ${w.map((x) => esc(TOOL[x]?.name || x)).join(', ')}</em>` : ''}${p.oauth ? `<em>${t('로그인 필요')}</em>` : ''}${p.fields.some((f) => f.secret && !f.optional) ? `<em>${t('토큰 필요')}</em>` : ''}${p.missing ? `<em class="warn">${t('{x} 필요', { x: p.missing })}</em>` : ''}</span></span></button>`; }).join('')}</div>
       <div class="pact center">${!all ? `<button class="btn sm ghost" id="mcpmore">${t('더 보기 ({n})', { n: presets.length - list.length })}</button>` : ''}<button class="btn sm ghost" id="mcpcustom">${t('직접 추가')}</button><a class="btn sm ghost" href="#/mcp">${t('설치된 MCP 보기')} ›</a></div>`;
-    $$('[data-preset]', box).forEach((b) => (b.onclick = () => mcpAddSheet(presets.find((p) => p.id === b.dataset.preset), where(b.dataset.preset), drawMcp)));
+    $$('[data-preset]', box).forEach((b) => (b.onclick = () => { location.hash = `#/mcp/new?preset=${encodeURIComponent(b.dataset.preset)}&from=setup`; }));
     $('#mcpmore', box) && ($('#mcpmore', box).onclick = () => { store.set('setup.mcpall', true); drawMcp(); });
-    $('#mcpcustom', box).onclick = () => mcpAddSheet(null, [], drawMcp);
+    $('#mcpcustom', box).onclick = () => { location.hash = '#/mcp/new?from=setup'; };
   };
 
   const jobBoxFor = (b, action, tool) => (tool && $(`[data-tool-card="${tool}"] .jobbox`, v)) || $(`.jobbox[data-for="${action.replace(/-(on|off)$/, '')}"]`, v) || b.closest('.card, .section')?.querySelector('.jobbox') || (() => { const d = document.createElement('div'); d.className = 'jobbox'; b.after(d); return d; })();
@@ -3514,41 +4064,6 @@ async function viewSetup() {
     if (b && !b.disabled) follow(b, job);
   })).catch(() => {});
   drawMcp().catch(() => { $('#mcppresets', v).innerHTML = ''; });
-}
-
-/** Add an MCP server (preset or custom) to the chosen CLIs. */
-async function mcpAddSheet(p, already = [], after) {
-  const installed = INSTALLED();
-  const field = (f) => `<label><span>${esc(f.label)}</span><input data-f="${f.k}" type="${f.secret ? 'password' : 'text'}" placeholder="${esc(f.ph || '')}" value="${esc(f.value || '')}" autocomplete="off" spellcheck="false"></label>`;
-  const body = `<div class="pwform connect-form">
-    ${p ? `<p class="small muted">${esc(p.desc)}</p><p class="small mono muted">${esc(p.target)}</p>${p.oauth ? `<p class="small">${t('처음 쓸 때 로그인이 필요해요. Claude Code는 터미널에서 claude → /mcp, Codex는 codex mcp login {name}', { name: p.id })}</p>` : ''}${p.missing ? `<p class="small warn-text">${t('이 서버는 {x}가 필요해요. 먼저 설치해주세요.', { x: p.missing })}</p>` : ''}${p.fields.map(field).join('')}`
-      : `<label><span>${t('이름')}</span><input data-f="name" placeholder="my-server" autocomplete="off"></label>
-         <label><span>${t('실행 명령 또는 URL')}</span><input data-f="target" placeholder="npx -y @scope/server  ·  https://example.com/mcp" autocomplete="off" spellcheck="false"></label>
-         <label><span>${t('환경 변수 / 헤더 (한 줄에 하나, KEY=값)')}</span><textarea data-f="pairs" placeholder="API_KEY=…"></textarea></label>`}
-    <div class="field"><span>${t('어느 CLI에 추가할까요?')}</span><div class="chips">${installed.map((k) => `<label class="chip check"><input type="checkbox" data-tool="${k}" ${already.includes(k) ? '' : 'checked'}>${TOOL[k].name}${already.includes(k) ? ' ✓' : ''}</label>`).join('')}</div></div>
-    <p class="small muted">${t('각 CLI의 전역 설정에 저장돼서 모든 폴더에서 쓸 수 있어요. 기존 파일은 백업해둬요.')}</p></div>`;
-  const r = await sheet({
-    title: p ? p.name : t('MCP 서버 직접 추가'), body,
-    footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('추가')}</button>`,
-    onMount: (el, close) => {
-      $('[data-x]', el).onclick = () => close(undefined);
-      $('[data-ok]', el).onclick = async () => {
-        const vals = Object.fromEntries($$('[data-f]', el).map((i) => [i.dataset.f, i.value]));
-        const tools = $$('[data-tool]', el).filter((c) => c.checked).map((c) => c.dataset.tool);
-        const b = $('[data-ok]', el); b.disabled = true; b.textContent = t('추가하는 중…');
-        try {
-          const isUrl = /^https?:\/\//i.test(vals.target || '');
-          const req = p ? { preset: p.id, values: vals, tools } : { custom: { name: vals.name, target: vals.target, [isUrl ? 'headers' : 'env']: vals.pairs }, tools };
-          close(await api('/api/mcp/add', { body: req }));
-        } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = t('추가'); }
-      };
-    },
-  });
-  if (!r) return;
-  const bad = r.results.filter((x) => !x.ok);
-  if (!bad.length) toast(t('✅ {name} 추가했어요 · {list}', { name: r.name, list: r.results.map((x) => TOOL[x.tool].name).join(', ') }));
-  else toast(bad.map((x) => `${TOOL[x.tool].name}: ${x.error}`).join(' · '), true);
-  after?.();
 }
 
 /** Streams a setup job into a box: live log, sign-in link button, device code, and a code/answer input. */
