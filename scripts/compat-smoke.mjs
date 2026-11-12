@@ -25,7 +25,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TEST_HOME = path.resolve((process.env.BATON_COMPAT_HOME || path.join(os.homedir(), '.baton-compat', 'home')).replace(/^~(?=$|\/)/, os.homedir()));
 const FIXTURES = path.join(REPO, 'scripts', 'compat-fixtures');
-const SMOKE_TOOLS = ['claude', 'codex', 'agy']; // supported CLIs (OpenCode is beta, Cursor unverified)
+const SMOKE_TOOLS = ['claude', 'codex', 'agy', 'opencode']; // Cursor is unverified and not supported
+const HAS_LIMITS = new Set(['claude', 'codex', 'agy']); // OpenCode has no subscription limits
 const MARK = '__BATON_SMOKE_REPORT__';
 
 const argv = process.argv.slice(2);
@@ -211,7 +212,7 @@ async function child(tool) {
       const text = await runner.oneShot({ tool, model, cwd, prompt: 'Reply with exactly the word BATONSMOKETHREE and nothing else.', timeoutMs: 240_000 });
       expect(text, 'BATONSMOKETHREE');
     });
-    await step('limits', async () => {
+    if (HAS_LIMITS.has(tool)) await step('limits', async () => {
       const { allLimits } = await import(pathToFileURL(path.join(REPO, 'server', 'limits.js')).href);
       const l = (await allLimits({ force: true }))[tool];
       if (!l || l.error) throw new Error(`no limits: ${l?.error || 'nothing returned'}`);

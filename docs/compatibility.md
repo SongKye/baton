@@ -11,7 +11,7 @@ was verified with** for each CLI. The source of truth is `server/compat.js`. Thi
 | Claude Code | Supported | **2.1.318** | 2026-11-12 | 2.1.322 (npm) |
 | Codex | Supported | **0.156.0** | 2026-11-12 | 0.167.2 (npm) |
 | Antigravity | Supported | **1.5.6** | 2026-11-12 | — (not on npm) |
-| OpenCode | Beta | — (built for 1.x from the docs) | — | 1.19.5 (npm) |
+| OpenCode | Supported | **1.19.5** | 2026-11-12 | 1.19.5 (npm) |
 | Cursor | Unverified | — | — | — |
 
 Baton shows the same information in **Settings → Supported AI tool versions** and on each tool's card in
@@ -84,12 +84,22 @@ If a feature breaks right after a CLI update, look here first. The file shows wh
 The protobuf transcript is the most fragile part: its schema isn't public, so a CLI update can change the field
 numbers without notice.
 
-### OpenCode (beta) and Cursor (unverified)
+### OpenCode
 
-OpenCode: `run --format json --session --model --variant --agent --file`, `models --verbose`,
-`<data>/opencode/opencode.db` (1.x) or the older `storage/*.json`, `opencode.json`. Cursor:
+| Surface | Used for | Code |
+|---|---|---|
+| `run --format json --session --model --variant --agent plan\|build --file` | Chat, continue a session | `server/runner.js` `opencodeCmd`, `opencodeParser` |
+| Events `text`, `reasoning`, `tool_use`/`tool` (`part.state`), `step_finish` (`part.tokens`, `part.cost`), `error`; `sessionID` on every event | Live chat view, tokens | `server/runner.js` |
+| `<data>/opencode/opencode.db` (1.x, tables `session` / `message` / `part`) or the older `storage/*.json` | Session list, transcripts, token usage | `server/sources/opencode.js`, `server/usage.js` |
+| `models --verbose` | Model picker | `server/models.js` |
+| `<data>/opencode/auth.json`, `~/.config/opencode/opencode.json` (`provider`, `mcp`) | Sign-in, own servers, MCP | `server/tools.js`, `server/connect.js`, `server/mcp*.js` |
+
+Verified with the free models (no sign-in). OpenCode has no subscription limits, so there is no limits step.
+
+### Cursor (unverified)
+
 `cursor-agent -p --output-format stream-json --resume --model --force`, `~/.cursor/chats/*/store.db`,
-`~/.cursor/mcp.json`. Neither has been verified against a live install.
+`~/.cursor/mcp.json`. Not verified against a live install.
 
 ## Live test (`compat:smoke`)
 
@@ -109,7 +119,7 @@ removed field shows up even when every step still passes. Store a new baseline w
 
 It uses your real subscriptions, but in a separate home folder (`~/.baton-compat/home`): test sessions,
 configs and sign-in tokens never touch your everyday ones. Claude Code and Codex need a one-time sign-in
-there: `npm run compat:smoke -- --login` (in a terminal). Antigravity uses its normal sign-in. Each run is
+there: `npm run compat:smoke -- --login` (in a terminal). Antigravity uses its normal sign-in; OpenCode uses its free models, no sign-in. Each run is
 three short prompts per CLI on the cheapest model (Claude: Haiku, Codex: low effort).
 
 Test a specific binary instead of the one on PATH with `--bin codex=/path/to/dir`.

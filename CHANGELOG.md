@@ -22,6 +22,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Skill descriptions written as YAML block scalars (`description: >-`) no longer show a stray `>-`.
 
 ### Changed
+- **OpenCode is no longer beta**: verified with OpenCode 1.19.5 on a live install (free models, no sign-in): chat, resume, session list, transcript, briefs and the model picker.
 - The project page's MCP section shows only servers set up for that project; global servers are folded underneath. Folded sections remember whether you left them open.
 - The project page's session list shows 4 sessions per page with previous / next buttons instead of growing with "Show more". Sessions picked in select mode stay picked across pages.
 - Reorganized the English and Korean READMEs around product benefits, desktop/mobile screenshots and a three-step quick start; moved detailed setup and feature instructions into linked user guides.

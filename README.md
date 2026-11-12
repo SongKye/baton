@@ -6,7 +6,7 @@
 
 ### Many coding agents. One place to pick up where you left off.
 
-Claude Code · Codex · Antigravity · OpenCode (beta)<br>
+Claude Code · Codex · Antigravity · OpenCode<br>
 **Bring your AI work together. Keep it moving from your desktop or phone.**
 
 [![CI](https://github.com/SongKye/baton/actions/workflows/ci.yml/badge.svg)](https://github.com/SongKye/baton/actions/workflows/ci.yml)
@@ -114,9 +114,9 @@ Skill usage and dev server start/stop controls are also included. [Explore the f
 | **Claude Code** | ✓ | ✓ | ✓ | ✓ |
 | **Codex** | ✓ | ✓ | ✓ | ✓ |
 | **Antigravity** | ✓ | ✓ | ✓ | ✓ |
-| **OpenCode** | Beta | ✓ | — | ✓ |
+| **OpenCode** | ✓ | ✓ | — | ✓ |
 
-OpenCode is in beta and has not yet been verified against a live install. Capabilities depend on the CLI and backend.
+Capabilities depend on the CLI and backend. OpenCode has no subscription limits to show.
 
 **Cursor — unverified and not officially supported.** Integration code exists, but it has not been directly tested or validated, and there are currently no plans for official support. It is excluded from the supported list above because its behavior is not guaranteed.
 

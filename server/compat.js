@@ -40,7 +40,7 @@ export const COMPAT = {
     ],
   },
   opencode: {
-    level: 'beta', verified: null, verifiedAt: null, builtFor: '1.x',
+    level: 'supported', verified: '1.19.5', verifiedAt: '2026-11-12',
     checks: [
       { args: ['run', '--help'], expect: ['--format', '--session', '--model', '--variant', '--agent', '--file'] },
       { args: ['models', '--help'], expect: ['--verbose'] },
