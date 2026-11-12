@@ -272,7 +272,15 @@ function drift(tool, shapes) {
   const kinds = new Set([...now].map((p) => p.split(' ')[0]));
   return {
     baseline: base.version,
-    removed: [...before].filter((p) => !now.has(p) && kinds.has(p.split(' ')[0])),
+    removed: [...before].filter((p) => !now.has(p) && kinds.has(p.split(' ')[0]) && arraysFilled(p, now)),
     added: [...now].filter((p) => !before.has(p)),
   };
+}
+/** A field inside a list counts as gone only if that list had items this run (an empty list shows no fields). */
+function arraysFilled(p, now) {
+  for (let i = p.indexOf('[]'); i >= 0; i = p.indexOf('[]', i + 2)) {
+    const prefix = p.slice(0, i + 2);
+    if (![...now].some((x) => x.startsWith(prefix))) return false;
+  }
+  return true;
 }
