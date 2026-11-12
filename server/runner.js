@@ -428,8 +428,8 @@ export function stopRun(id) {
   return true;
 }
 
-/** One-shot, non-persisted completion used for project briefs. Resolves to the final text. */
-export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
+/** One-shot, non-persisted completion (project briefs, skill drafts). Resolves to the final text. */
+export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000, signal = null, failLabel = '' }) {
   return new Promise((resolve, reject) => {
     let bin, args, stdin = true;
     if (tool === 'opencode') {
@@ -462,6 +462,7 @@ export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
     if (child.pid) childPids.add(child.pid);
     let out = '', err = '';
     const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+    signal?.addEventListener('abort', () => child.kill('SIGTERM'), { once: true });
     child.stdout.on('data', (c) => { out += c; });
     child.stderr.on('data', (c) => { err = (err + c).slice(-4000); });
     child.on('error', (e) => { clearTimeout(timer); reject(e); });
@@ -487,7 +488,8 @@ export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
           if (typeof text === 'string' && text) return resolve(text);
         }
       } catch { /* fallthrough */ }
-      reject(new Error(tr('요약 생성 실패 (code {code}): {msg}', { code, msg: clip(err || out, 400) })));
+      if (signal?.aborted) return reject(new Error(tr('취소했어요')));
+      reject(new Error(`${failLabel || tr('요약 생성 실패')} (code ${code}): ${clip(err || out, 400)}`));
     });
     if (stdin) { child.stdin.on('error', () => {}); child.stdin.end(prompt); }
   });

@@ -5,7 +5,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Create skills by describing them**: Tools → Skills → **New skill**. Say what you want in plain words, choose everywhere (global) or one project, and which CLIs should use it. An AI CLI writes the SKILL.md (plus helper scripts when they help); you review, edit or ask for changes, then Baton saves it into every folder the chosen CLIs read — one copy per shared folder, so nothing shows up twice. After saving, try it straight away in a new chat with suggested prompts.
+- Your own skills can now be edited (by hand or with AI), copied to other CLIs and deleted from the skill page. Overwritten and deleted skills are backed up in `data/skill-backups` for 30 days.
+- **Skills on the project page**: each project now lists its own skills (one row per skill, with the CLIs that read it and how often it was used there), plus a **New skill for this project** button. Global skills are folded away underneath.
+
+### Fixed
+- Antigravity skills in `~/.gemini/config/skills` and a project's `.agents/skills`, and OpenCode / Cursor skills in their own folders, now appear on the Skills page and in the @ picker.
+- Skill descriptions written as YAML block scalars (`description: >-`) no longer show a stray `>-`.
+
 ### Changed
+- The project page's MCP section shows only servers set up for that project; global servers are folded underneath. Folded sections remember whether you left them open.
+- The project page's session list shows 4 sessions per page with previous / next buttons instead of growing with "Show more". Sessions picked in select mode stay picked across pages.
 - Reorganized the English and Korean READMEs around product benefits, desktop/mobile screenshots and a three-step quick start; moved detailed setup and feature instructions into linked user guides.
 - Clarified that Cursor integration is unverified, not officially supported, and has no current plans for official support; removed it from the README supported-tools list.
 

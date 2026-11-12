@@ -18,7 +18,8 @@ import { startWatcher } from './watch.js';
 import { listPorts, listPortsCached, invalidatePorts, shareToPhone, unshare, stopPort } from './ports.js';
 import { listServers, startServer, stopServer, removeServer, addServer, serverLogs, observe as observeServers, startServerWatch } from './servers.js';
 import { projectServices, reposReport, addLink, removeLink } from './links.js';
-import { skillsReport, skillDetail, pickableSkills } from './skills.js';
+import { skillsReport, skillDetail, pickableSkills, projectSkills } from './skills.js';
+import { targetsPreview, startDraft, draftStatus, cancelDraft, saveSkill, skillSource, copySkill, deleteSkill } from './skill-create.js';
 import { mentionFiles } from './mention.js';
 import { mcpReport, mcpDetail, mcpEffective, checkMcp, invalidateMcp, mcpForPicker } from './mcp.js';
 import { setupStatus, startJob, getJob, jobInput, stopJob, publicJob, runningJobs } from './setup.js';
@@ -332,6 +333,12 @@ route('POST', '/api/projects/:pid/meta', async (req, url, { pid }) => {
   return store.patchProjectMeta(id, patch);
 });
 
+route('GET', '/api/projects/:pid/skills', async (req, url, { pid }) => {
+  const id = decodeURIComponent(pid);
+  if (!(await projectsList()).some((x) => x.id === id)) return [404, { error: tr('프로젝트를 찾을 수 없어요') }];
+  return projectSkills(id);
+});
+
 route('POST', '/api/projects/:pid/brief', async (req, url, { pid }) => {
   const id = decodeURIComponent(pid);
   const p = (await projectsList()).find((x) => x.id === id);
@@ -543,6 +550,16 @@ route('POST', '/api/ports/:port/share', async (req, url, { port }) => shareToPho
 route('POST', '/api/ports/:port/unshare', async (req, url, { port }) => { await unshare(port); return { ok: true }; });
 route('POST', '/api/pids/:pid/stop', async (req, url, { pid }) => stopPort(pid));
 route('GET', '/api/skills', async () => skillsReport());
+// new skill: preview where it goes -> AI draft (background job, polled) -> save. Plus edit/copy/delete your own.
+const skillErr = (e) => [e.code === 'EXISTS' ? 409 : 400, { error: e.message, code: e.code || null }];
+route('GET', '/api/skills/targets', async (req, url) => { try { return targetsPreview(Object.fromEntries(url.searchParams)); } catch (e) { return skillErr(e); } });
+route('POST', '/api/skills/drafts', async (req) => { try { return await startDraft(await body(req)); } catch (e) { return skillErr(e); } });
+route('GET', '/api/skills/drafts/:id', async (req, url, { id }) => draftStatus(id) || [404, { error: tr('초안을 찾을 수 없어요') }]);
+route('POST', '/api/skills/drafts/:id/cancel', async (req, url, { id }) => ({ ok: cancelDraft(id) }));
+route('POST', '/api/skills/save', async (req) => { try { return await saveSkill(await body(req)); } catch (e) { return skillErr(e); } });
+route('POST', '/api/skills/copy', async (req) => { const b = await body(req); try { return await copySkill(b.id, b.tools); } catch (e) { return skillErr(e); } });
+route('POST', '/api/skills/delete', async (req) => { const b = await body(req); try { return await deleteSkill(b.id); } catch (e) { return skillErr(e); } });
+route('GET', '/api/skills/:id/source', async (req, url, { id }) => (await skillSource(id)) || [404, { error: tr('이 스킬은 여기서 고칠 수 없어요') }]);
 route('GET', '/api/skills/:id', async (req, url, { id }) => (await skillDetail(id)) || [404, { error: tr('스킬을 찾을 수 없어요') }]);
 route('GET', '/api/mcp', async (req, url) => { if (url.searchParams.get('fresh') === '1') invalidateMcp(); return mcpReport(); });
 route('GET', '/api/mcp/effective', async (req, url) => {

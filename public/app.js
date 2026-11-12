@@ -398,6 +398,7 @@ const routes = [
   [/^#\/ports$/, viewPorts, 'tools'],
   [/^#\/repos$/, viewRepos, 'tools'],
   [/^#\/skills$/, viewSkills, 'tools'],
+  [/^#\/skills\/new$/, viewSkillNew, 'tools'],
   [/^#\/skill\/(.+)$/, viewSkill, 'tools'],
   [/^#\/mcp$/, viewMcps, 'tools'],
   [/^#\/mcp\/(.+)$/, viewMcp, 'tools'],
@@ -750,8 +751,8 @@ async function viewProject([id]) {
   head.insertAdjacentHTML('afterbegin', `<a class="icon-btn" href="#/projects" style="margin-left:-10px">${ICON.back}</a>`);
   v.innerHTML = '<div class="skeleton" style="height:160px;margin-top:10px"></div>';
   let selecting = false, noteEditing = false, reloadAfterNote = false;
-  const PAGE = 40;
-  let limit = PAGE; // grows with 「더 보기」 and survives reloads (status change, memo save…)
+  const PAGE = 4;
+  let page = 0; // survives reloads (status change, memo save…)
   const sel = new Set();
   G.cleanup = () => document.body.classList.remove('selecting');
   const load = async () => {
@@ -765,8 +766,10 @@ async function viewProject([id]) {
     sub.textContent = p.path;
     head.querySelector('.icon-btn[href="#/inbox"]')?.replaceWith(Object.assign(document.createElement('button'), { className: 'icon-btn', id: 'pmore', innerHTML: ICON.more }));
     const human = d.sessions.filter((s) => !s.automated);
-    const listHtml = () => d.sessions.slice(0, limit).map((s) => (selecting ? selRow(s, { showProject: false }) : sessionRow(s, { showProject: false }))).join('') || `<div class="empty">${t('세션이 없어요')}</div>`;
-    const moreLabel = () => `${t('더 보기')} · ${t('{n}개 남음', { n: Math.max(0, d.sessions.length - limit) })}`;
+    const pages = Math.max(1, Math.ceil(d.sessions.length / PAGE));
+    page = Math.min(page, pages - 1);
+    const listHtml = () => d.sessions.slice(page * PAGE, (page + 1) * PAGE).map((s) => (selecting ? selRow(s, { showProject: false }) : sessionRow(s, { showProject: false }))).join('') || `<div class="empty">${t('세션이 없어요')}</div>`;
+    const pagerHtml = () => (pages > 1 ? `<button class="btn sm ghost" data-pg="-1" ${page ? '' : 'disabled'}>‹ ${t('이전')}</button><span class="pg-n">${page + 1} / ${pages}</span><button class="btn sm ghost" data-pg="1" ${page < pages - 1 ? '' : 'disabled'}>${t('다음')} ›</button>` : '');
     const latest = human[0] || d.sessions[0];
     const b = d.brief;
     const briefHtml = b ? `
@@ -812,15 +815,17 @@ async function viewProject([id]) {
       <div class="section"><div class="section-h"><h2>${t('세션')}</h2><span class="count">${d.sessions.length}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span>
         ${d.sessions.length ? `<button class="more" id="pselbtn">${selecting ? t('완료') : t('선택')}</button>` : ''}</div>
         <div class="card list" id="plist">${listHtml()}</div>
-        <button class="btn block ghost" id="psmore" style="margin-top:10px;${d.sessions.length > limit ? '' : 'display:none'}">${moreLabel()}</button>
+        <div class="pager" id="ppager">${pagerHtml()}</div>
         <div style="display:flex;gap:8px;margin-top:10px">
           ${latest ? `<a class="btn block" href="#/s/${latest.tool}/${encodeURIComponent(latest.id)}">${t('최근 세션 열기')}</a>` : ''}
           <a class="btn block primary" href="#/new?cwd=${encodeURIComponent(p.path)}">${t('새 세션')}</a>
         </div>
       </div>
+      <div class="section" id="pskills"></div>
       <div class="section" id="pmcp"></div>
       ${gitHtml}
       <div class="bulkbar" id="pbar" ${selecting ? '' : 'hidden'}><button class="btn sm ghost" id="pall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="pcount">0</b>' })}</span><button class="btn sm" id="phide">${t('숨기기')}</button><button class="btn primary danger-fill" id="ptrash">${t('휴지통으로')}</button></div>`;
+    loadProjectSkills($('#pskills'), p);
     loadProjectMcp($('#pmcp'), p.path);
     if ($('#psrv')) bindServers($('#psrv'), () => load());
     bindServices($('#psvc'), p.id, () => load());
@@ -853,19 +858,20 @@ async function viewProject([id]) {
     $('#pnotecard').onclick = editNote;
     $('#punmute') && ($('#punmute').onclick = async () => { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { muted: false } }); toast(t('알림을 다시 켰어요')); load(); });
     // session list: ⋯ / long-press menu, or checkboxes for bulk trash
-    const shown = () => d.sessions.slice(0, limit);
+    const shown = () => d.sessions.slice(page * PAGE, (page + 1) * PAGE);
     const drawBar = () => { $('#pcount').textContent = sel.size; $('#ptrash').disabled = !sel.size; $('#phide').disabled = !sel.size; };
     if (!selecting) attachLongPress($('#plist'));
     const bindChecks = () => $$('#plist [data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); c.onchange = () => { c.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); drawBar(); }; });
     bindChecks();
     drawBar();
-    $('#psmore').onclick = () => {
-      limit += PAGE;
+    // pages of 4; sessions picked while selecting stay picked across pages
+    const bindPager = () => $$('#ppager [data-pg]', v).forEach((b) => (b.onclick = () => {
+      page = Math.max(0, Math.min(pages - 1, page + Number(b.dataset.pg)));
       $('#plist').innerHTML = listHtml();
-      $('#psmore').style.display = d.sessions.length > limit ? '' : 'none'; // .btn's display beats [hidden]
-      $('#psmore').textContent = moreLabel();
-      bindChecks();
-    };
+      $('#ppager').innerHTML = pagerHtml();
+      bindChecks(); bindPager();
+    }));
+    bindPager();
     $('#pselbtn') && ($('#pselbtn').onclick = () => { selecting = !selecting; sel.clear(); document.body.classList.toggle('selecting', selecting); load(); });
     $('#pall').onclick = () => {
       const ok = shown().filter((s) => !s.live);
@@ -2539,7 +2545,7 @@ async function viewPorts() {
 
 // ---------------------------------------------------------------- SKILLS
 async function viewSkills(_, params) {
-  const v = shell({ title: t('스킬'), fab: false });
+  const v = shell({ title: t('스킬'), fab: false, right: `<a class="icon-btn" href="#/skills/new" aria-label="${t('새 스킬 만들기')}">${ICON.plus}</a>` });
   v.innerHTML = '<div class="section"><div class="skeleton" style="height:300px"></div></div>';
   const d = await api('/api/skills');
   const f = store.get('skfilter', { tool: '', used: false });
@@ -2571,7 +2577,8 @@ async function viewSkills(_, params) {
             <div class="m">${s.lastUsed ? `<span>${t('마지막 사용 {when}', { when: ago(s.lastUsed) })}</span>` : `<span>${t('최근 30일 사용 기록 없음')}</span>`}</div></div></a>`).join('')}</div></div>`;
       }).join('') : `<div class="empty"><b>${t('조건에 맞는 스킬이 없어요')}</b></div>`);
   };
-  v.innerHTML = `${searchBox('skq', q, t('스킬 이름·설명·위치 검색'))}<div class="chips" id="skf"></div><div id="sklist"></div>`;
+  v.innerHTML = `<a class="card tool-card sk-new" href="#/skills/new"><div class="ti">${glyph('spark')}</div><div class="tb"><b>${t('새 스킬 만들기')}</b><span>${t('하고 싶은 일을 말로 설명하면 AI가 스킬을 써서 등록해줘요')}</span></div><span class="muted">›</span></a>
+    ${searchBox('skq', q, t('스킬 이름·설명·위치 검색'))}<div class="chips" id="skf"></div><div id="sklist"></div>`;
   $('#skq').oninput = (e) => { q = e.target.value; sessionStorage.setItem('skq', q); draw(); };
   const chips = () => {
     const has = new Set(d.skills.map((s) => s.tool));
@@ -2586,6 +2593,10 @@ async function viewSkills(_, params) {
 async function viewSkill([id]) {
   const v = shell({ title: t('스킬'), fab: false, right: `<a class="icon-btn" href="#/skills" aria-label="${t('목록')}">${ICON.back}</a>` });
   const s = await api(`/api/skills/${encodeURIComponent(id)}`);
+  // your own skill folders (not plugin / synced / built-in) can be edited and deleted here
+  const mine = s.kind === 'skill' && ['global', 'project'].includes(s.scope) && s.readers?.length > 0;
+  const copyable = s.kind === 'skill' && s.path && s.scope !== 'unlisted' && INSTALLED().some((k) => !(s.readers || []).includes(k));
+  const tryTool = [s.tool, ...(s.readers || [])].find((k) => G.state?.tools?.some((x) => x.id === k && x.installed));
   const sessions = s.sessions.length
     ? `<div class="card list">${s.sessions.map((x) => { const [tool, sid] = x.key.split(/:(.+)/); return `<a class="srow" href="#/s/${tool}/${encodeURIComponent(sid)}"><div class="tool-avatar ${tool}">${TOOL[tool]?.short || '?'}</div><div class="body"><div class="t"><span class="tt">${esc(x.cwd ? projectName(x.cwd) : sid.slice(0, 8))}</span></div><div class="m"><span>${ago(x.ts)}</span><span>· ${x.n}${t('회')}</span></div></div></a>`; }).join('')}</div>`
     : `<div class="card empty"><b>${t('최근 30일 동안 쓰인 적이 없어요')}</b>${t('설명(description)이 요청과 잘 맞아야 에이전트가 골라 써요')}</div>`;
@@ -2594,10 +2605,357 @@ async function viewSkill([id]) {
       <div class="m" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><span class="tool-badge ${s.tool}">${TOOL[s.tool].name}</span><span class="flag">${esc(s.scopeLabel)}</span>${s.kind === 'command' ? `<span class="flag">${t('슬래시 명령어')}</span>` : ''}</div>
       ${s.description ? `<p class="sk-desc">${esc(s.description)}</p>` : ''}
       ${s.pathShort ? `<div class="card sk-path"><b>${t('위치')}</b><code>${esc(s.pathShort)}</code>${s.files?.length ? `<span class="small muted">${t('같은 폴더:')} ${s.files.map(esc).join(', ')}</span>` : ''}</div>` : ''}
-      <p class="small muted">${s.scope === 'project' ? t('이 프로젝트 폴더에서 작업할 때만 에이전트가 볼 수 있어요') : s.scope === 'unlisted' ? t('디스크에서 찾지 못한 스킬이에요 (CLI 내장이거나 지워졌어요)') : t('모든 폴더에서 에이전트가 볼 수 있어요')}</p>
+      <p class="small muted">${s.scope === 'project' ? t('이 프로젝트 폴더에서 작업할 때만 에이전트가 볼 수 있어요') : s.scope === 'unlisted' ? t('디스크에서 찾지 못한 스킬이에요 (CLI 내장이거나 지워졌어요)') : t('모든 폴더에서 에이전트가 볼 수 있어요')}${s.readers?.length > 1 ? ` · ${t('읽는 CLI: {list}', { list: esc(skToolsLabel(s.readers)) })}` : ''}</p>
+      <div class="pact sk-acts">
+        ${tryTool ? `<button class="btn sm primary" id="sktry">${glyph('spark')}${t('새 채팅에서 써보기')}</button>` : ''}
+        ${mine ? `<a class="btn sm" href="#/skills/new?edit=${encodeURIComponent(s.id)}">${glyph('edit')}${t('고치기')}</a>` : ''}
+        ${copyable ? `<button class="btn sm" id="skcopy">${t('다른 CLI에도 추가')}</button>` : ''}
+        ${mine ? `<button class="btn sm ghost danger" id="skrm">${t('삭제')}</button>` : ''}
+      </div>
     </div>
     <div class="section"><div class="section-h"><h2>${t('쓰인 세션')}</h2><span class="count">${t('{n}회', { n: s.uses })}</span></div>${sessions}</div>
     ${s.content ? `<div class="section"><div class="section-h"><h2>${s.kind === 'command' ? t('명령어 내용') : 'SKILL.md'}</h2></div><div class="card md-card msg-ai">${md(s.content.replace(/^---[\s\S]*?---\s*/, ''))}</div></div>` : ''}`;
+  $('#sktry', v) && ($('#sktry', v).onclick = () => skTry(tryTool, `${skillText(tryTool, tryTool === 'claude' && s.alias ? s.alias : s.name)} `, s.project ? shortPath(s.project) : ''));
+  $('#skcopy', v) && ($('#skcopy', v).onclick = async () => {
+    const targets = INSTALLED().filter((k) => !(s.readers || []).includes(k));
+    const tools = await sheet({
+      title: t('{name}을(를) 다른 CLI에도 추가', { name: s.name }),
+      body: `<div class="pwform"><p class="small muted">${s.scope === 'project' ? t('같은 프로젝트 안에서 고른 CLI가 읽는 폴더로 스킬 폴더를 그대로 복사해요.') : t('고른 CLI의 전역 스킬 폴더로 스킬 폴더를 그대로 복사해요.')}</p><div class="chips wrap">${targets.map((k) => `<label class="chip check"><input type="checkbox" data-tool="${k}" checked>${TOOL[k].name}</label>`).join('')}</div></div>`,
+      footer: `<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('추가')}</button>`,
+      onMount: (el, close) => {
+        $('[data-x]', el).onclick = () => close(undefined);
+        $('[data-ok]', el).onclick = () => close($$('[data-tool]', el).filter((c) => c.checked).map((c) => c.dataset.tool));
+      },
+    });
+    if (!tools?.length) return;
+    try {
+      const r = await api('/api/skills/copy', { body: { id: s.id, tools } });
+      const bad = r.results.filter((x) => !x.ok);
+      if (bad.length) toast(bad.map((x) => `${x.dir}: ${x.error}`).join(' · '), true);
+      else toast(t('✅ {name} 추가했어요 · {list}', { name: r.name, list: r.results.map((x) => x.dir).join(', ') }));
+      render();
+    } catch (e) { toast(e.message, true); }
+  });
+  $('#skrm', v) && ($('#skrm', v).onclick = async () => {
+    if (!confirm(t('{name} 스킬을 지울까요? 폴더는 30일 동안 Baton 백업에 남겨둬요.', { name: s.name }))) return;
+    try { const r = await api('/api/skills/delete', { body: { id: s.id } }); toast(t('지웠어요 · 백업: {p}', { p: r.backup })); location.hash = '#/skills'; }
+    catch (e) { toast(e.message, true); }
+  });
+}
+
+// ---------------------------------------------------------------- NEW / EDIT SKILL
+// Describe it in plain words -> an AI CLI writes SKILL.md (+ helper files) -> review, edit or ask for changes -> save
+// into every folder the chosen CLIs read. The whole flow lives in sessionStorage, so leaving the screen loses nothing.
+const SKILL_EXAMPLES = () => [
+  [t('커밋 메시지'), t('커밋하기 전에 변경 내용을 보고 Conventional Commits 형식으로 커밋 메시지를 써줘. 커밋은 내가 확인한 다음에 해.')],
+  [t('PR 준비'), t('PR을 올리기 전에 테스트·린트를 돌리고 남은 TODO와 디버그 코드를 확인한 다음, 변경 내용을 정리한 PR 설명을 써줘.')],
+  [t('버그 고치기 순서'), t('버그를 고칠 때 먼저 버그를 재현하는 테스트를 쓰고, 원인을 찾아 고친 다음 그 테스트와 기존 테스트가 통과하는지 확인해줘.')],
+  [t('코드 리뷰'), t('내가 리뷰해 달라고 하면 바뀐 코드에서 버그·보안 문제·빠진 테스트를 심각한 것부터 찾아서 파일:줄 번호와 함께 알려줘. 코드는 고치지 마.')],
+  [t('릴리스 노트'), t('마지막 태그 이후 커밋을 모아서 사용자가 읽기 쉬운 릴리스 노트(새 기능 / 고친 점 / 주의할 점)를 써줘.')],
+];
+const SK_KEY = 'sknew';
+const skTry = (tool, text, cwd) => { sessionStorage.setItem('draft:new', text); location.hash = `#/new?${new URLSearchParams({ tool, ...(cwd ? { cwd } : {}) })}`; };
+const skToolsLabel = (tools) => tools.map((x) => TOOL[x]?.name || x).join(', ');
+
+async function viewSkillNew(_, params) {
+  const editId = params.get('edit') || '';
+  // opened from a project page (?project=<root>): the skill goes into that project, and back leads there
+  const fromProject = params.get('project') || '';
+  const backHref = editId ? `#/skill/${editId}` : fromProject ? `#/p/${encodeURIComponent(fromProject)}` : '#/skills';
+  const v = shell({ title: editId ? t('스킬 고치기') : t('새 스킬 만들기'), fab: false, right: `<a class="icon-btn" href="${backHref}" aria-label="${t('뒤로')}">${ICON.back}</a>` });
+  const installed = INSTALLED().filter((x) => TOOL[x]);
+  let S = null;
+  try { S = JSON.parse(sessionStorage.getItem(SK_KEY) || 'null'); } catch { S = null; }
+  // a different skill (or new vs. edit) starts over; so does coming back after a save (the result screen is shown once)
+  if (S && ((S.editId || '') !== editId || S.stage === 'done')) S = null;
+  const fresh = () => ({
+    stage: 'ask', request: '', scope: fromProject ? 'project' : store.get('skscope', 'global'), project: fromProject ? shortPath(fromProject) : store.get('skproject', ''),
+    tools: store.get('sktools', installed).filter((x) => installed.includes(x)), writer: store.get('skwriter', ''), job: null, draft: null, feedback: '', editId: '', error: '',
+  });
+  // a draft meant for somewhere else is still open: nothing written yet -> just retarget it; otherwise ask (banner)
+  let otherDraft = false;
+  if (S && fromProject && !editId && !(S.scope === 'project' && S.project === shortPath(fromProject))) {
+    if (S.stage === 'ask' && !S.draft) { S.scope = 'project'; S.project = shortPath(fromProject); }
+    else otherDraft = true;
+  }
+  if (!S) S = fresh();
+  if (!S.tools.length) S.tools = installed.slice();
+  const keep = () => sessionStorage.setItem(SK_KEY, JSON.stringify(S));
+  let projects = null;
+  const loadProjects = async () => { if (!projects) { try { projects = (await api('/api/projects')).items.filter((p) => p.id && shortPath(p.id) !== '~'); } catch { projects = []; } } return projects; };
+  if (S.scope === 'project' && !S.project) { const ps = await loadProjects(); S.project = ps[0] ? shortPath(ps[0].id) : ''; }
+
+  if (editId && !S.editId) {
+    v.innerHTML = '<div class="section"><div class="skeleton" style="height:300px"></div></div>';
+    const src = await api(`/api/skills/${encodeURIComponent(editId)}/source`);
+    S = { ...fresh(), stage: 'review', editId, scope: src.scope, project: src.project ? shortPath(src.project) : '', tools: src.readers.length ? src.readers : [src.tool],
+      draft: { name: src.name, description: src.description, body: src.body, files: src.files, extraFront: src.extraFront }, edit: { dir: src.dir, readers: src.readers, skipped: src.skipped, orig: src.files.map((f) => f.path) } };
+    keep();
+  }
+
+  let timer = null;
+  G.cleanup = () => clearInterval(timer);
+
+  // ---- where it goes (asks the server, which owns the folder rules)
+  let whereSerial = 0;
+  const drawWhere = async (box) => {
+    if (!box) return;
+    const id = ++whereSerial;
+    if (S.editId) { box.innerHTML = `<b>${t('위치')}</b><code>${esc(S.edit.dir)}</code>${S.edit.readers.length ? `<span class="small muted">${t('읽는 CLI: {list}', { list: esc(skToolsLabel(S.edit.readers)) })}</span>` : ''}`; return; }
+    if (!S.tools.length) { box.innerHTML = `<span class="warn-text small">${t('스킬을 쓸 CLI를 하나 이상 골라주세요')}</span>`; return; }
+    if (S.scope === 'project' && !S.project) { box.innerHTML = `<span class="warn-text small">${t('프로젝트 폴더를 골라주세요')}</span>`; return; }
+    try {
+      const r = await api(`/api/skills/targets?${new URLSearchParams({ tools: S.tools.join(','), scope: S.scope, project: S.project })}`);
+      if (id !== whereSerial) return;
+      const nm = S.draft?.name || t('<이름>');
+      box.innerHTML = `<b>${t('저장 위치')}</b>${r.targets.map((x) => `<code>${esc(x.dir)}/${esc(nm)}/</code><span class="small muted">${t('읽는 CLI: {list}', { list: esc(skToolsLabel(x.tools)) })}</span>`).join('')}`;
+    } catch (e) { if (id === whereSerial) box.innerHTML = `<span class="warn-text small">${esc(e.message)}</span>`; }
+  };
+
+  const pickProject = async () => {
+    const ps = await loadProjects();
+    const opts = [...ps.slice(0, 30).map((p) => ({ value: shortPath(p.id), label: p.name || projectName(p.id), desc: shortPath(p.id), icon: glyph('folder') })), { value: '__other', label: t('다른 폴더 고르기…'), icon: glyph('search') }];
+    let val = await pick(t('어느 프로젝트에서 쓸까요?'), opts, S.project);
+    if (val === '__other') val = await folderPicker(S.project || G.state?.defaultCwd || '~', { allowNew: false });
+    if (!val) return;
+    S.project = shortPath(val); store.set('skproject', S.project); keep(); draw();
+  };
+
+  // ---- the AI draft job
+  const startJob = async (body) => {
+    S.error = '';
+    try {
+      const j = await api('/api/skills/drafts', { body });
+      S.job = { id: j.id, tool: j.tool, startedAt: j.startedAt, back: S.stage }; S.stage = 'writing'; keep(); draw();
+    } catch (e) { toast(e.message, true); }
+  };
+  const poll = async () => {
+    if (!S.job) return;
+    let j;
+    try { j = await api(`/api/skills/drafts/${S.job.id}`); }
+    catch (e) { if (e.status === 404) { S.error = t('초안 작업이 사라졌어요 (Baton이 다시 시작됐어요). 다시 시도해주세요'); S.stage = S.job.back || 'ask'; S.job = null; keep(); draw(); } return; }
+    if (j.status === 'running') return;
+    clearInterval(timer);
+    if (j.status === 'done') {
+      const prevName = S.draft?.name;
+      S.draft = { ...j.draft, name: S.editId ? prevName : j.draft.name };
+      S.feedback = ''; S.stage = 'review';
+    } else { S.error = j.error || t('스킬 초안을 만들지 못했어요'); S.stage = S.job.back || 'ask'; }
+    S.job = null; keep(); draw();
+  };
+  const ctxBody = () => ({ request: S.request, tools: S.tools, scope: S.scope, project: S.project, writer: S.writer });
+
+  const toolChecks = () => `<div class="chips wrap">${installed.map((k) => `<label class="chip check"><input type="checkbox" data-sktool="${k}" ${S.tools.includes(k) ? 'checked' : ''}>${TOOL[k].name}</label>`).join('')}</div>`;
+  const bindToolChecks = (root, onChange) => $$('[data-sktool]', root).forEach((c) => (c.onchange = () => {
+    S.tools = $$('[data-sktool]', root).filter((x) => x.checked).map((x) => x.dataset.sktool); store.set('sktools', S.tools); keep(); onChange();
+  }));
+  const errBanner = () => (otherDraft ? `<div class="section"><div class="banner warn"><span>${t('다른 곳({where})에 넣으려던 초안이 있어서 이어서 보여드려요', { where: esc(S.scope === 'project' ? S.project : t('전역')) })}</span><button class="btn sm" id="skfresh">${t('{name}용으로 새로 만들기', { name: esc(projectName(fromProject)) })}</button></div></div>` : '')
+    + (S.error ? `<div class="section"><div class="banner warn"><span>${esc(S.error)}</span></div></div>` : '');
+  const bindFresh = () => $('#skfresh', v) && ($('#skfresh', v).onclick = () => { otherDraft = false; S = fresh(); keep(); draw(); });
+
+  function drawAsk() {
+    v.innerHTML = `${errBanner()}
+      <div class="section sknew">
+        <p class="sk-desc" style="margin-top:4px">${t('하고 싶은 일을 평소 말하듯 적어주세요. AI가 스킬 파일(SKILL.md)을 써주고, 저장하기 전에 확인하고 고칠 수 있어요.')}</p>
+        <textarea id="skreq" class="sk-text" rows="5" placeholder="${esc(t('예: 커밋하기 전에 변경 내용을 보고 Conventional Commits 형식으로 커밋 메시지를 써줘. 커밋은 내가 확인한 다음에 해.'))}">${esc(S.request)}</textarea>
+        <div class="chips wrap sk-ex">${SKILL_EXAMPLES().map(([l], i) => `<button class="chip" data-ex="${i}">${esc(l)}</button>`).join('')}</div>
+        <p class="small muted">${t('잘 만드는 요령: 언제 쓰는지, 어떤 순서로 하는지, 하지 말아야 할 것을 적으면 더 정확해져요.')}</p>
+      </div>
+      <div class="section">
+        <div class="section-h"><h2>${t('어디에서 쓸까요?')}</h2></div>
+        <div class="choice-grid">
+          <button class="choice ${S.scope === 'global' ? 'on' : ''}" data-scope="global"><span class="ci">${glyph('globe')}</span><b>${t('모든 폴더 (전역)')}</b><span>${t('어느 프로젝트에서 작업하든 에이전트가 쓸 수 있어요')}</span></button>
+          <button class="choice ${S.scope === 'project' ? 'on' : ''}" data-scope="project"><span class="ci">${glyph('folder')}</span><b>${t('이 프로젝트에서만')}</b><span>${t('프로젝트 폴더 안에 저장돼요. git에 올리면 팀원도 같이 써요')}</span></button>
+        </div>
+        ${S.scope === 'project' ? `<div class="card list"><button class="opt-row" id="skproj"><span class="oi">${glyph('folder')}</span><div class="l"><b>${esc(S.project ? projectName(S.project) : t('프로젝트 고르기'))}</b><span>${esc(S.project || t('스킬을 넣을 프로젝트 폴더'))}</span></div><span>›</span></button></div>` : ''}
+      </div>
+      <div class="section">
+        <div class="section-h"><h2>${t('어느 CLI에서 쓸까요?')}</h2></div>
+        ${toolChecks()}
+        <div class="card sk-path" id="skwhere" style="margin-top:10px"></div>
+        <p class="small muted">${t('여러 CLI가 같이 읽는 폴더가 있으면 한 곳에만 저장해서 중복되지 않게 해요.')}</p>
+      </div>
+      <div class="section">
+        <label class="sk-row"><span>${t('초안을 쓸 AI')}</span><select id="skwriter"><option value="">${t('자동 (요약에 쓰는 CLI)')}</option>${installed.map((k) => `<option value="${k}" ${S.writer === k ? 'selected' : ''}>${TOOL[k].name}</option>`).join('')}</select></label>
+      </div>
+      <div class="section pact sk-actions">
+        <button class="btn primary" id="skgo">${glyph('spark')}${t('AI로 스킬 만들기')}</button>
+        ${S.draft ? `<button class="btn" id="skdraft">${t('초안으로 돌아가기')}</button>` : `<button class="btn ghost" id="skmanual">${t('직접 쓰기')}</button>`}
+      </div>`;
+    const req = $('#skreq', v);
+    req.oninput = () => { S.request = req.value; keep(); };
+    $$('[data-ex]', v).forEach((b) => (b.onclick = () => { req.value = SKILL_EXAMPLES()[+b.dataset.ex][1]; S.request = req.value; keep(); req.focus(); }));
+    $$('[data-scope]', v).forEach((b) => (b.onclick = async () => {
+      S.scope = b.dataset.scope; store.set('skscope', S.scope);
+      if (S.scope === 'project' && !S.project) { const ps = await loadProjects(); S.project = ps[0] ? shortPath(ps[0].id) : ''; }
+      keep(); draw();
+    }));
+    $('#skproj', v) && ($('#skproj', v).onclick = pickProject);
+    bindToolChecks(v, () => drawWhere($('#skwhere', v)));
+    $('#skwriter', v).onchange = (e) => { S.writer = e.target.value; store.set('skwriter', S.writer); keep(); };
+    $('#skgo', v).onclick = () => {
+      if (!S.request.trim()) { toast(t('어떤 스킬이 필요한지 적어주세요'), true); req.focus(); return; }
+      startJob(ctxBody());
+    };
+    $('#skdraft', v) && ($('#skdraft', v).onclick = () => { S.stage = 'review'; keep(); draw(); });
+    $('#skmanual', v) && ($('#skmanual', v).onclick = () => {
+      S.draft = { name: '', description: '', body: `# ${t('스킬 이름')}\n\n## ${t('언제 쓰나요')}\n- \n\n## ${t('진행 순서')}\n1. \n2. \n\n## ${t('결과 확인')}\n- \n\n## ${t('하지 말 것')}\n- `, files: [], extraFront: '' };
+      S.stage = 'review'; keep(); draw();
+    });
+    drawWhere($('#skwhere', v));
+    bindFresh();
+    if (!S.request) setTimeout(() => req.focus(), 50);
+  }
+
+  function drawWriting() {
+    const tool = TOOL[S.job.tool]?.name || S.job.tool;
+    v.innerHTML = `<div class="section"><div class="card sk-writing jobbox">
+        <div class="jhead"><div class="spinner"></div><div class="jt"><b>${t('{tool}가 스킬을 쓰는 중…', { tool: esc(tool) })}</b><span class="jsub">${t('보통 30초~2분 걸려요. 다른 화면에 다녀와도 계속 써요.')}</span></div><span class="jtime" id="sktime">0:00</span></div>
+        ${S.request ? `<p class="small muted sk-quote">${esc(clip1(S.request, 300))}</p>` : ''}
+        <div class="pact"><button class="btn sm ghost" id="skcancel">${t('취소')}</button></div>
+      </div></div>`;
+    const tick = () => { const s = Math.floor((Date.now() - S.job.startedAt) / 1000); const el = $('#sktime'); if (el) el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+    tick();
+    clearInterval(timer);
+    let n = 0;
+    timer = setInterval(() => { tick(); if (++n % 2 === 0) poll(); }, 1000);
+    $('#skcancel', v).onclick = async () => {
+      clearInterval(timer);
+      await api(`/api/skills/drafts/${S.job.id}/cancel`, { body: {} }).catch(() => {});
+      S.stage = S.job.back || 'ask'; S.job = null; keep(); draw();
+    };
+  }
+
+  function drawReview() {
+    const d = S.draft;
+    const fileBox = (f, i) => `<details class="card sk-file" ${f.open ? 'open' : ''} data-fi="${i}"><summary><code>${esc(f.path)}</code><button class="btn sm ghost" data-rmf="${i}">${t('빼기')}</button></summary><textarea class="sk-text mono" data-file="${i}" rows="10" spellcheck="false">${esc(f.content)}</textarea></details>`;
+    const call = S.tools.includes('claude') ? `/${d.name || t('<이름>')}` : S.tools.includes('codex') ? `$${d.name || t('<이름>')}` : '';
+    v.innerHTML = `${errBanner()}
+      ${d.summary || d.similar || d.assumptions?.length ? `<div class="section">
+        ${d.summary ? `<div class="banner link"><span>✨ ${esc(d.summary)}</span></div>` : ''}
+        ${d.similar ? `<div class="banner warn" style="margin-top:8px"><span>${t('비슷한 스킬이 이미 있어요: {name}. 겹치면 에이전트가 헷갈릴 수 있어요', { name: esc(d.similar) })}</span></div>` : ''}
+        ${d.assumptions?.length ? `<div class="card sk-notes"><b>${t('AI가 정한 것 — 다르면 아래에서 고쳐 달라고 하세요')}</b><ul>${d.assumptions.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+      </div>` : ''}
+      <div class="section sk-form">
+        <label class="field"><span>${t('이름')}</span><input id="skname" value="${esc(d.name)}" placeholder="commit-message" autocomplete="off" spellcheck="false" autocapitalize="off" ${S.editId ? 'readonly' : ''}>
+          <small class="muted">${S.editId ? t('이름(폴더)은 바꿀 수 없어요') : t('영어 소문자·숫자·하이픈(-)')}${call ? ` · ${t('{call} 으로 직접 부를 수 있어요', { call: `<code>${esc(call)}</code>` })}` : ''}</small></label>
+        <label class="field"><span>${t('설명')} <em class="muted" id="skdlen"></em></span><textarea id="skdesc" class="sk-text" rows="5">${esc(d.description)}</textarea>
+          <small class="muted">${t('에이전트는 이 설명만 보고 스킬을 쓸지 정해요. 무엇을 하는지와 언제 쓰는지(사용자가 할 법한 말)를 적어주세요.')}</small></label>
+        <div class="field"><span>${t('본문 (SKILL.md)')}</span>
+          <div class="seg sk-tabs"><button data-tab="edit" class="on">${t('편집')}</button><button data-tab="preview">${t('미리보기')}</button></div>
+          <textarea id="skbody" class="sk-text mono" rows="18" spellcheck="false">${esc(d.body)}</textarea>
+          <div id="skprev" class="card md-card msg-ai" hidden></div></div>
+        <div class="field"><span>${t('함께 넣을 파일')} <em class="muted">${t('스크립트·참고 문서 (선택)')}</em></span>
+          ${(d.files || []).map(fileBox).join('')}
+          <button class="btn sm ghost" id="skaddf" style="align-self:flex-start">${ICON.plus}${t('파일 추가')}</button>
+          ${S.edit?.skipped?.length ? `<small class="muted">${t('그대로 두는 파일: {list}', { list: esc(S.edit.skipped.join(', ')) })}</small>` : ''}</div>
+      </div>
+      <div class="section">
+        <div class="section-h"><h2>${t('AI에게 고쳐 달라고 하기')}</h2></div>
+        <textarea id="skfb" class="sk-text" rows="3" placeholder="${esc(t('예: 커밋 전에 테스트도 돌리게 해줘 / 설명을 더 짧게 / 영어로 바꿔줘'))}">${esc(S.feedback || '')}</textarea>
+        <div class="pact" style="margin-top:8px"><button class="btn" id="skrefine">${glyph('spark')}${S.editId ? t('AI로 고치기') : t('이대로 다시 쓰기')}</button></div>
+      </div>
+      <div class="section">
+        <div class="section-h"><h2>${t('어디에 저장할까요?')}</h2>${S.editId ? '' : `<button class="more linkish" id="skchange">${t('바꾸기')}</button>`}</div>
+        <div class="card sk-path" id="skwhere"></div>
+        <div class="pact sk-actions"><button class="btn primary" id="sksave">${S.editId ? t('저장') : t('스킬 등록')}</button><button class="btn ghost" id="skreset">${S.editId ? t('취소') : t('처음부터')}</button></div>
+      </div>`;
+    const name = $('#skname', v), desc = $('#skdesc', v), body = $('#skbody', v), prev = $('#skprev', v);
+    const dlen = () => { const n = desc.value.replace(/\s+/g, ' ').trim().length; $('#skdlen', v).textContent = `${n}/1024`; $('#skdlen', v).classList.toggle('warn-text', n > 1024 || n === 0); };
+    dlen();
+    name.oninput = () => { d.name = name.value.trim(); keep(); drawWhere($('#skwhere', v)); };
+    name.onblur = () => { const c = name.value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, ''); if (c !== name.value) { name.value = c; d.name = c; keep(); drawWhere($('#skwhere', v)); } };
+    desc.oninput = () => { d.description = desc.value; keep(); dlen(); };
+    body.oninput = () => { d.body = body.value; keep(); };
+    $('#skfb', v).oninput = (e) => { S.feedback = e.target.value; keep(); };
+    $$('.sk-tabs button', v).forEach((b) => (b.onclick = () => {
+      $$('.sk-tabs button', v).forEach((x) => x.classList.toggle('on', x === b));
+      const pv = b.dataset.tab === 'preview';
+      body.hidden = pv; prev.hidden = !pv;
+      if (pv) prev.innerHTML = md(body.value);
+    }));
+    $$('[data-file]', v).forEach((ta) => (ta.oninput = () => { d.files[+ta.dataset.file].content = ta.value; keep(); }));
+    $$('details.sk-file', v).forEach((el) => (el.ontoggle = () => { d.files[+el.dataset.fi].open = el.open; keep(); }));
+    $$('[data-rmf]', v).forEach((b) => (b.onclick = (e) => { e.preventDefault(); d.files.splice(+b.dataset.rmf, 1); keep(); drawReview(); }));
+    $('#skaddf', v).onclick = async () => {
+      const p = await promptSheet(t('파일 경로 (스킬 폴더 기준)'), 'scripts/', { placeholder: 'scripts/check.sh · references/guide.md', okLabel: t('추가') });
+      if (!p?.trim()) return;
+      const rel = p.trim().replace(/^\.?\/+/, '');
+      if (rel.split('/').some((x) => !x || x === '..') || /^skill\.md$/i.test(rel)) { toast(t('파일 경로가 올바르지 않아요: {p}', { p: rel }), true); return; }
+      if (d.files.some((f) => f.path === rel)) { toast(t('같은 파일이 두 번 있어요: {p}', { p: rel }), true); return; }
+      d.files.push({ path: rel, content: rel.endsWith('.sh') ? '#!/usr/bin/env bash\nset -euo pipefail\n\n' : '', open: true }); keep(); drawReview();
+    };
+    $('#skrefine', v).onclick = () => {
+      if (!S.feedback?.trim() && !S.editId) { toast(t('무엇을 바꿀지 적어주세요'), true); $('#skfb', v).focus(); return; }
+      const previous = { name: d.name, description: d.description, body: d.body, files: (d.files || []).map(({ path, content }) => ({ path, content })), extraFront: d.extraFront || '' };
+      startJob({ ...ctxBody(), previous, feedback: S.feedback, fixedName: S.editId ? d.name : '' });
+    };
+    $('#skchange', v) && ($('#skchange', v).onclick = () => { S.stage = 'ask'; keep(); draw(); });
+    $('#skreset', v).onclick = () => {
+      if (S.editId) { sessionStorage.removeItem(SK_KEY); location.hash = `#/skill/${S.editId}`; return; }
+      if (!confirm(t('지금 초안을 버리고 처음부터 할까요?'))) return;
+      const req = S.request; S = fresh(); S.request = req; keep(); draw();
+    };
+    $('#sksave', v).onclick = () => save();
+    drawWhere($('#skwhere', v));
+    bindFresh();
+  }
+
+  async function save(overwrite = false) {
+    const d = S.draft;
+    const b = $('#sksave', v);
+    if (b) { b.disabled = true; b.innerHTML = `<span class="spinner sm"></span>${t('저장하는 중…')}`; }
+    const files = (d.files || []).map(({ path, content }) => ({ path, content }));
+    const req = S.editId
+      ? { editId: S.editId, description: d.description, body: d.body, files, extraFront: d.extraFront || '', remove: (S.edit.orig || []).filter((p) => !files.some((f) => f.path === p)) }
+      : { name: d.name, description: d.description, body: d.body, files, extraFront: d.extraFront || '', tools: S.tools, scope: S.scope, project: S.project, overwrite };
+    try {
+      const r = await api('/api/skills/save', { body: req });
+      S.saved = r; S.stage = 'done'; keep(); draw();
+      toast(t('✅ {name} 스킬을 저장했어요', { name: r.name }));
+    } catch (e) {
+      if (b) { b.disabled = false; b.textContent = S.editId ? t('저장') : t('스킬 등록'); }
+      if (e.data?.code === 'EXISTS' && confirm(`${e.message}\n\n${t('덮어쓸까요? 지금 있는 스킬은 백업해둬요.')}`)) return save(true);
+      if (e.data?.code !== 'EXISTS') toast(e.message, true);
+    }
+  }
+
+  function drawDone() {
+    const r = S.saved, d = S.draft;
+    const tool = S.tools.find((x) => installed.includes(x)) || installed[0];
+    const cwd = S.scope === 'project' ? S.project : '';
+    const tries = d.tryPrompts || [];
+    v.innerHTML = `<div class="section"><div class="card sk-done">
+        <b class="sk-done-h">✅ ${t('{name} 스킬을 저장했어요', { name: esc(r.name) })}</b>
+        ${r.written.map((x) => `<div class="kv"><code>${esc(x.dir)}/</code><span class="small muted">${x.tools?.length ? t('읽는 CLI: {list}', { list: esc(skToolsLabel(x.tools)) }) : ''}</span></div>`).join('')}
+        ${r.backup || r.backups?.length ? `<span class="small muted">${t('이전 버전 백업: {list}', { list: esc([r.backup, ...(r.backups || [])].filter(Boolean).join(', ')) })}</span>` : ''}
+        <p class="small muted">${t('새로 시작하는 세션부터 에이전트가 이 스킬을 봐요.')}</p>
+      </div></div>
+      ${tool ? `<div class="section"><div class="section-h"><h2>${t('바로 써보기')}</h2></div>
+        <div class="card list">
+          ${tries.map((p, i) => `<button class="opt-row" data-try="${i}"><span class="oi">${glyph('spark')}</span><div class="l"><b>${esc(p)}</b><span>${t('이렇게 말하면 에이전트가 알아서 스킬을 꺼내 써요')}</span></div><span>›</span></button>`).join('')}
+          <button class="opt-row" data-call><span class="oi">${glyph('edit')}</span><div class="l"><b>${esc(skillText(tool, r.name))}</b><span>${t('{tool}에서 이름으로 불러서 써보기', { tool: TOOL[tool].name })}</span></div><span>›</span></button>
+        </div>
+        <p class="small muted">${t('{tool} 새 채팅이 열려요 · {where}', { tool: TOOL[tool].name, where: esc(cwd || t('기본 작업 폴더')) })}</p></div>` : ''}
+      <div class="section pact sk-actions">${r.listed ? `<a class="btn" href="#/skill/${r.id}">${t('스킬 보기')}</a>` : ''}<button class="btn ghost" id="skagain">${t('다른 스킬 만들기')}</button>${fromProject ? `<a class="btn ghost" href="#/p/${encodeURIComponent(fromProject)}">${t('프로젝트로 돌아가기')}</a>` : `<a class="btn ghost" href="#/skills">${t('스킬 목록')}</a>`}</div>
+      ${!r.listed ? `<p class="small muted" style="text-align:center">${t('이 폴더는 아직 Baton 프로젝트가 아니라서 스킬 목록에는 안 보여요. 그 폴더에서 세션을 시작하면 나타나요.')}</p>` : ''}`;
+    $$('[data-try]', v).forEach((b) => (b.onclick = () => { sessionStorage.removeItem(SK_KEY); skTry(tool, tries[+b.dataset.try], cwd); }));
+    $('[data-call]', v) && ($('[data-call]', v).onclick = () => { sessionStorage.removeItem(SK_KEY); skTry(tool, `${skillText(tool, r.name)} `, cwd); });
+    $('#skagain', v).onclick = () => { sessionStorage.removeItem(SK_KEY); if (editId) location.hash = '#/skills/new'; else { S = fresh(); keep(); draw(); } };
+    $$('.sk-actions a', v).forEach((a) => a.addEventListener('click', () => sessionStorage.removeItem(SK_KEY)));
+  }
+
+  let shownStage = null;
+  function draw() {
+    clearInterval(timer);
+    if (shownStage && shownStage !== S.stage) window.scrollTo(0, 0); // a new step starts at the top
+    shownStage = S.stage;
+    if (S.stage === 'writing' && S.job) drawWriting();
+    else if (S.stage === 'review' && S.draft) drawReview();
+    else if (S.stage === 'done' && S.saved) drawDone();
+    else { S.stage = 'ask'; drawAsk(); }
+  }
+  draw();
 }
 
 // ---------------------------------------------------------------- MCP
@@ -2746,18 +3104,27 @@ async function mcpQuickSheet() {
 }
 
 /** "Which MCP servers does each CLI load here?" — used on the project page and in the chat sheet. */
-function mcpEffectiveHtml(d, { session = false, only } = {}) {
+/** `pick` keeps only some servers (e.g. project-only ones); with `hideEmpty`, CLIs left with none are skipped. */
+function mcpEffectiveHtml(d, { session = false, only, pick = null, hideEmpty = false } = {}) {
   const tools = Object.entries(d.tools).filter(([k]) => !only || k === only);
-  return tools.map(([tool, x]) => {
-    const on = x.servers.filter((s) => s.enabled === true);
-    const rest = x.servers.filter((s) => s.enabled !== true);
+  const html = tools.map(([tool, x]) => {
+    const list = pick ? x.servers.filter(pick) : x.servers;
+    if (hideEmpty && !list.length) return '';
+    const on = list.filter((s) => s.enabled === true);
+    const rest = list.filter((s) => s.enabled !== true);
     return `<div class="mcp-tool">
       <div class="mcp-th"><span class="tool-badge ${tool}">${TOOL[tool].name}</span><span class="small muted">${on.length ? t('{n}개 불러옴', { n: on.length }) : t('MCP 없음')}${x.checkedAt ? ` · ${t('확인 {when}', { when: ago(x.checkedAt) })}` : ''}</span>
         ${tool === 'claude' ? `<button class="btn sm ghost" data-mcpcheck="${tool}">${t('연결 확인')}</button>` : ''}</div>
-      ${x.servers.length ? `<div class="card list">${[...on, ...rest].map((s) => mcpRow(s, { session, here: true })).join('')}</div>` : ''}
+      ${list.length ? `<div class="card list">${[...on, ...rest].map((s) => mcpRow(s, { session, here: true })).join('')}</div>` : ''}
     </div>`;
-  }).join('') || `<div class="card empty"><b>${t('설치된 CLI가 없어요')}</b></div>`;
+  }).join('');
+  return html || (hideEmpty ? '' : `<div class="card empty"><b>${t('설치된 CLI가 없어요')}</b></div>`);
 }
+// A folded block whose open/closed state is remembered per key (the same for every project).
+const fold = (key, summary, inner) => `<details class="fold" data-fold="${key}" ${store.get(`fold:${key}`, false) ? 'open' : ''}><summary>${summary}</summary><div class="fold-b">${inner}</div></details>`;
+const bindFolds = (root) => $$('details[data-fold]', root).forEach((d) => (d.ontoggle = () => store.set(`fold:${d.dataset.fold}`, d.open)));
+// project-only config (Claude local scope, .mcp.json and the like) vs. servers every folder gets
+const mcpIsLocal = (s) => s.scope === 'local' || s.scope === 'project';
 function bindMcpCheck(el, cwd, reload) {
   $$('[data-mcpcheck]', el).forEach((b) => (b.onclick = async (e) => {
     e.preventDefault();
@@ -2772,13 +3139,45 @@ async function loadProjectMcp(box, cwd) {
   const draw = async () => {
     try {
       const d = await api(`/api/mcp/effective?cwd=${encodeURIComponent(cwd)}`);
-      const total = Object.values(d.tools).reduce((n, x) => n + x.servers.filter((s) => s.enabled === true).length, 0);
-      box.innerHTML = `<div class="section-h"><h2>${t('MCP 서버')}</h2><span class="count">${total}</span><a class="more" href="#/mcp">${t('전체 ›')}</a></div>
-        <p class="small muted" style="margin:-4px 2px 8px">${t('이 폴더에서 작업할 때 각 CLI가 불러오는 MCP예요')}</p>${mcpEffectiveHtml(d)}`;
+      const all = Object.values(d.tools).flatMap((x) => x.servers);
+      const localOn = all.filter((s) => mcpIsLocal(s) && s.enabled === true).length;
+      const glob = all.filter((s) => !mcpIsLocal(s));
+      const globOn = glob.filter((s) => s.enabled === true).length, globUsed = glob.filter((s) => s.uses).length;
+      const localHtml = mcpEffectiveHtml(d, { pick: mcpIsLocal, hideEmpty: true });
+      box.innerHTML = `<div class="section-h"><h2>${t('MCP 서버')}</h2><span class="count">${localOn}</span><a class="more" href="#/mcp">${t('전체 ›')}</a></div>
+        <p class="small muted" style="margin:-4px 2px 8px">${t('이 프로젝트에만 설정된 MCP예요. 전역 MCP는 아래를 펼쳐서 보세요')}</p>
+        ${localHtml || `<div class="card empty sk-empty"><b>${t('이 프로젝트 전용 MCP가 없어요')}</b>${t('프로젝트 폴더의 .mcp.json이나 claude mcp add -s local로 넣은 서버가 여기에 보여요')}</div>`}
+        ${glob.length ? fold('pmcp-global', `<b>${t('전역 MCP {n}개', { n: globOn })}</b>${globUsed ? `<span class="flag run">${t('이 프로젝트에서 호출 {n}개', { n: globUsed })}</span>` : ''}<span class="small muted">${t('모든 폴더에서 불러와요')}</span>`, mcpEffectiveHtml(d, { pick: (s) => !mcpIsLocal(s), hideEmpty: true })) : ''}`;
       bindMcpCheck(box, cwd, draw);
+      bindFolds(box);
     } catch { box.remove(); }
   };
   await draw();
+}
+// Project page: the project's own skills up front, the global ones folded away.
+function pskRow(s, global = false) {
+  const all = (global ? [s.tool] : s.readers).filter((k) => TOOL[k]);
+  const mine = all.filter((k) => INSTALLED().includes(k)); // CLIs not on this machine are just noise
+  const badges = (mine.length ? mine : all).map((k) => `<span class="tool-badge ${k}">${TOOL[k].name}</span>`).join('');
+  return `<a class="srow skrow" href="#/skill/${s.id}">
+    <div class="body"><div class="t"><span class="tt">${s.kind === 'command' ? '/' : ''}${esc(s.name)}</span>${s.uses ? `<span class="flag run">${t('{n}회', { n: s.uses })}</span>` : ''}</div>
+      ${s.description ? `<div class="p">${esc(s.description)}</div>` : ''}
+      <div class="m psk-m">${badges}${global ? `<span>${esc(s.scopeLabel)}</span>` : ''}<span>${s.lastUsed ? t('이 프로젝트에서 마지막 사용 {when}', { when: ago(s.lastUsed) }) : t('이 프로젝트에서 쓴 기록 없음')}</span></div></div></a>`;
+}
+async function loadProjectSkills(box, p) {
+  if (!box) return;
+  try {
+    const d = await api(`/api/projects/${encodeURIComponent(p.id)}/skills`);
+    const usedG = d.global.filter((s) => s.uses).length;
+    box.innerHTML = `<div class="section-h"><h2>${t('스킬')}</h2><span class="count">${d.local.length}</span><a class="more" href="#/skills">${t('전체 ›')}</a></div>
+      <p class="small muted" style="margin:-4px 2px 8px">${t('이 프로젝트 폴더에만 있는 스킬이에요. 에이전트는 이 폴더에서 작업할 때만 봐요')}</p>
+      ${d.local.length ? `<div class="card list">${d.local.map((s) => pskRow(s)).join('')}</div>`
+        : `<div class="card empty sk-empty"><b>${t('이 프로젝트 전용 스킬이 없어요')}</b>${t('배포·테스트·릴리스처럼 이 프로젝트에서 자주 하는 작업을 스킬로 만들어두면 에이전트가 매번 같은 방식으로 해요')}</div>`}
+      <a class="btn block ghost sk-padd" href="#/skills/new?project=${encodeURIComponent(p.id)}">${ICON.plus}${t('이 프로젝트용 스킬 만들기')}</a>
+      ${d.global.length ? fold('pskills-global', `<b>${t('전역 스킬 {n}개', { n: d.global.length })}</b>${usedG ? `<span class="flag run">${t('이 프로젝트에서 쓰인 것 {n}개', { n: usedG })}</span>` : ''}<span class="small muted">${t('모든 폴더에서 불러와요')}</span>`,
+        `<div class="card list">${d.global.map((s) => pskRow(s, true)).join('')}</div>`) : ''}`;
+    bindFolds(box);
+  } catch { box.remove(); }
 }
 async function mcpSessionSheet(session) {
   const cwd = session.cwd || session.project;
