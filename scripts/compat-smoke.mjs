@@ -146,7 +146,8 @@ async function child(tool) {
 
     const cwd = path.join(home, 'project');
     await fsp.mkdir(cwd, { recursive: true });
-    const model = tool === 'claude' ? 'haiku' : undefined; // cheapest; others use the account default
+    // Claude Code: Sonnet 5.5 (maintainer's choice). The other CLIs can only use their own vendor's models: account default.
+    const model = tool === 'claude' ? (process.env.BATON_SMOKE_CLAUDE_MODEL || 'claude-sonnet-5-5') : undefined;
     const effort = tool === 'codex' ? 'low' : undefined;
 
     const step = async (name, fn) => {

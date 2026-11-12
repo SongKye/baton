@@ -775,7 +775,7 @@ const compatLines = (cv) => `${t('설치된 버전')}: <strong class="cv">${cv.i
 
 /** Settings → the weekly auto-check (scripts/compat-weekly.mjs): schedule, last run, PRs it opened. */
 function compatRunRow(cr) {
-  if (!cr) return '';
+  if (!cr?.scheduled) return ''; // maintainers only: shown where the weekly timer is installed
   const last = cr.last;
   const when = last?.at ? new Date(last.at).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   const status = !cr.scheduled ? t('꺼져 있어요 (npm run compat:schedule로 켜요)') : t('매주 토요일 00:00에 새 버전을 테스트해요');
