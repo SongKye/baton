@@ -756,6 +756,35 @@ async function restartBaton(btn, { version } = {}) {
   if (btn) { btn.disabled = false; btn.textContent = label; }
 }
 
+/** A CLI's installed version vs the one Baton supports (server/compat.js)
+ *  -> { installed, supported, note, pill, cls }: two labeled lines the user can compare at a glance. */
+function compatView(x) {
+  const installed = !x.installed ? t('설치 안 됨') : x.version ? `v${esc(x.version)}` : t('버전을 읽지 못했어요');
+  const c = x.compat;
+  if (!c) return { installed, supported: t('Baton을 다시 켜면 보여요'), note: '', pill: '', cls: '' }; // server older than this page
+  if (c.level === 'unverified') return { installed, supported: t('없음 (공식 지원 안 함)'), note: t('연동 코드는 있지만 검증하지 않았어요'), pill: t('검증 안 됨'), cls: '' };
+  if (!c.verified) return { installed, supported: c.builtFor ? t('{v} 기준 · 베타', { v: esc(c.builtFor) }) : t('베타'), note: t('문서를 보고 만들었고 실제 설치로는 아직 검증하지 않았어요'), pill: t('베타'), cls: '' };
+  const supported = `v${esc(c.verified)}`;
+  if (!x.installed) return { installed, supported, note: '', pill: t('설치 안 됨'), cls: '' };
+  if (c.state === 'verified') return { installed, supported, note: '', pill: t('검증됨'), cls: 'ok' };
+  if (c.state === 'newer') return { installed, supported, note: t('지원 버전보다 새 버전이라 아직 확인 전이에요. 대부분 그대로 동작하지만, 문제가 생기면 이 버전을 같이 알려주세요.'), pill: t('확인 전 새 버전'), cls: '' };
+  if (c.state === 'older') return { installed, supported, note: t('지원 버전보다 오래됐어요. 동작이 이상하면 CLI를 업데이트해보세요.'), pill: t('지원 버전보다 오래됨'), cls: 'warn' };
+  return { installed, supported, note: t('설치된 버전을 읽지 못했어요'), pill: t('버전 확인 불가'), cls: 'warn' };
+}
+const compatLines = (cv) => `${t('설치된 버전')}: <strong class="cv">${cv.installed}</strong><br>${t('Baton 지원 버전')}: <strong class="cv">${cv.supported}</strong>${cv.note ? `<br>${cv.note}` : ''}`;
+
+/** Settings → which CLI versions Baton supports, and how the installed ones compare. */
+function compatCard(box) {
+  box.innerHTML = `<div class="setting"><div class="l"><span>${t('불러오는 중…')}</span></div></div>`;
+  api('/api/setup').then((st) => {
+    if (!box.isConnected) return;
+    box.innerHTML = st.tools.map((x) => {
+      const cv = compatView(x);
+      return `<div class="setting"><div class="l"><b>${esc(x.name)}</b><span>${compatLines(cv)}</span></div>${cv.pill ? `<span class="pill ${cv.cls}">${cv.pill}</span>` : ''}</div>`;
+    }).join('') + `<p class="small muted" style="padding:10px 14px 4px">${t('Baton은 각 CLI의 실행 옵션·출력 형식·세션 파일에 맞춰 동작해요. CLI가 업데이트되면서 이게 바뀌면 일부 기능이 멈출 수 있어요.')} <a href="https://github.com/SongKye/baton/blob/main/docs/compatibility.md" target="_blank" rel="noopener">${t('자세히')} ↗</a></p>`;
+  }).catch((e) => { if (box.isConnected) box.innerHTML = `<div class="setting"><div class="l"><span class="warn-text">${esc(e.message)}</span></div></div>`; });
+}
+
 /** Settings → Baton card: current version, latest release, an 업데이트 button that is only enabled when
  *  there is something to update to (opens the sheet: update → restart → reload), and a restart button. */
 let versionCheckedAt = 0;
@@ -2065,6 +2094,7 @@ function organizeSettings(view) {
     ['notifications', t('알림 · 리마인더'), t('응답 알림과 잠자는 프로젝트 챙기기'), ICON.bell, ['notifications', 'reminders']],
     ['ai', t('AI 브리핑'), t('요약에 사용할 도구와 모델'), ICON.send, ['ai']],
     ['advanced', t('고급 · 회사 환경'), t('CLI 연결과 환경 변수'), ICON.more, ['advanced']],
+    ['clis', t('AI 도구 지원 버전'), t('Baton이 검증한 CLI 버전과 설치된 버전'), ICON.check, ['clis']],
   ];
   const list = document.createElement('div');
   list.className = 'settings-groups';
@@ -2162,9 +2192,11 @@ async function viewSettings() {
       <a class="setting" href="#/usage"><div class="l"><b>${t('사용량 · 한도')}</b><span>${t('CLI별 남은 한도와 토큰 사용량')}</span></div><span class="muted">›</span></a>
       <div class="setting"><div class="l"><b>${t('목록 새로고침')}</b><span>${t('세션 파일을 다시 읽어요')}</span></div><button class="btn sm" id="reindex">${ICON.refresh}</button></div>
     </div></div>
+    <div class="section" data-settings="clis"><div class="section-h"><h2>${t('AI 도구 지원 버전')}</h2></div><div class="card" id="compatbox"></div></div>
     <div class="section" data-settings="version"><div class="section-h"><h2>${t('Baton 버전 · 업데이트')}</h2></div><div class="card" id="verbox"></div></div>
     <p class="small muted" style="text-align:center;margin-top:24px">${t('Baton · 바이브코딩 이어달리기 🏃‍♂️')} · v${esc(G.state?.version || '')}<br>${esc(G.state?.home || '')}</p>`;
   organizeSettings(v);
+  compatCard($('#compatbox', v));
   versionCard($('#verbox', v));
   $$('[data-k]', v).forEach((el) => (el.onchange = async () => {
     const k = el.dataset.k;
@@ -3865,6 +3897,7 @@ async function viewSetup() {
       <div class="sh"><span class="tool-avatar ${x.id}">${esc(TOOL[x.id]?.short || x.name[0])}</span>
         <div class="st"><b>${esc(x.name)}</b><span>${esc(x.vendor)}${x.version ? ` · v${esc(x.version)}` : ''}</span></div>${badge}</div>
       ${x.note ? `<p class="small muted">${esc(x.note)}</p>` : ''}
+      ${(() => { const cv = compatView(x); return `<p class="small ${cv.cls === 'warn' ? 'warn-text' : 'muted'}">${compatLines(cv)}</p>`; })()}
       ${x.loginExpired ? `<p class="small warn-text">${t('저장된 로그인이 만료됐어요. 다시 로그인하면 한도도 다시 보여요.')}</p>` : ''}
       ${state === 'login' && LOGIN_HINT[x.id] ? `<p class="small login-hint">${LOGIN_HINT[x.id]}</p>` : ''}
       ${!x.installed && x.installCmd ? `<details class="pcmd"><summary>${t('실행될 명령')}</summary><code>${esc(x.installCmd)}</code></details>` : ''}

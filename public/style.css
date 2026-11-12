@@ -471,6 +471,7 @@ body.chat-mode .deskcards { bottom: 110px; }
 .setting .l { flex: 1; min-width: 0; }
 .setting .l b { display: block; font-weight: 650; font-size: 15px; }
 .setting .l span { font-size: 12.5px; color: var(--text-3); }
+strong.cv { font-weight: 650; color: var(--text-2); }
 .setting select, .setting input[type=number] { height: 36px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); padding: 0 10px; font-size: 14px; max-width: 46%; }
 .switch { position: relative; width: 50px; height: 30px; flex: none; }
 .switch input { opacity: 0; width: 0; height: 0; position: absolute; }

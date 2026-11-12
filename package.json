@@ -9,6 +9,7 @@
     "open": "node --no-warnings server/index.js --open",
     "setup": "bash scripts/setup.sh",
     "i18n:check": "node scripts/i18n-check.mjs",
+    "compat:check": "node --no-warnings scripts/compat-check.mjs",
     "release:check": "node scripts/release-check.mjs"
   },
   "engines": {

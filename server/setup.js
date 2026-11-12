@@ -15,6 +15,7 @@ import { tr, lang } from './i18n.js';
 import { claudeProvider, codexProvider } from './providers.js';
 import { envInfo } from './env.js';
 import { updateCommand } from './update.js';
+import { compatInfo } from './compat.js';
 
 import { PORT } from './runtime.js';
 
@@ -79,6 +80,7 @@ export async function setupStatus({ fresh = false } = {}) {
     if (bin && id === 'codex') { const p = codexProvider(); if (!p.subscription) { provider = p.label; logged = p.configured; } }
     return {
       id, name: t.name, vendor: t.vendor, docs: t.docs, installed: Boolean(bin), path: bin, version: ver, loggedIn: Boolean(logged) && logged !== 'expired', loginExpired: logged === 'expired', provider,
+      compat: compatInfo(id, ver),
       optionalLogin: Boolean(t.optionalLogin), installCmd: plan?.cmd || null, canInstall: Boolean(plan),
       loginKind: t.login?.kind || null, loginCmd: bin ? [path.basename(bin).replace(/\.(cmd|exe)$/i, ''), ...t.login.args].join(' ') : null,
       note: t.note?.[lang()] || t.note?.en,
