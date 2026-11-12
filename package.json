@@ -10,6 +10,7 @@
     "setup": "bash scripts/setup.sh",
     "i18n:check": "node scripts/i18n-check.mjs",
     "compat:check": "node --no-warnings scripts/compat-check.mjs",
+    "compat:smoke": "node --no-warnings scripts/compat-smoke.mjs",
     "release:check": "node scripts/release-check.mjs"
   },
   "engines": {
