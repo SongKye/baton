@@ -68,7 +68,8 @@ const PRESETS = [
     desc: { ko: '피그마 데스크톱 앱의 Dev Mode MCP를 켜두면 선택한 디자인을 코드로 옮겨요.', en: 'With Figma desktop’s Dev Mode MCP on, turns the selected design into code.' } }),
 ];
 
-const expandHome = (p) => String(p).replace(/^~(?=$|[\\/])/, HOME);
+// ~/x -> <home>/x with this OS's separators ("~/w" on Windows must not become C:\\Users\\me/w)
+const expandHome = (p) => { const m = String(p).match(/^~(?:[\\/](.*))?$/s); return m ? (m[1] ? path.join(HOME, m[1]) : HOME) : String(p); };
 const safeName = (n) => String(n).trim().replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
 
 // ---------------------------------------------------------------- templates (the editable form)

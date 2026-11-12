@@ -872,7 +872,7 @@ async function viewProject([id]) {
       </div>
       <div class="section" id="briefbox">${d.briefPending ? `<div class="card brief"><div class="phase"><div class="spinner"></div>${t('정리하는 중이에요…')}</div></div>` : briefHtml}</div>
       ${p.muted ? `<div class="section"><div class="banner">🔕 ${t('이 프로젝트는 알림이 꺼져 있어요')} <button class="btn sm" id="punmute">${t('다시 켜기')}</button></div></div>` : ''}
-      <div class="section" id="pnote"><div class="section-h"><h2>${t('메모')}</h2></div>
+      <div class="section" id="pnote"><div class="section-h"><h2>${t('메모')}</h2><button class="more" id="pnotefold" hidden></button></div>
         ${p.note ? `<button class="card memo" id="pnotecard" title="${t('눌러서 고치기')}">${esc(p.note)}</button>`
           : `<button class="memo-empty" id="pnotecard">📝 ${t('메모 남기기')}<span>${t('다음에 돌아왔을 때 볼 메모')}</span></button>`}</div>
       ${srvHtml}
@@ -921,6 +921,18 @@ async function viewProject([id]) {
       };
     };
     $('#pnotecard').onclick = editNote;
+    // long memo: fold it to a few lines, with a toggle in the header (remembered per project)
+    const memo = $('.card.memo', v), fold = $('#pnotefold');
+    if (memo && memo.scrollHeight > 190) {
+      const key = `baton.noteOpen.${id}`;
+      const paint = () => {
+        const open = localStorage.getItem(key) === '1';
+        memo.classList.toggle('folded', !open);
+        fold.textContent = open ? t('접기') : t('펼치기');
+      };
+      fold.hidden = false; paint();
+      fold.onclick = () => { localStorage.setItem(key, localStorage.getItem(key) === '1' ? '0' : '1'); paint(); };
+    }
     $('#punmute') && ($('#punmute').onclick = async () => { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { muted: false } }); toast(t('알림을 다시 켰어요')); load(); });
     // session list: ⋯ / long-press menu, or checkboxes for bulk trash
     const shown = () => d.sessions.slice(page * PAGE, (page + 1) * PAGE);

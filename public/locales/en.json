@@ -107,6 +107,8 @@
  "선택": "Select",
  "제목·대화 내용·폴더 검색": "Search titles, messages, folders",
  "전체 선택": "Select all",
+ "펼치기": "Expand",
+ "접기": "Collapse",
  "{n}개 선택": "{n} selected",
  "휴지통으로": "Move to trash",
  "숨긴 세션": "Hidden",
