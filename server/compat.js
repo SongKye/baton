@@ -5,15 +5,20 @@
 // (see docs/compatibility.md). So "supported" means "verified with this exact version"; anything newer
 // probably works but hasn't been checked yet.
 //
-// When you re-verify a CLI: run `npm run compat:check`, try a chat, a resumed session and the setup page
-// with that version, then update `verified` / `verifiedAt` here and the table in docs/compatibility.md.
-import { cmpVersion } from './util.js';
+// The verified versions live in compat.json (data only), so the weekly auto-verification
+// (scripts/compat-weekly.mjs) can bump them and older Baton installs can read the latest table from GitHub.
+//   level: 'supported' (verified against a live install) | 'beta' (built from docs, never run live)
+//          | 'unverified' (code exists, not supported)
+// This file adds what each CLI's --help must still mention (npm run compat:check).
+import fs from 'node:fs';
+import path from 'node:path';
+import { cmpVersion, ROOT } from './util.js';
 
-// level: 'supported' (verified against a live install) | 'beta' (built from docs, never run live)
-//        | 'unverified' (code exists, not supported)
-export const COMPAT = {
+const readTable = () => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'server', 'compat.json'), 'utf8')); } catch { return {}; } };
+export const TABLE = readTable();
+
+const CHECKS = {
   claude: {
-    level: 'supported', verified: '2.1.318', verifiedAt: '2026-11-12',
     // `--help` output must mention these, or a feature Baton relies on is gone
     checks: [
       { args: ['--help'], expect: ['--output-format', '--input-format', '--include-partial-messages', '--permission-prompt-tool', '--resume', '--model', '--effort', '--permission-mode', '--dangerously-skip-permissions', '--no-session-persistence', '--fork-session', '--tools'] },
@@ -22,7 +27,6 @@ export const COMPAT = {
     ],
   },
   codex: {
-    level: 'supported', verified: '0.156.0', verifiedAt: '2026-11-12',
     checks: [
       { args: ['exec', '--help'], expect: ['resume', '--json', '--skip-git-repo-check', '--ephemeral', '--image', '--dangerously-bypass-approvals-and-sandbox', '--model', '--config'] },
       { args: ['exec', 'resume', '--help'], expect: ['SESSION_ID', '--image', '--json'] },
@@ -33,26 +37,25 @@ export const COMPAT = {
     ],
   },
   agy: {
-    level: 'supported', verified: '1.5.6', verifiedAt: '2026-11-12',
     checks: [
       { args: ['--help'], expect: ['--output-format', 'stream-json', '--conversation', '--model', '--effort', '--mode', 'accept-edits', 'plan', '--dangerously-skip-permissions', 'models'] },
       { args: ['mcp', '--help'], expect: ['add', 'remove', 'list'] },
     ],
   },
   opencode: {
-    level: 'supported', verified: '1.19.5', verifiedAt: '2026-11-12',
     checks: [
       { args: ['run', '--help'], expect: ['--format', '--session', '--model', '--variant', '--agent', '--file'] },
       { args: ['models', '--help'], expect: ['--verbose'] },
     ],
   },
   cursor: {
-    level: 'unverified', verified: null, verifiedAt: null,
     checks: [
       { args: ['--help'], expect: ['--print', '--output-format', '--resume', '--model', '--force', 'models', 'status', 'login'] },
     ],
   },
 };
+
+export const COMPAT = Object.fromEntries(Object.entries(CHECKS).map(([id, c]) => [id, { level: 'unverified', verified: null, verifiedAt: null, ...TABLE[id], ...c }]));
 
 /**
  * How an installed version compares with the verified one:

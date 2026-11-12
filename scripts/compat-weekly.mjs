@@ -1,0 +1,400 @@
+#!/usr/bin/env node
+// Weekly CLI auto-verification (run by the baton-compat systemd timer, Saturday 00:00; see compat-schedule.mjs).
+//
+// For each supported CLI: find its newest stable release -> if it's newer than the verified version, install it
+// into ~/.baton-compat/versions (never on PATH, the everyday CLI is untouched) -> run compat:check + compat:smoke
+// against it ->
+//   passed, no removed fields  -> PR that bumps server/compat.json + docs + shape baselines, merged once CI is green
+//   passed, but fields removed -> the same PR, left open for review
+//   failed                     -> Claude Code tries to fix Baton on a branch; the result is re-tested and opened
+//                                 as a PR for review (never merged automatically), or an issue if nothing worked
+// The summary goes to ~/.baton-compat/last-run.json, which Baton shows in Settings and turns into a push
+// notification when something needs a look.
+//
+// All git work happens in a separate worktree (~/.baton-compat/work) checked out at origin/main, never in the
+// folder Baton runs from.
+//   node scripts/compat-weekly.mjs              the real run
+//   node scripts/compat-weekly.mjs --dry-run    test and edit, but no push / PR / merge / issue
+//   node scripts/compat-weekly.mjs --only codex limit to some CLIs
+//   node scripts/compat-weekly.mjs --ref feat/x run from that pushed branch instead of main (testing this script)
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const BASE = path.join(os.homedir(), '.baton-compat');
+const WORK = path.join(BASE, 'work');
+const VERSIONS = path.join(BASE, 'versions');
+const LOGS = path.join(BASE, 'logs');
+const STATE = path.join(BASE, 'last-run.json');
+const LOCK = path.join(BASE, 'weekly.lock');
+const REPO_SLUG = 'SongKye/baton';
+
+const argv = process.argv.slice(2);
+const DRY = argv.includes('--dry-run');
+const ONLY = argv.flatMap((a, i) => (argv[i - 1] === '--only' ? a.split(',') : []));
+const REF = `origin/${argv.includes('--ref') ? argv[argv.indexOf('--ref') + 1] : 'main'}`; // test a pushed branch before merging
+
+const NAMES = { claude: 'Claude Code', codex: 'Codex', agy: 'Antigravity', opencode: 'OpenCode' };
+const NPM = { claude: ['@anthropic-ai/claude-code', 'stable'], codex: ['@openai/codex', 'latest'], opencode: ['opencode-ai', 'latest'] };
+
+// ------------------------------------------------------------------ helpers
+let logFile = null;
+const log = (...a) => {
+  const line = `[${new Date().toISOString().slice(11, 19)}] ${a.join(' ')}`;
+  console.log(line);
+  if (logFile) fs.appendFileSync(logFile, line + '\n');
+};
+/** Run a command; resolves { code, out } (stdout+stderr), never rejects. */
+function sh(cmd, args, { cwd = WORK, env, input, timeout = 20 * 60_000, quiet = false } = {}) {
+  return new Promise((resolve) => {
+    const c = spawn(cmd, args, { cwd, env: env || process.env, stdio: [input != null ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+    let out = '';
+    const add = (b) => { out += b; if (out.length > 400_000) out = out.slice(-200_000); };
+    c.stdout.on('data', add); c.stderr.on('data', add);
+    const timer = setTimeout(() => c.kill('SIGKILL'), timeout);
+    c.on('error', (e) => { clearTimeout(timer); resolve({ code: -1, out: String(e.message) }); });
+    c.on('close', (code) => {
+      clearTimeout(timer);
+      if (!quiet && code !== 0) log(`  ↳ ${cmd} ${args.slice(0, 4).join(' ')} exited ${code}: ${out.trim().slice(-400)}`);
+      resolve({ code, out });
+    });
+    if (input != null) c.stdin.end(input);
+  });
+}
+const must = async (cmd, args, opts) => { const r = await sh(cmd, args, opts); if (r.code !== 0) throw new Error(`${cmd} ${args.join(' ')} failed: ${r.out.trim().slice(-600)}`); return r.out; };
+const cmp = (a, b) => {
+  const p = (v) => String(v).replace(/^v/, '').split('-')[0].split('.').map((x) => Number(x) || 0);
+  const x = p(a), y = p(b);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0) ? 1 : -1;
+  return 0;
+};
+const today = () => new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD, local time
+/** Environment for child CLIs: not "inside" a Claude Code session (this script may be started from one). */
+const cleanEnv = (extra = {}) => {
+  const env = { ...process.env, ...extra };
+  for (const k of Object.keys(env)) if (k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_') || k === 'BATON_RUN') delete env[k];
+  return env;
+};
+
+// ------------------------------------------------------------------ bootstrap: lock, worktree at origin/main, re-exec
+async function bootstrap() {
+  await fsp.mkdir(LOGS, { recursive: true });
+  if (path.resolve(HERE) === path.resolve(WORK)) return; // already running from the worktree
+  try {
+    const fd = fs.openSync(LOCK, 'wx');
+    fs.writeSync(fd, String(process.pid)); fs.closeSync(fd);
+  } catch {
+    const pid = Number(fs.readFileSync(LOCK, 'utf8'));
+    try { process.kill(pid, 0); console.log(`another run is in progress (pid ${pid})`); process.exit(0); } catch { fs.writeFileSync(LOCK, String(process.pid)); }
+  }
+  const unlock = () => { try { fs.unlinkSync(LOCK); } catch { /* gone */ } };
+  process.on('exit', unlock);
+  await must('git', ['fetch', '--quiet', 'origin'], { cwd: HERE });
+  if (!fs.existsSync(path.join(WORK, '.git'))) {
+    await sh('git', ['worktree', 'prune'], { cwd: HERE, quiet: true });
+    await must('git', ['worktree', 'add', '--detach', WORK, REF], { cwd: HERE });
+  }
+  await must('git', ['checkout', '--quiet', '--detach', '--force', REF], { cwd: WORK });
+  await must('git', ['clean', '-fdq', '-e', 'node_modules'], { cwd: WORK });
+  await must('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund', '--silent'], { cwd: WORK, timeout: 10 * 60_000 });
+  const child = spawn(process.execPath, ['--no-warnings', path.join(WORK, 'scripts', 'compat-weekly.mjs'), ...argv], { stdio: 'inherit', env: process.env });
+  child.on('close', (code) => { unlock(); process.exit(code ?? 1); });
+  await new Promise(() => {}); // the worktree copy does the rest
+}
+
+// ------------------------------------------------------------------ newest stable release per CLI
+async function latestRelease(tool) {
+  if (NPM[tool]) {
+    const [pkg, tag] = NPM[tool];
+    const r = await sh('npm', ['view', pkg, `dist-tags.${tag}`], { cwd: BASE, quiet: true, timeout: 60_000 });
+    const v = r.out.trim().split('\n').pop();
+    return /^\d+\.\d+\.\d+$/.test(v) ? { version: v } : null;
+  }
+  if (tool === 'agy') {
+    const arch = process.arch === 'arm64' ? 'arm64' : 'amd64';
+    const plat = process.platform === 'darwin' ? `darwin_${arch}` : `linux_${arch}`;
+    const res = await fetch(`https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/${plat}.json`, { signal: AbortSignal.timeout(20_000) }).catch(() => null);
+    const j = res?.ok ? await res.json().catch(() => null) : null;
+    return j?.version ? { version: j.version, url: j.url, sha512: j.sha512 } : null;
+  }
+  return null;
+}
+
+/** Install a release into ~/.baton-compat/versions/<tool>/<version>; returns the folder holding its binary. */
+async function install(tool, rel) {
+  const dir = path.join(VERSIONS, tool, rel.version);
+  if (NPM[tool]) {
+    const bin = path.join(dir, 'node_modules', '.bin');
+    if (!fs.existsSync(path.join(bin, tool === 'claude' ? 'claude' : tool))) {
+      await fsp.mkdir(dir, { recursive: true });
+      await must('npm', ['install', '--prefix', dir, '--no-audit', '--no-fund', '--silent', `${NPM[tool][0]}@${rel.version}`], { cwd: dir, timeout: 15 * 60_000 });
+    }
+    return bin;
+  }
+  if (tool === 'agy') {
+    const bin = path.join(dir, 'bin');
+    if (fs.existsSync(path.join(bin, 'agy'))) return bin;
+    await fsp.mkdir(bin, { recursive: true });
+    const res = await fetch(rel.url, { signal: AbortSignal.timeout(10 * 60_000) });
+    if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (crypto.createHash('sha512').update(buf).digest('hex') !== rel.sha512) throw new Error('downloaded Antigravity does not match the manifest checksum');
+    const archive = path.join(dir, 'cli.tar.gz');
+    await fsp.writeFile(archive, buf);
+    await must('tar', ['-xzf', archive, '-C', dir], { cwd: dir });
+    const found = ['antigravity', 'agy'].map((n) => path.join(dir, n)).find((p) => fs.existsSync(p));
+    if (!found) throw new Error('no antigravity binary in the downloaded archive');
+    await fsp.rename(found, path.join(bin, 'agy'));
+    await fsp.chmod(path.join(bin, 'agy'), 0o755);
+    await fsp.rm(archive, { force: true });
+    return bin;
+  }
+  throw new Error(`don't know how to install ${tool}`);
+}
+
+/** compat:check + compat:smoke against the binary in binDir. Smoke also refreshes the shape baseline when it passes. */
+async function test(tool, binDir) {
+  const env = cleanEnv({ PATH: `${binDir}${path.delimiter}${process.env.PATH}`, BATON_NO_SHELL_ENV: '1' });
+  const check = await sh(process.execPath, ['--no-warnings', 'scripts/compat-check.mjs', tool], { env, quiet: true, timeout: 5 * 60_000 });
+  const json = path.join(os.tmpdir(), `baton-weekly-${tool}-${process.pid}.json`);
+  const smoke = await sh(process.execPath, ['--no-warnings', 'scripts/compat-smoke.mjs', tool, '--bin', `${tool}=${binDir}`, '--json', json, '--update-fixtures'], { env: cleanEnv(), quiet: true, timeout: 30 * 60_000 });
+  let report = null;
+  try { report = JSON.parse(await fsp.readFile(json, 'utf8'))[0]; } catch { /* crashed */ }
+  await fsp.rm(json, { force: true });
+  return { checkOk: check.code === 0, checkOut: check.out.trim(), smokeOk: smoke.code === 0 && report?.ok === true, report, smokeOut: smoke.out.trim() };
+}
+
+// ------------------------------------------------------------------ editing the repo for a bump
+async function bumpFiles(bumps) {
+  const date = today();
+  const tableFile = path.join(WORK, 'server', 'compat.json');
+  const table = JSON.parse(await fsp.readFile(tableFile, 'utf8'));
+  for (const b of bumps) Object.assign(table[b.tool], { level: 'supported', verified: b.to, verifiedAt: date });
+  await fsp.writeFile(tableFile, JSON.stringify(table, null, 2) + '\n');
+
+  const edit = async (rel, fn) => { const f = path.join(WORK, rel); await fsp.writeFile(f, fn(await fsp.readFile(f, 'utf8'))); };
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  await edit('docs/compatibility.md', (s) => {
+    for (const b of bumps) {
+      const latest = b.tool === 'agy' ? '— (not on npm)' : `${b.to} (npm${b.tool === 'claude' ? ' stable' : ''})`;
+      s = s.replace(new RegExp(`^\\| ${esc(NAMES[b.tool])} \\|.*$`, 'm'), `| ${NAMES[b.tool]} | Supported | **${b.to}** | ${date} | ${latest} |`);
+    }
+    return s;
+  });
+  for (const guide of ['docs/guide.md', 'docs/guide.ko.md']) {
+    await edit(guide, (s) => s.replace(/^(\*\*(?:Verified versions|검증된 버전):\*\* )(.*?)( \(\d{4}-\d{2}-\d{2}\))/m, (m, head, list, _d) => {
+      for (const b of bumps) list = list.replace(new RegExp(`${esc(NAMES[b.tool])} [\\w.-]+`), `${NAMES[b.tool]} ${b.to}`);
+      return `${head}${list} (${date})`;
+    }));
+  }
+  await edit('CHANGELOG.md', (s) => {
+    const line = `- Verified with ${bumps.map((b) => `${NAMES[b.tool]} ${b.to}`).join(', ')} (weekly automatic check).`;
+    const start = s.indexOf('## [Unreleased]');
+    if (start < 0) return s;
+    const next = s.indexOf('\n## [', start + 1);
+    const section = s.slice(start, next < 0 ? undefined : next);
+    const changed = section.indexOf('### Changed\n');
+    if (changed >= 0) { const at = start + changed + '### Changed\n'.length; return s.slice(0, at) + line + '\n' + s.slice(at); }
+    const at = start + '## [Unreleased]\n'.length;
+    return s.slice(0, at) + `\n### Changed\n${line}\n` + s.slice(at);
+  });
+}
+
+/** The repo's own checks (what CI runs that doesn't need a browser). */
+async function repoChecks() {
+  const files = [...['server', 'server/sources', 'public', 'scripts'].flatMap((d) => fs.readdirSync(path.join(WORK, d)).filter((f) => /\.(m?js)$/.test(f)).map((f) => path.join(d, f)))];
+  for (const f of files) { const r = await sh(process.execPath, ['--check', f], { quiet: true }); if (r.code) return `syntax error in ${f}: ${r.out.slice(0, 400)}`; }
+  for (const s of ['i18n-check.mjs', 'ci-boot.mjs']) { const r = await sh(process.execPath, ['--no-warnings', `scripts/${s}`], { quiet: true, timeout: 5 * 60_000 }); if (r.code) return `${s} failed: ${r.out.trim().slice(-600)}`; }
+  return null;
+}
+
+async function commitAndPr({ branch, title, body, message, draft = false }) {
+  await must('git', ['checkout', '--quiet', '-B', branch]);
+  await must('git', ['add', '-A']);
+  await must('git', ['-c', 'user.name=Baton compat bot', '-c', `user.email=${(await sh('git', ['config', 'user.email'], { quiet: true })).out.trim() || 'baton@localhost'}`, 'commit', '--quiet', '-m', message]);
+  if (DRY) { log(`  (dry run) would push ${branch} and open PR "${title}"`); return null; }
+  await must('git', ['push', '--quiet', '--force', '-u', 'origin', branch]);
+  const args = ['pr', 'create', '--repo', REPO_SLUG, '--base', 'main', '--head', branch, '--title', title, '--body', body];
+  if (draft) args.push('--draft');
+  const out = await must('gh', args);
+  return out.trim().split('\n').pop();
+}
+
+/** Wait for the PR's checks, then merge it. Returns 'merged' | 'checks failed' | 'timed out'. */
+async function mergeWhenGreen(url) {
+  await new Promise((r) => setTimeout(r, 30_000)); // let the checks register
+  const r = await sh('gh', ['pr', 'checks', url, '--watch', '--interval', '30'], { timeout: 45 * 60_000, quiet: true });
+  if (r.code !== 0) return /timed out|SIGKILL/.test(r.out) ? 'timed out' : 'checks failed';
+  const m = await sh('gh', ['pr', 'merge', url, '--merge', '--delete-branch']);
+  return m.code === 0 ? 'merged' : 'merge failed';
+}
+
+// ------------------------------------------------------------------ fix attempt with Claude Code
+function fixPrompt(r) {
+  const steps = (r.test.report?.steps || []).map((s) => `- ${s.ok ? 'PASS' : 'FAIL'} ${s.name}${s.ok ? '' : `: ${s.detail}`}`).join('\n');
+  const d = r.test.report?.drift;
+  return `You are maintaining Baton (this repository), a dashboard that drives coding-agent CLIs headlessly.
+A new stable release of ${NAMES[r.tool]} breaks Baton: verified ${r.from}, new ${r.to}.
+The new binary is installed at ${r.binDir} (not on PATH).
+
+Live test result for ${r.to} (npm run compat:smoke):
+${steps || '(the test did not produce a report)'}
+${d?.removed?.length ? `\nFields that disappeared from the CLI's output/session files since ${d.baseline}:\n${d.removed.slice(0, 60).join('\n')}` : ''}
+${d?.added?.length ? `\nNew fields:\n${d.added.slice(0, 60).join('\n')}` : ''}
+${r.test.checkOk ? '' : `\nFlag check (npm run compat:check):\n${r.test.checkOut.slice(-1500)}`}
+${r.test.report ? '' : `\nTest output:\n${r.test.smokeOut.slice(-3000)}`}
+
+docs/compatibility.md lists every flag, event, file and endpoint Baton relies on and the code that uses each.
+Find what changed in the new CLI and fix Baton's code so it works with ${r.to}. Users may still have the old
+version, so keep ${r.from} working too where the two differ (accept both shapes).
+
+Test the new version with:  npm run compat:smoke -- ${r.tool} --bin ${r.tool}=${r.binDir}
+Test the old one with:      npm run compat:smoke -- ${r.tool}
+You may run the new binary directly from ${r.binDir} to inspect its --help, output and files (use a
+throwaway folder and HOME=$HOME/.baton-compat/home so nothing touches the user's real sessions).
+
+Rules: change only what the fix needs. Do not edit server/compat.json or scripts/compat-fixtures (the
+pipeline updates those). Do not commit, push or open PRs. Finish with a short plain-English summary:
+what changed in ${NAMES[r.tool]} ${r.to}, what you changed in Baton, and the final test results.`;
+}
+
+async function tryFix(r) {
+  const branch = `compat/fix-${r.tool}-${r.to}`;
+  await must('git', ['checkout', '--quiet', '--detach', '--force', REF]);
+  await must('git', ['clean', '-fdq', '-e', 'node_modules']);
+  log(`  asking Claude Code to fix ${NAMES[r.tool]} ${r.to} (up to 45 min)…`);
+  const res = await sh('claude', ['-p', '--output-format', 'json', '--permission-mode', 'acceptEdits',
+    '--allowedTools', 'Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash(npm run compat:smoke:*)', 'Bash(npm run compat:check:*)', 'Bash(node:*)', `Bash(${r.binDir}/*)`, 'Bash(git diff:*)', 'Bash(git status:*)', 'Bash(ls:*)', 'Bash(cat:*)', 'Bash(mkdir:*)'],
+  { input: fixPrompt(r), env: cleanEnv(), timeout: 45 * 60_000, quiet: true });
+  let summary = '';
+  try { summary = JSON.parse(res.out.trim().split('\n').filter(Boolean).pop()).result || ''; } catch { summary = res.out.trim().slice(-2000); }
+  const changed = (await sh('git', ['status', '--porcelain'], { quiet: true })).out.trim();
+  if (!changed) return { outcome: 'no-change', summary };
+  const again = await test(r.tool, r.binDir);
+  const problem = await repoChecks();
+  const fixed = again.smokeOk && again.checkOk && !problem;
+  if (fixed) await bumpFiles([{ tool: r.tool, to: r.to }]);
+  const title = fixed ? `Fix ${NAMES[r.tool]} ${r.to} compatibility` : `[needs help] ${NAMES[r.tool]} ${r.to} breaks Baton (automatic fix incomplete)`;
+  const body = `${NAMES[r.tool]} **${r.to}** (verified until now: ${r.from}) failed Baton's weekly live test. Claude Code attempted a fix.
+
+## Test before the fix
+${(r.test.report?.steps || []).map((s) => `- ${s.ok ? '✅' : '❌'} ${s.name}${s.ok ? '' : ` — ${s.detail.replace(/\n/g, ' ').slice(0, 300)}`}`).join('\n') || r.test.smokeOut.slice(-1500)}
+
+## Test after the fix
+${(again.report?.steps || []).map((s) => `- ${s.ok ? '✅' : '❌'} ${s.name}${s.ok ? '' : ` — ${s.detail.replace(/\n/g, ' ').slice(0, 300)}`}`).join('\n') || again.smokeOut.slice(-1500)}
+${problem ? `\nRepo checks: ❌ ${problem}` : ''}
+
+## What Claude Code says
+${summary.slice(0, 6000) || '(no summary)'}
+
+${fixed ? `This PR also marks ${NAMES[r.tool]} ${r.to} as verified. **Not merged automatically: please review.**` : '**The fix is incomplete.** Kept as a draft so the work isn\'t lost.'}
+
+🤖 Generated by Baton's weekly compatibility check (scripts/compat-weekly.mjs) with [Claude Code](https://claude.com/claude-code)`;
+  const url = await commitAndPr({ branch, title, body, draft: !fixed, message: `${fixed ? 'fix' : 'wip'}: ${NAMES[r.tool]} ${r.to} compatibility\n\n${summary.slice(0, 1500)}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` });
+  return { outcome: fixed ? 'fixed' : 'partial', summary, url };
+}
+
+// ------------------------------------------------------------------ main
+async function main() {
+  await bootstrap();
+  logFile = path.join(LOGS, `${today()}.log`);
+  const compat = JSON.parse(await fsp.readFile(path.join(WORK, 'server', 'compat.json'), 'utf8'));
+  const tools = Object.keys(NAMES).filter((t) => compat[t]?.level === 'supported' && (!ONLY.length || ONLY.includes(t)));
+  log(`weekly compat run${DRY ? ' (dry run)' : ''} at ${(await sh('git', ['rev-parse', '--short', 'HEAD'], { quiet: true })).out.trim()} for ${tools.join(', ')}`);
+  const state = { runAt: new Date().toISOString(), dryRun: DRY, results: [], prs: [], needsAttention: false, log: logFile };
+
+  for (const tool of tools) {
+    const r = { tool, from: compat[tool].verified, to: null, status: 'error', note: '' };
+    state.results.push(r);
+    try {
+      const rel = await latestRelease(tool);
+      if (!rel) { r.note = 'could not read the latest release'; log(`${tool}: ${r.note}`); state.needsAttention = true; continue; }
+      r.to = rel.version;
+      if (cmp(rel.version, r.from) <= 0) { r.status = 'up-to-date'; log(`${tool}: latest stable ${rel.version}, verified ${r.from} — nothing to do`); continue; }
+      log(`${tool}: new release ${rel.version} (verified ${r.from}) — installing`);
+      r.binDir = await install(tool, rel);
+      log(`${tool}: testing ${rel.version}…`);
+      r.test = await test(tool, r.binDir);
+      const rep = r.test.report;
+      if (rep?.skipped) { r.status = 'skipped'; r.note = rep.skipped; state.needsAttention = true; log(`${tool}: skipped — ${rep.skipped}`); continue; }
+      for (const s of rep?.steps || []) log(`  ${s.ok ? '✓' : '✗'} ${s.name}${s.ok ? '' : ` — ${s.detail.split('\n')[0]}`}`);
+      if (r.test.smokeOk && r.test.checkOk) {
+        r.status = rep.drift?.removed?.length ? 'passed-drift' : 'passed';
+        log(`${tool}: ${rel.version} passed${r.status === 'passed-drift' ? ` (${rep.drift.removed.length} fields disappeared, needs review)` : ''}`);
+      } else {
+        r.status = 'failed';
+        if (!r.test.checkOk) log(`  ✗ flag check: ${r.test.checkOut.split('\n').filter((l) => l.includes('✗')).join('; ')}`);
+        log(`${tool}: ${rel.version} FAILED`);
+      }
+    } catch (e) { r.status = 'error'; r.note = e.message; state.needsAttention = true; log(`${tool}: error — ${e.message}`); }
+  }
+
+  // 1) passed -> one bump PR (auto-merge when no fields disappeared)
+  const passed = state.results.filter((r) => r.status === 'passed' || r.status === 'passed-drift');
+  if (passed.length) {
+    try {
+      // the smoke runs already refreshed the shape baselines of the passing CLIs; drop those of failing ones
+      for (const r of state.results.filter((x) => x.status === 'failed')) await sh('git', ['checkout', '--', `scripts/compat-fixtures/${r.tool}.json`], { quiet: true });
+      await bumpFiles(passed.map((r) => ({ tool: r.tool, to: r.to })));
+      const problem = await repoChecks();
+      if (problem) throw new Error(`repo checks failed after the bump: ${problem}`);
+      const drift = passed.filter((r) => r.status === 'passed-drift');
+      const names = passed.map((r) => `${NAMES[r.tool]} ${r.to}`).join(', ');
+      const body = `Weekly automatic check: new stable releases passed Baton's live test.
+
+| CLI | Verified until now | New | Result |
+|---|---|---|---|
+${passed.map((r) => `| ${NAMES[r.tool]} | ${r.from} | **${r.to}** | ${(r.test.report.steps || []).filter((s) => s.ok).length}/${(r.test.report.steps || []).length} steps pass${r.status === 'passed-drift' ? ', **fields disappeared**' : ''} |`).join('\n')}
+
+Steps: new session, resume, session list, transcript, one-shot, limits (where the CLI has them), model list; plus \`compat:check\` (flags).
+${drift.length ? `\n## Fields that disappeared (review before merging)\nEvery step still passes, but these fields are gone from the CLI's output or session files. Check whether a feature the test doesn't cover reads them.\n${drift.map((r) => `\n**${NAMES[r.tool]}** (since ${r.test.report.drift.baseline}):\n${r.test.report.drift.removed.slice(0, 40).map((p) => `- \`${p}\``).join('\n')}`).join('\n')}\n` : ''}
+${passed.some((r) => r.test.report.drift?.added?.length) ? `\n<details><summary>New fields</summary>\n\n${passed.map((r) => (r.test.report.drift?.added || []).slice(0, 40).map((p) => `- ${NAMES[r.tool]}: \`${p}\``).join('\n')).join('\n')}\n</details>\n` : ''}
+Updates \`server/compat.json\`, the shape baselines, docs and CHANGELOG. ${drift.length ? '**Left open for review** because fields disappeared.' : 'Merged automatically once CI is green.'}
+
+🤖 Generated by Baton's weekly compatibility check (scripts/compat-weekly.mjs)`;
+      const url = await commitAndPr({ branch: `compat/verify-${today()}`, title: `Verified with ${names}`, body, message: `chore: verified with ${names}\n\nWeekly automatic check (scripts/compat-weekly.mjs): compat:check and compat:smoke pass.` });
+      const pr = { kind: 'verify', url, tools: passed.map((r) => r.tool), merged: false };
+      state.prs.push(pr);
+      if (url && !drift.length) {
+        pr.result = await mergeWhenGreen(url);
+        pr.merged = pr.result === 'merged';
+        log(`verify PR ${url}: ${pr.result}`);
+        if (!pr.merged) state.needsAttention = true;
+      } else if (drift.length) { log(`verify PR ${url || '(dry run)'}: left open for review (fields disappeared)`); state.needsAttention = true; }
+    } catch (e) { log(`bump PR: error — ${e.message}`); state.needsAttention = true; state.results.push({ tool: 'bump', status: 'error', note: e.message }); }
+  }
+
+  // 2) failed -> one fix attempt per CLI, always reviewed by a human
+  for (const r of state.results.filter((x) => x.status === 'failed')) {
+    state.needsAttention = true;
+    try {
+      const f = await tryFix(r);
+      r.fix = { outcome: f.outcome, url: f.url || null };
+      if (f.url) state.prs.push({ kind: f.outcome === 'fixed' ? 'fix' : 'fix-draft', url: f.url, tools: [r.tool], merged: false });
+      if (f.outcome === 'no-change' && !DRY) {
+        const out = await must('gh', ['issue', 'create', '--repo', REPO_SLUG, '--title', `${NAMES[r.tool]} ${r.to} breaks Baton`, '--body',
+          `Baton's weekly live test failed for ${NAMES[r.tool]} ${r.to} (verified: ${r.from}) and Claude Code could not change anything to fix it.\n\n${(r.test.report?.steps || []).map((s) => `- ${s.ok ? '✅' : '❌'} ${s.name}${s.ok ? '' : ` — ${s.detail.slice(0, 400)}`}`).join('\n')}\n\nClaude Code's notes:\n\n${(f.summary || '').slice(0, 4000)}\n\n🤖 Baton weekly compatibility check`]);
+        r.fix.issue = out.trim().split('\n').pop();
+      }
+      log(`${r.tool}: fix ${f.outcome}${f.url ? ` → ${f.url}` : ''}${r.fix.issue ? ` → issue ${r.fix.issue}` : ''}`);
+    } catch (e) { log(`${r.tool}: fix attempt error — ${e.message}`); r.fix = { outcome: 'error', note: e.message }; }
+  }
+
+  for (const r of state.results) { delete r.test; delete r.binDir; }
+  state.finishedAt = new Date().toISOString();
+  await fsp.writeFile(STATE, JSON.stringify(state, null, 2));
+  log(`done${state.needsAttention ? ' — needs attention' : ''}`);
+  // back to a clean origin/main so the worktree never holds stray work
+  await sh('git', ['checkout', '--quiet', '--detach', '--force', REF], { quiet: true });
+}
+
+main().catch(async (e) => {
+  log(`fatal: ${e.stack || e.message}`);
+  await fsp.writeFile(STATE, JSON.stringify({ runAt: new Date().toISOString(), finishedAt: new Date().toISOString(), dryRun: DRY, results: [], prs: [], needsAttention: true, fatal: e.message, log: logFile }, null, 2)).catch(() => {});
+  process.exit(1);
+});

@@ -1,0 +1,27 @@
+{
+  "claude": {
+    "level": "supported",
+    "verified": "2.1.318",
+    "verifiedAt": "2026-11-12"
+  },
+  "codex": {
+    "level": "supported",
+    "verified": "0.156.0",
+    "verifiedAt": "2026-11-12"
+  },
+  "agy": {
+    "level": "supported",
+    "verified": "1.5.6",
+    "verifiedAt": "2026-11-12"
+  },
+  "opencode": {
+    "level": "supported",
+    "verified": "1.19.5",
+    "verifiedAt": "2026-11-12"
+  },
+  "cursor": {
+    "level": "unverified",
+    "verified": null,
+    "verifiedAt": null
+  }
+}
