@@ -71,6 +71,9 @@ function escapeCmd(cmd) { return cmd.replace(META, '^$1'); }
  */
 export function spawnCli(bin, args, opts = {}) {
   const env = { ...(opts.env || process.env), PATH: augmentedPath((opts.env || process.env).PATH) };
+  // spawn's `cwd` doesn't update $PWD, so a child would inherit Baton's own folder (e.g. ~/baton when started
+  // by the `baton` command) and CLIs that trust $PWD record their session there instead of in the project.
+  if (opts.cwd) { env.PWD = path.resolve(String(opts.cwd)); delete env.OLDPWD; }
   const resolved = which(bin) || bin;
   if (IS_WIN && /\.(cmd|bat)$/i.test(resolved)) {
     const line = [escapeCmd(path.normalize(resolved)), ...args.map((a) => escapeArg(String(a).replace(/\r?\n/g, ' ')))].join(' ');

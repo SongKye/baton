@@ -9,6 +9,7 @@
 //   {t:'mcp', servers}           MCP servers the CLI loaded for this run ([{name, status}], Claude only)
 //   {t:'done', ok, error, result, cost, usage, durationMs}
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { spawnCli, IS_WIN } from './platform.js';
@@ -17,7 +18,7 @@ import { tr } from './i18n.js';
 import { EventEmitter } from 'node:events';
 import crypto from 'node:crypto';
 import { summarizeTool } from './sources/common.js';
-import { getKV, setKV } from './store.js';
+import { getKV, setKV, patchSessionMeta } from './store.js';
 import { codexDefaultFallback } from './providers.js';
 import { clip } from './util.js';
 import { noteMcpStatus } from './mcp.js';
@@ -428,8 +429,15 @@ export function stopRun(id) {
   return true;
 }
 
+// One-shot calls run outside every project: Baton's own folder would be grouped as a project ("~/baton"),
+// and OpenCode / Cursor / Antigravity keep these runs as real sessions (no "don't save" flag like claude/codex).
+const ONESHOT_DIR = path.join(os.tmpdir(), 'baton-oneshot');
+const ONESHOT_SID = /"(?:sessionID|session_id|sessionId|conversation_id|conversationId)"\s*:\s*"([^"]+)"/;
+
 /** One-shot, non-persisted completion used for project briefs. Resolves to the final text. */
 export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
+  cwd = ONESHOT_DIR; // callers' folders are ignored on purpose (see above)
+  try { fs.mkdirSync(cwd, { recursive: true }); } catch { /* spawn reports it */ }
   return new Promise((resolve, reject) => {
     let bin, args, stdin = true;
     if (tool === 'opencode') {
@@ -468,6 +476,9 @@ export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
     child.on('close', (code) => {
       clearTimeout(timer);
       if (child.pid) childPids.delete(child.pid);
+      // hide the session the CLI saved for this call so it never shows up in the session list
+      const sid = ['opencode', 'cursor', 'agy'].includes(tool) && out.match(ONESHOT_SID)?.[1];
+      if (sid) { try { patchSessionMeta(`${tool}:${sid}`, { hidden: true }); } catch { /* best effort */ } }
       try {
         if (tool === 'opencode') {
           const texts = [];

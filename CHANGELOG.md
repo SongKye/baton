@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- **Sessions stay in the project you opened them in**: when Baton was started with the `baton` command (installed in `~/baton`), CLIs it launched inherited Baton's own folder as `$PWD`, so some of them (e.g. OpenCode) recorded new sessions under `~/baton` and handing the session to another CLI continued there too. Each CLI now gets the project folder as `$PWD`.
+- **Baton's own background calls no longer show up as sessions**: project summaries and other one-shot calls run in a temporary folder instead of `~/baton/data`, and the sessions OpenCode / Cursor / Antigravity save for them are hidden.
+
 ### Changed
 - Reorganized the English and Korean READMEs around product benefits, desktop/mobile screenshots and a three-step quick start; moved detailed setup and feature instructions into linked user guides.
 - Clarified that Cursor integration is unverified, not officially supported, and has no current plans for official support; removed it from the README supported-tools list.
