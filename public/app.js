@@ -382,6 +382,41 @@ function drawRunPill() {
 
 setInterval(() => { if (document.visibilityState === 'visible') loadState(); }, 5000);
 
+/**
+ * Phone web views (iOS WebKit especially) sometimes stop painting after a big screen swap — chat → list —
+ * or when the keyboard closes late, leaving only the app's dark window background until a finger drag
+ * scrolls the page. Do that scroll ourselves: a 1px round trip over two frames, plus a one-frame
+ * compositing layer on #app, makes the compositor commit and paint the current screen again.
+ */
+let repaintQueued = false;
+function repaint() {
+  if (repaintQueued) return;
+  repaintQueued = true;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const se = document.scrollingElement || document.documentElement;
+    const y = se.scrollTop, room = se.scrollHeight - se.clientHeight;
+    const nudge = room > 0 ? (y > 0 ? y - 1 : 1) : null;
+    if (nudge != null) window.scrollTo(0, nudge);
+    app.style.willChange = 'opacity'; // opacity, not transform: transform would re-anchor the fixed FAB
+    requestAnimationFrame(() => {
+      if (nudge != null && Math.round(se.scrollTop) === nudge) window.scrollTo(0, y);
+      app.style.willChange = '';
+      repaintQueued = false;
+    });
+  }));
+}
+// The keyboard can finish closing after the chat is gone (its listeners are removed): repaint once it settles.
+(() => {
+  const vv = window.visualViewport;
+  let timer = null;
+  vv?.addEventListener('resize', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { if (window.innerHeight - vv.height <= 120) repaint(); }, 200); // keyboard down
+  });
+  window.addEventListener('pageshow', repaint);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') repaint(); });
+})();
+
 // ---------------------------------------------------------------- router
 const routes = [
   [/^#?\/?$/, viewHome, 'home'],
@@ -423,6 +458,7 @@ async function render() {
     window.scrollTo(0, 0);
     try { await fn(m.slice(1).map(decodeURIComponent), params); drawRunPill(); }
     catch (e) { console.error(e); if (navCount === G.navCount) app.innerHTML = `<div class="empty" style="padding-top:30vh"><b>${t('불러오지 못했어요')}</b>${esc(e.message)}<br><br><button class="btn" onclick="location.reload()">${t('다시 시도')}</button></div>`; }
+    if (navCount === G.navCount) repaint();
     return;
   }
   location.hash = '#/';
@@ -1265,7 +1301,17 @@ function setupViewport() {
   apply();
   vv?.addEventListener('resize', apply);
   vv?.addEventListener('scroll', apply);
-  return () => { vv?.removeEventListener('resize', apply); vv?.removeEventListener('scroll', apply); document.documentElement.style.setProperty('--vvh', '100dvh'); };
+  return () => {
+    vv?.removeEventListener('resize', apply); vv?.removeEventListener('scroll', apply);
+    // Leaving with the keyboard up or the message list still coasting: end both before the screen is
+    // swapped. Otherwise the phone finishes them against a layout that no longer exists and can leave
+    // the next screen unpainted (black) until the next touch-scroll.
+    const f = document.activeElement;
+    if (f && f !== document.body && f.matches?.('input, textarea, select, [contenteditable]')) f.blur();
+    const sc = $('#scroll'); if (sc) sc.style.overflowY = 'hidden'; // stops momentum scrolling now
+    document.body.classList.remove('kb-open');
+    document.documentElement.style.setProperty('--vvh', '100dvh');
+  };
 }
 
 /** Live run renderer. Appends a streaming block to `container`. */

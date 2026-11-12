@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- Phone: the screen no longer goes black after leaving a chat (it used to stay black until you dragged it). Leaving a chat now closes the keyboard and stops the message list first, and each screen change asks the phone to repaint. (#71)
+
 ### Changed
 - Reorganized the English and Korean READMEs around product benefits, desktop/mobile screenshots and a three-step quick start; moved detailed setup and feature instructions into linked user guides.
 - Clarified that Cursor integration is unverified, not officially supported, and has no current plans for official support; removed it from the README supported-tools list.
