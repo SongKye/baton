@@ -773,6 +773,19 @@ function compatView(x) {
 }
 const compatLines = (cv) => `${t('설치된 버전')}: <strong class="cv">${cv.installed}</strong><br>${t('Baton 지원 버전')}: <strong class="cv">${cv.supported}</strong>${cv.note ? `<br>${cv.note}` : ''}`;
 
+/** Settings → the weekly auto-check (scripts/compat-weekly.mjs): schedule, last run, PRs it opened. */
+function compatRunRow(cr) {
+  if (!cr) return '';
+  const last = cr.last;
+  const when = last?.at ? new Date(last.at).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  const status = !cr.scheduled ? t('꺼져 있어요 (npm run compat:schedule로 켜요)') : t('매주 토요일 00:00에 새 버전을 테스트해요');
+  const detail = !last ? t('아직 실행된 적 없어요')
+    : `${t('마지막 실행 {t}', { t: esc(when) })}${last.dryRun ? ` (${t('시험 실행')})` : ''}<br>${last.lines.map(esc).join('<br>')}`;
+  const prs = (last?.prs || []).map((p) => `<a href="${esc(p.url)}" target="_blank" rel="noopener">${p.merged ? t('머지된 PR') : t('검토할 PR')} ↗</a>`).join(' · ');
+  const pill = !last ? '' : last.needsAttention ? `<span class="pill warn">${t('확인 필요')}</span>` : `<span class="pill ok">${t('정상')}</span>`;
+  return `<div class="setting"><div class="l"><b>${t('매주 자동 검증')}</b><span>${status}<br>${detail}${prs ? `<br>${prs}` : ''}</span></div>${pill}</div>`;
+}
+
 /** Settings → which CLI versions Baton supports, and how the installed ones compare. */
 function compatCard(box) {
   box.innerHTML = `<div class="setting"><div class="l"><span>${t('불러오는 중…')}</span></div></div>`;
@@ -781,7 +794,7 @@ function compatCard(box) {
     box.innerHTML = st.tools.map((x) => {
       const cv = compatView(x);
       return `<div class="setting"><div class="l"><b>${esc(x.name)}</b><span>${compatLines(cv)}</span></div>${cv.pill ? `<span class="pill ${cv.cls}">${cv.pill}</span>` : ''}</div>`;
-    }).join('') + `<p class="small muted" style="padding:10px 14px 4px">${t('Baton은 각 CLI의 실행 옵션·출력 형식·세션 파일에 맞춰 동작해요. CLI가 업데이트되면서 이게 바뀌면 일부 기능이 멈출 수 있어요.')} <a href="https://github.com/SongKye/baton/blob/main/docs/compatibility.md" target="_blank" rel="noopener">${t('자세히')} ↗</a></p>`;
+    }).join('') + compatRunRow(st.compatRun) + `<p class="small muted" style="padding:10px 14px 4px">${t('Baton은 각 CLI의 실행 옵션·출력 형식·세션 파일에 맞춰 동작해요. CLI가 업데이트되면서 이게 바뀌면 일부 기능이 멈출 수 있어요.')} <a href="https://github.com/SongKye/baton/blob/main/docs/compatibility.md" target="_blank" rel="noopener">${t('자세히')} ↗</a></p>`;
   }).catch((e) => { if (box.isConnected) box.innerHTML = `<div class="setting"><div class="l"><span class="warn-text">${esc(e.message)}</span></div></div>`; });
 }
 

@@ -365,7 +365,7 @@ Updates \`server/compat.json\`, the shape baselines, docs and CHANGELOG. ${drift
         pr.merged = pr.result === 'merged';
         log(`verify PR ${url}: ${pr.result}`);
         if (!pr.merged) state.needsAttention = true;
-      } else if (url) { log(`verify PR ${url}: left open for review (fields disappeared)`); state.needsAttention = true; }
+      } else if (drift.length) { log(`verify PR ${url || '(dry run)'}: left open for review (fields disappeared)`); state.needsAttention = true; }
     } catch (e) { log(`bump PR: error — ${e.message}`); state.needsAttention = true; state.results.push({ tool: 'bump', status: 'error', note: e.message }); }
   }
 

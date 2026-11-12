@@ -2,7 +2,7 @@
 
 Baton doesn't use an SDK for the coding-agent CLIs. It runs each CLI, reads its streamed output and reads the
 session files it leaves on disk. Any CLI release can change those, so Baton records the **exact version it
-was verified with** for each CLI. The source of truth is `server/compat.js`. This page explains it.
+was verified with** for each CLI. The source of truth is `server/compat.json`. This page explains it.
 
 ## Supported versions
 
@@ -124,11 +124,36 @@ three short prompts per CLI on the cheapest model (Claude: Haiku, Codex: low eff
 
 Test a specific binary instead of the one on PATH with `--bin codex=/path/to/dir`.
 
+## Weekly auto-check
+
+Every Saturday at 00:00 (local time) a systemd user timer runs `scripts/compat-weekly.mjs`. If the computer was
+off then, it runs at the next start. Turn it on with `npm run compat:schedule` (off: `-- --remove`).
+
+1. **New release?** Claude Code's npm `stable` tag, Codex's and OpenCode's npm `latest`, and Antigravity's
+   release manifest. If it isn't newer than the verified version, nothing else happens.
+2. **Install** that release into `~/.baton-compat/versions/<tool>/<version>`, off PATH. Your everyday CLI is
+   untouched. Antigravity's download is checked against the manifest's SHA-512.
+3. **Test** it with `compat:check` and `compat:smoke`, from a separate git worktree (`~/.baton-compat/work`)
+   checked out at `origin/main`. The folder Baton runs from is never touched.
+4. **Passed** → one PR that bumps `server/compat.json`, the shape baselines, the docs and the CHANGELOG. It is
+   merged automatically once CI is green, unless fields disappeared from the CLI's output, in which case it
+   stays open for review.
+5. **Failed** → Claude Code (your everyday sign-in) gets the failure report and this page, fixes Baton on a
+   branch, and the pipeline re-tests. The result is always opened as a PR for review, never merged
+   automatically: a ready PR if the test passes, a draft if not, or an issue if nothing could be changed.
+
+The result goes to `~/.baton-compat/last-run.json` and the log to `~/.baton-compat/logs/<date>.log`. Baton
+shows it under **Settings → Supported AI tool versions → Weekly auto-check**. It sends a push notification when
+something needs a look, and otherwise records a quiet inbox entry.
+
+Try it without pushing anything: `npm run compat:weekly -- --dry-run` (`--only codex` limits it to one CLI;
+`--ref <branch>` runs a pushed branch instead of main).
+
 ## Re-verifying after a CLI update
 
 1. Update the CLI on a test machine and run `npm run compat:check` (or `npm run compat:check -- codex`). It
    prints the installed version vs the verified one and fails if a flag Baton uses is missing from `--help`.
 2. Run `npm run compat:smoke` (or `-- codex`). Then, by hand, add/test an MCP server for that CLI.
-3. If everything works, update `verified` / `verifiedAt` in `server/compat.js` and the table above, with a
-   CHANGELOG line ("Verified with Codex 0.167.2").
+3. If everything works, update `verified` / `verifiedAt` in `server/compat.json` and the table above, with a
+   CHANGELOG line ("Verified with Codex 0.167.2"). The weekly auto-check does this for you.
 4. If something broke, fix it, and keep a note here of the version where the change happened.

@@ -38,6 +38,7 @@ import { checkUpdate, updateCached, restartSelf } from './update.js';
 import crypto from 'node:crypto';
 import { ensureBrief, briefPending } from './brief.js';
 import { dozingProjects, sendNudge, startNudgeScheduler } from './nudge.js';
+import { startCompatWatch } from './compat-watch.js';
 import { pageMessages, slimMessage } from './sources/common.js';
 import { usageReport, startUsageScheduler } from './usage.js';
 import { observeRun, seedDefaults } from './observe.js';
@@ -794,6 +795,7 @@ await (async () => {
   if (process.platform === 'win32') setTimeout(() => listPorts().catch(() => {}), 3000).unref(); // first PowerShell start is slow (~7 s)
   if (envInfo.imported.length || envInfo.extra.length) console.log(`[baton] env: ${envInfo.imported.length} vars from ${envInfo.shell || 'shell'}, ${envInfo.extra.length} from settings`);
   startNudgeScheduler();
+  startCompatWatch();
   startScheduler();
   startWatcher();
   startTrashPurge();
