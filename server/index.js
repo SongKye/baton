@@ -31,7 +31,8 @@ import { OS_NAME, openBrowser } from './platform.js';
 import { tr, lang } from './i18n.js';
 import { providersSummary, resetProviderCache } from './providers.js';
 import { connect, testConnection, probeModels, findLocalLlms } from './connect.js';
-import { presets as mcpPresets, addMcp, copyMcp, removeMcp } from './mcp-install.js';
+import { presets as mcpPresets, addMcp, copyMcp, removeMcp, planInstall, previewInstall } from './mcp-install.js';
+import { startMcpDraft, startInstall, mcpJob, cancelMcpJob, testExisting } from './mcp-create.js';
 import { qrSvg } from './qr.js';
 import { checkUpdate, updateCached, restartSelf } from './update.js';
 import crypto from 'node:crypto';
@@ -579,9 +580,17 @@ route('GET', '/api/mcp/presets', async () => ({ presets: mcpPresets() }));
 route('POST', '/api/mcp/add', async (req) => {
   try { return await addMcp(await body(req)); } catch (e) { return [400, { error: e.message }]; }
 });
+// new server: where it goes -> (AI draft, background job) -> install + test (background job). Both polled.
+route('GET', '/api/mcp/targets', async (req, url) => { try { return await planInstall(Object.fromEntries(url.searchParams)); } catch (e) { return [400, { error: e.message }]; } });
+route('POST', '/api/mcp/preview', async (req) => { try { return previewInstall(await body(req)); } catch (e) { return [400, { error: e.message }]; } });
+route('POST', '/api/mcp/drafts', async (req) => { try { return await startMcpDraft(await body(req)); } catch (e) { return [400, { error: e.message }]; } });
+route('POST', '/api/mcp/install', async (req) => { try { return await startInstall(await body(req)); } catch (e) { return [400, { error: e.message }]; } });
+route('GET', '/api/mcp/jobs/:id', async (req, url, { id }) => mcpJob(id) || [404, { error: tr('작업을 찾을 수 없어요') }]);
+route('POST', '/api/mcp/jobs/:id/cancel', async (req, url, { id }) => ({ ok: cancelMcpJob(id) }));
+route('POST', '/api/mcp/test', async (req) => { const b = await body(req); try { return await testExisting(b.id); } catch (e) { return [400, { error: e.message }]; } });
 route('POST', '/api/mcp/copy', async (req) => {
   const b = await body(req);
-  try { return await copyMcp(String(b.id || ''), b.tools); } catch (e) { return [400, { error: e.message }]; }
+  try { return await copyMcp(String(b.id || ''), b.tools, b.scope === 'global' ? 'global' : ''); } catch (e) { return [400, { error: e.message }]; }
 });
 route('POST', '/api/mcp/remove', async (req) => {
   const b = await body(req);

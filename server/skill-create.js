@@ -238,7 +238,7 @@ ${previous ? `\n--- current version ---\n${bundleText(previous)}\n\n--- requeste
 }
 
 /** The CLI that writes drafts: the one asked for, else the brief/summary CLI, else any installed one. */
-function writerTool(asked) {
+export function writerTool(asked) {
   if (asked && TOOL_IDS.includes(asked) && binFor(asked)) return asked;
   const st = getSettings();
   if (binFor(st.briefTool)) return st.briefTool;

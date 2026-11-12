@@ -13,7 +13,7 @@ const pw = require(process.argv[3] || 'playwright-core');
   const sess = (await get('/api/sessions?limit=1')).items[0];
   const proj = (await get('/api/projects')).items?.[0] || (await get('/api/projects'))[0];
   const skill = (await get('/api/skills')).skills[0];
-  const routes = ['#/', '#/projects', '#/projects?f=dozing', '#/sessions', '#/tools', '#/ports', '#/skills', '#/mcp', '#/usage', '#/cleanup', '#/trash',
+  const routes = ['#/', '#/projects', '#/projects?f=dozing', '#/sessions', '#/tools', '#/ports', '#/skills', '#/mcp', '#/mcp/new', '#/usage', '#/cleanup', '#/trash',
     '#/settings', '#/setup', '#/inbox', '#/new',
     sess && `#/s/${sess.tool}/${encodeURIComponent(sess.id)}`, proj && `#/p/${encodeURIComponent(proj.id)}`, skill && `#/skill/${skill.id}`].filter(Boolean);
   for (const r of routes) {

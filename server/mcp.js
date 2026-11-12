@@ -21,7 +21,7 @@ import { binFor } from './tools.js';
 import { childEnv } from './runner.js';
 
 const XDG_CONFIG = process.env.XDG_CONFIG_HOME || path.join(HOME, '.config');
-const CLAUDE_JSON = process.env.CLAUDE_CONFIG_DIR ? path.join(CLAUDE_HOME, '.claude.json') : path.join(HOME, '.claude.json');
+export const CLAUDE_JSON = process.env.CLAUDE_CONFIG_DIR ? path.join(CLAUDE_HOME, '.claude.json') : path.join(HOME, '.claude.json');
 const MANAGED = IS_WIN ? 'C:\\Program Files\\ClaudeCode\\managed-mcp.json'
   : IS_MAC ? '/Library/Application Support/ClaudeCode/managed-mcp.json' : '/etc/claude-code/managed-mcp.json';
 const AGY_CONFIG = path.join(HOME, '.gemini', 'config');
@@ -38,9 +38,9 @@ function cached(file, parse) {
   fileCache.set(file, { m: st.mtimeMs, s: st.size, v });
   return v;
 }
-const readJson = (f) => cached(f, (t) => JSON.parse(t));
+export const readJson = (f) => cached(f, (t) => JSON.parse(t));
 /** JSON with comments / trailing commas (opencode.jsonc, VS Code-style files). */
-const readJsonc = (f) => cached(f, (t) => JSON.parse(stripJsonc(t)));
+export const readJsonc = (f) => cached(f, (t) => JSON.parse(stripJsonc(t)));
 function stripJsonc(t) {
   let out = '', i = 0, str = false;
   while (i < t.length) {
@@ -54,6 +54,15 @@ function stripJsonc(t) {
   return out.replace(/,(\s*[}\]])/g, '$1');
 }
 const readToml = (f) => cached(f, parseToml);
+const isServer = (v) => v && typeof v === 'object' && !Array.isArray(v) && Boolean(v.type || v.command || v.url || v.serverUrl || v.httpUrl);
+/** OpenCode keeps servers under "mcp" (until 2026) or "mcp.servers" (V2, next to "mcp.timeout"). */
+export function opencodeServers(cfg) {
+  const m = cfg?.mcp;
+  if (!m || typeof m !== 'object') return {};
+  const map = m.servers && typeof m.servers === 'object' && !isServer(m.servers) ? m.servers : m;
+  return Object.fromEntries(Object.entries(map).filter(([, v]) => isServer(v)));
+}
+export const opencodeV2 = (cfg) => Boolean(cfg?.mcp?.servers && typeof cfg.mcp.servers === 'object' && !isServer(cfg.mcp.servers));
 
 /** Small TOML reader: tables, dotted/quoted keys, strings, numbers, booleans, (multi-line) arrays, inline tables. */
 export function parseToml(text) {
@@ -247,7 +256,7 @@ function entriesOf(map, base) {
   return Object.entries(map).map(([n, raw]) => entry(n, raw, base)).filter(Boolean);
 }
 /** .mcp.json is either { mcpServers: {...} } or the bare map. */
-const serversOfMcpJson = (j) => (j && typeof j === 'object' ? (j.mcpServers && typeof j.mcpServers === 'object' ? j.mcpServers : (Object.values(j).every((v) => v && typeof v === 'object' && (v.command || v.url || v.type)) ? j : {})) : {});
+export const serversOfMcpJson = (j) => (j && typeof j === 'object' ? (j.mcpServers && typeof j.mcpServers === 'object' ? j.mcpServers : (Object.values(j).every((v) => v && typeof v === 'object' && (v.command || v.url || v.type)) ? j : {})) : {});
 
 // ---------------------------------------------------------------- scopes
 const L = {
@@ -317,7 +326,7 @@ function globalServers() {
   // ---- OpenCode
   for (const f of ['opencode.json', 'opencode.jsonc', 'config.json']) {
     const p = path.join(XDG_CONFIG, 'opencode', f);
-    out.push(...entriesOf(readJsonc(p)?.mcp, { tool: 'opencode', scope: 'user', scopeLabel: L.user(), file: p }));
+    out.push(...entriesOf(opencodeServers(readJsonc(p)), { tool: 'opencode', scope: 'user', scopeLabel: L.user(), file: p }));
   }
   // ---- Cursor
   const cu = path.join(HOME, '.cursor', 'mcp.json');
@@ -360,7 +369,7 @@ function folderServers(dir, label) {
   // ---- OpenCode
   for (const f of ['opencode.json', 'opencode.jsonc', path.join('.opencode', 'opencode.json')]) {
     const p = path.join(dir, f);
-    out.push(...entriesOf(readJsonc(p)?.mcp, { ...base, tool: 'opencode', file: p }));
+    out.push(...entriesOf(opencodeServers(readJsonc(p)), { ...base, tool: 'opencode', file: p }));
   }
   // ---- Cursor
   const cu = path.join(dir, '.cursor', 'mcp.json');
@@ -596,6 +605,32 @@ export function mcpForPicker(tool, cwd) {
 
 export function invalidateMcp() { invCache.at = 0; }
 
+/** Record one server's checked status for `tool` in `cwd` (merged into the same store `claude mcp list` fills). */
+export function noteCheck(tool, cwd, name, status, detail = null) {
+  const health = getKV('mcp_health', {}) || {};
+  const k = `${tool}|${cwd}`;
+  const rec = health[k] || { at: 0, servers: [] };
+  rec.servers = [...rec.servers.filter((x) => x.name !== name), { name, status, detail }];
+  rec.at = Date.now();
+  health[k] = rec;
+  for (const x of Object.keys(health).sort((a, b) => health[b].at - health[a].at).slice(200)) delete health[x];
+  setKV('mcp_health', health);
+}
+
+/** The server named `name` that `tool` actually loads in `cwd` (closest config wins), or null. */
+export function effectiveServer(tool, cwd, name) {
+  const dirs = [];
+  for (let d = path.resolve(cwd); ; d = path.dirname(d)) {
+    dirs.push(d);
+    if (path.dirname(d) === d || d === HOME || d === os.homedir()) break;
+  }
+  const rank = { local: 0, project: 1, user: 2, plugin: 3, managed: 4, cloud: 5, builtin: 6 };
+  const mine = [...dirs.flatMap((d) => folderServers(d, path.basename(d))).filter((s) => s.scope !== 'local' || s.project === cwd), ...globalServers()]
+    .filter((s) => s.tool === tool && s.name === name)
+    .sort((a, b) => (rank[a.scope] - rank[b.scope]) || (dirs.indexOf(a.project) - dirs.indexOf(b.project)));
+  return mine[0] || null;
+}
+
 /**
  * The unredacted config of one server, normalised to { transport, command, args, env, url, headers } —
  * for copying it to another CLI. Server-side only: never send this to the browser (it holds secrets).
@@ -606,7 +641,7 @@ export async function rawServer(id) {
   let raw = null;
   if (s.tool === 'claude' && s.file === CLAUDE_JSON) raw = s.scope === 'local' ? claudeJson().projects?.[s.project]?.mcpServers?.[s.name] : claudeJson().mcpServers?.[s.name];
   else if (s.tool === 'codex') raw = readToml(s.file)?.mcp_servers?.[s.name];
-  else if (s.tool === 'opencode') raw = readJsonc(s.file)?.mcp?.[s.name];
+  else if (s.tool === 'opencode') raw = opencodeServers(readJsonc(s.file))[s.name];
   else raw = serversOfMcpJson(readJson(s.file))?.[s.name];
   if (!raw || typeof raw !== 'object') return null;
   let command = raw.command || null, args = raw.args || [];
