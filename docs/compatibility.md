@@ -120,7 +120,7 @@ removed field shows up even when every step still passes. Store a new baseline w
 It uses your real subscriptions, but in a separate home folder (`~/.baton-compat/home`): test sessions,
 configs and sign-in tokens never touch your everyday ones. Claude Code and Codex need a one-time sign-in
 there: `npm run compat:smoke -- --login` (in a terminal). Antigravity uses its normal sign-in; OpenCode uses its free models, no sign-in. Each run is
-three short prompts per CLI on the cheapest model (Claude: Haiku, Codex: low effort).
+three short prompts per CLI (Claude Code: Sonnet 5.5, Codex: low effort, others: account default).
 
 Test a specific binary instead of the one on PATH with `--bin codex=/path/to/dir`.
 
@@ -128,6 +128,14 @@ Test a specific binary instead of the one on PATH with `--bin codex=/path/to/dir
 
 Every Saturday at 00:00 (local time) a systemd user timer runs `scripts/compat-weekly.mjs`. If the computer was
 off then, it runs at the next start. Turn it on with `npm run compat:schedule` (off: `-- --remove`).
+
+**Maintainers only.** The job opens PRs, merges and files issues on `SongKye/baton`. It refuses to install or run
+unless the checkout's `origin` is that repository and the signed-in GitHub account can push to it. Other
+installs ship the scripts but never run them, and Settings shows the weekly row only where the timer is installed.
+
+**Models.** The live test talks to Claude Code with Sonnet 5.5 (`BATON_SMOKE_CLAUDE_MODEL` to change). Codex,
+Antigravity and OpenCode can only use their own vendor's models, so they use the account default. Fix PRs are
+written by Claude Code with Opus 5.5 (`BATON_COMPAT_FIX_MODEL`). Version-bump PRs need no AI.
 
 1. **New release?** Claude Code's npm `stable` tag, Codex's and OpenCode's npm `latest`, and Antigravity's
    release manifest. If it isn't newer than the verified version, nothing else happens.

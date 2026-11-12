@@ -33,6 +33,7 @@ const LOGS = path.join(BASE, 'logs');
 const STATE = path.join(BASE, 'last-run.json');
 const LOCK = path.join(BASE, 'weekly.lock');
 const REPO_SLUG = 'SongKye/baton';
+const FIX_MODEL = process.env.BATON_COMPAT_FIX_MODEL || 'claude-opus-5-5'; // writes the fix PRs
 
 const argv = process.argv.slice(2);
 const DRY = argv.includes('--dry-run');
@@ -82,8 +83,25 @@ const cleanEnv = (extra = {}) => {
 };
 
 // ------------------------------------------------------------------ bootstrap: lock, worktree at origin/main, re-exec
+/**
+ * Maintainers only: this job opens PRs, merges and files issues on REPO_SLUG. On anyone else's install
+ * (another origin, or a GitHub account without push access) it does nothing.
+ */
+export async function maintainerCheck(cwd = HERE) {
+  const origin = (await sh('git', ['remote', 'get-url', 'origin'], { cwd, quiet: true })).out.trim();
+  if (!new RegExp(`github\\.com[:/]${REPO_SLUG.replace('/', '\\/')}(\\.git)?$`, 'i').test(origin)) return `this checkout's origin is not ${REPO_SLUG} (${origin || 'none'})`;
+  const r = await sh('gh', ['api', `repos/${REPO_SLUG}`, '--jq', '.permissions.push'], { cwd, quiet: true, timeout: 60_000 });
+  if (r.code !== 0) return `GitHub CLI isn't signed in or can't reach ${REPO_SLUG}`;
+  if (r.out.trim() !== 'true') return `the signed-in GitHub account has no push access to ${REPO_SLUG}`;
+  return null;
+}
+
 async function bootstrap() {
   await fsp.mkdir(LOGS, { recursive: true });
+  if (path.resolve(HERE) !== path.resolve(WORK)) {
+    const why = await maintainerCheck();
+    if (why) { console.log(`Weekly auto-check is for Baton's maintainers only: ${why}. Nothing to do.`); process.exit(0); }
+  }
   if (path.resolve(HERE) === path.resolve(WORK)) return; // already running from the worktree
   try {
     const fd = fs.openSync(LOCK, 'wx');
@@ -268,7 +286,7 @@ async function tryFix(r) {
   await must('git', ['checkout', '--quiet', '--detach', '--force', REF]);
   await must('git', ['clean', '-fdq', '-e', 'node_modules']);
   log(`  asking Claude Code to fix ${NAMES[r.tool]} ${r.to} (up to 45 min)…`);
-  const res = await sh('claude', ['-p', '--output-format', 'json', '--permission-mode', 'acceptEdits',
+  const res = await sh('claude', ['-p', '--output-format', 'json', '--model', FIX_MODEL, '--permission-mode', 'acceptEdits',
     '--allowedTools', 'Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash(npm run compat:smoke:*)', 'Bash(npm run compat:check:*)', 'Bash(node:*)', `Bash(${r.binDir}/*)`, 'Bash(git diff:*)', 'Bash(git status:*)', 'Bash(ls:*)', 'Bash(cat:*)', 'Bash(mkdir:*)'],
   { input: fixPrompt(r), env: cleanEnv(), timeout: 45 * 60_000, quiet: true });
   let summary = '';
@@ -391,6 +409,12 @@ Updates \`server/compat.json\`, the shape baselines, docs and CHANGELOG. ${drift
   log(`done${state.needsAttention ? ' — needs attention' : ''}`);
   // back to a clean origin/main so the worktree never holds stray work
   await sh('git', ['checkout', '--quiet', '--detach', '--force', REF], { quiet: true });
+}
+
+if (argv.includes('--maintainer-check')) { // used by compat-schedule.mjs
+  const why = await maintainerCheck();
+  console.log(why || 'ok');
+  process.exit(why ? 1 : 0);
 }
 
 main().catch(async (e) => {

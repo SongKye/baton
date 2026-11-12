@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Turns the weekly CLI auto-verification on (or off) on this computer: a systemd user timer that runs
 // scripts/compat-weekly.mjs every Saturday at 00:00 local time. If the computer was off then, it runs at the
-// next start (Persistent=true). Linux only for now.
+// next start (Persistent=true). Linux only for now. Maintainers only: it refuses to install unless this
+// checkout's origin is SongKye/baton and the signed-in GitHub account can push to it.
 //   npm run compat:schedule              install / update the timer
 //   npm run compat:schedule -- --remove  turn it off
 //   npm run compat:schedule -- --status  when it runs next
@@ -28,6 +29,12 @@ if (process.argv.includes('--remove')) {
 }
 
 if (!process.argv.includes('--status')) {
+  try {
+    execFileSync(process.execPath, ['--no-warnings', path.join(REPO, 'scripts', 'compat-weekly.mjs'), '--maintainer-check'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    console.log(`The weekly auto-check is for Baton's maintainers only: ${String(e.stdout || e.message).trim()}.`);
+    process.exit(1);
+  }
   // PATH as seen now (node, npm, git, gh, claude), minus anything only meaningful inside this session
   const pathDirs = [...new Set([path.dirname(process.execPath), ...(process.env.PATH || '').split(':')])].filter((d) => d && !d.includes('/tmp/'));
   fs.mkdirSync(UNITS, { recursive: true });
