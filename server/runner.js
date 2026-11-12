@@ -29,6 +29,9 @@ bus.setMaxListeners(100);
 
 export const childPids = new Set();
 
+/** Test hook (scripts/compat-smoke.mjs): sees every raw JSON event a CLI streams, before parsing. */
+export const rawTap = { fn: null };
+
 /** Environment for child CLIs: drop variables that would make a nested CLI think it's inside another session. */
 export function childEnv(extra = {}) {
   const env = { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1', ...extra };
@@ -366,7 +369,10 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
       const line = buf.slice(0, nl).trim();
       buf = buf.slice(nl + 1);
       if (!line || line[0] !== '{') continue;
-      try { parse(JSON.parse(line)); } catch { /* not json */ }
+      let ev;
+      try { ev = JSON.parse(line); } catch { continue; } // not json
+      if (rawTap.fn) try { rawTap.fn(tool, ev); } catch { /* observer only */ }
+      try { parse(ev); } catch { /* malformed event */ }
     }
   });
   child.stderr.setEncoding('utf8');

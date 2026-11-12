@@ -6,7 +6,7 @@
 
 ### 흩어진 AI 코딩 작업을, 하나의 흐름으로.
 
-Claude Code · Codex · Antigravity · OpenCode (베타)<br>
+Claude Code · Codex · Antigravity · OpenCode<br>
 **PC에서 시작한 작업을 모아 보고, 폰에서도 이어가세요.**
 
 [![CI](https://github.com/SongKye/baton/actions/workflows/ci.yml/badge.svg)](https://github.com/SongKye/baton/actions/workflows/ci.yml)
@@ -114,9 +114,9 @@ Git과 **Node.js 22.13 이상**이 필요해요. Node.js가 없으면 설치 스
 | **Claude Code** | ✓ | ✓ | ✓ | ✓ |
 | **Codex** | ✓ | ✓ | ✓ | ✓ |
 | **Antigravity** | ✓ | ✓ | ✓ | ✓ |
-| **OpenCode** | 베타 | ✓ | — | ✓ |
+| **OpenCode** | ✓ | ✓ | — | ✓ |
 
-OpenCode는 베타이며, 실제 설치 환경 검증 전이에요. 기능은 CLI와 연결 방식에 따라 달라져요.
+기능은 CLI와 연결 방식에 따라 달라져요. OpenCode는 구독 한도가 없어서 한도 표시가 없어요.
 
 **Cursor — 미검증 · 공식 지원 대상 아님.** 연동 코드는 있지만 직접 테스트·검증하지 않았고, 현재 정식 지원 계획도 없어요. 동작을 보장하지 않아 위 지원 목록에서는 제외했습니다.
 

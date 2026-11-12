@@ -88,11 +88,9 @@ To change Baton's own code, use a `git clone` of `main` instead. See [CONTRIBUTI
 | **Claude Code** | ✅ | ✅ | ✅ | ✅ | ✅ | Subscription · API key · Bedrock · Vertex · gateway / own server |
 | **Codex** | ✅ | ✅ | ✅ | ✅ | ✅ | ChatGPT · API key · Azure OpenAI · gateway / own server |
 | **Antigravity** | ✅ | ✅ | ✅ | ✅ | ✅ | Google account |
-| **OpenCode** | beta | beta | ✅ | — | ✅ | Free models · any OpenAI-compatible server |
+| **OpenCode** | ✅ | ✅ | ✅ | — | ✅ | Free models · any OpenAI-compatible server |
 
-*beta* — implemented from the tools' documented formats; not yet verified against a live install.
-
-**Verified versions:** Claude Code 2.1.318 · Codex 0.156.0 · Antigravity 1.5.6 (2026-11-12). Baton depends on each CLI's flags, output and session files, so a newer CLI release can break a feature. **Settings → Supported AI tool versions** compares these with what you have installed. See [CLI compatibility](compatibility.md) for what each integration relies on.
+**Verified versions:** Claude Code 2.1.318 · Codex 0.156.0 · Antigravity 1.5.6 · OpenCode 1.19.5 (2026-11-12). Baton depends on each CLI's flags, output and session files, so a newer CLI release can break a feature. **Settings → Supported AI tool versions** compares these with what you have installed. See [CLI compatibility](compatibility.md) for what each integration relies on.
 
 **Cursor — unverified and not officially supported.** Integration code exists, but it has not been directly tested or validated, and there are currently no plans for official support. Cursor configuration paths below document the existing implementation; they do not guarantee it works.
 

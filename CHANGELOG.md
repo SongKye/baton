@@ -14,6 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Project-only MCP servers**: add a server for one project instead of globally — Claude Code local scope (or a shared `.mcp.json`), the project's `.codex/config.toml` (with an opt-in to mark the folder trusted, which Codex requires), an Antigravity workspace plugin, the project's `opencode.json` and `.cursor/mcp.json`. Warns when a token would go into a file git doesn't ignore.
 - MCP server page: **Test connection** for an existing server; **Add to other CLIs** keeps a project server in its project (or copies it globally); project servers of Codex, Antigravity, OpenCode and Cursor can be deleted too.
 - **Supported AI tool versions**: Baton now records the exact CLI version it was verified with (Claude Code 2.1.318, Codex 0.156.0, Antigravity 1.5.6; OpenCode beta, Cursor unverified). Settings and each tool card in Get started show it next to the installed version: verified, newer and not checked yet, or older. [docs/compatibility.md](docs/compatibility.md) lists every flag, event, file and endpoint each integration relies on, and `npm run compat:check` checks an installed CLI's `--help` for the flags Baton uses.
+- `npm run compat:smoke` (for maintainers): a live test of each supported CLI through Baton's own code: new session, resume, session list, transcript, one-shot, limits and model list. It also flags renamed or removed fields in the CLI's output and session files. It runs on your subscriptions in a separate test home, so your everyday sessions and sign-ins are untouched.
 
 ### Fixed
 - OpenCode configs in the newer `mcp.servers` layout are read correctly (and written in that layout); remote servers with header keys set `"oauth": false`. Cursor stdio entries include `"type": "stdio"`.
@@ -21,6 +22,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Skill descriptions written as YAML block scalars (`description: >-`) no longer show a stray `>-`.
 
 ### Changed
+- **OpenCode is no longer beta**: verified with OpenCode 1.19.5 on a live install (free models, no sign-in): chat, resume, session list, transcript, briefs and the model picker.
 - The project page's MCP section shows only servers set up for that project; global servers are folded underneath. Folded sections remember whether you left them open.
 - The project page's session list shows 4 sessions per page with previous / next buttons instead of growing with "Show more". Sessions picked in select mode stay picked across pages.
 - Reorganized the English and Korean READMEs around product benefits, desktop/mobile screenshots and a three-step quick start; moved detailed setup and feature instructions into linked user guides.

@@ -11,7 +11,7 @@ was verified with** for each CLI. The source of truth is `server/compat.js`. Thi
 | Claude Code | Supported | **2.1.318** | 2026-11-12 | 2.1.322 (npm) |
 | Codex | Supported | **0.156.0** | 2026-11-12 | 0.167.2 (npm) |
 | Antigravity | Supported | **1.5.6** | 2026-11-12 | — (not on npm) |
-| OpenCode | Beta | — (built for 1.x from the docs) | — | 1.19.5 (npm) |
+| OpenCode | Supported | **1.19.5** | 2026-11-12 | 1.19.5 (npm) |
 | Cursor | Unverified | — | — | — |
 
 Baton shows the same information in **Settings → Supported AI tool versions** and on each tool's card in
@@ -84,19 +84,51 @@ If a feature breaks right after a CLI update, look here first. The file shows wh
 The protobuf transcript is the most fragile part: its schema isn't public, so a CLI update can change the field
 numbers without notice.
 
-### OpenCode (beta) and Cursor (unverified)
+### OpenCode
 
-OpenCode: `run --format json --session --model --variant --agent --file`, `models --verbose`,
-`<data>/opencode/opencode.db` (1.x) or the older `storage/*.json`, `opencode.json`. Cursor:
+| Surface | Used for | Code |
+|---|---|---|
+| `run --format json --session --model --variant --agent plan\|build --file` | Chat, continue a session | `server/runner.js` `opencodeCmd`, `opencodeParser` |
+| Events `text`, `reasoning`, `tool_use`/`tool` (`part.state`), `step_finish` (`part.tokens`, `part.cost`), `error`; `sessionID` on every event | Live chat view, tokens | `server/runner.js` |
+| `<data>/opencode/opencode.db` (1.x, tables `session` / `message` / `part`) or the older `storage/*.json` | Session list, transcripts, token usage | `server/sources/opencode.js`, `server/usage.js` |
+| `models --verbose` | Model picker | `server/models.js` |
+| `<data>/opencode/auth.json`, `~/.config/opencode/opencode.json` (`provider`, `mcp`) | Sign-in, own servers, MCP | `server/tools.js`, `server/connect.js`, `server/mcp*.js` |
+
+Verified with the free models (no sign-in). OpenCode has no subscription limits, so there is no limits step.
+
+### Cursor (unverified)
+
 `cursor-agent -p --output-format stream-json --resume --model --force`, `~/.cursor/chats/*/store.db`,
-`~/.cursor/mcp.json`. Neither has been verified against a live install.
+`~/.cursor/mcp.json`. Not verified against a live install.
+
+## Live test (`compat:smoke`)
+
+`npm run compat:smoke` drives each supported CLI through Baton's own code, the way a user would:
+
+1. **New session**: a one-line prompt; the CLI must report a session id and reply.
+2. **Resume session**: a second prompt into the same session.
+3. **Session list**: the session must show up in Baton's index (session files are where Baton expects).
+4. **Transcript**: Baton must read both prompts and replies back from the session file.
+5. **One-shot**: the path used for briefs and skill/MCP drafts.
+6. **Limits**: the live usage windows.
+7. **Model list**: the model picker gets a list.
+
+It also records the **shape** of every streamed event and session-file entry (each key path, such as
+`result usage.input_tokens`) and compares it with `scripts/compat-fixtures/<tool>.json`. A renamed or
+removed field shows up even when every step still passes. Store a new baseline with `--update-fixtures`.
+
+It uses your real subscriptions, but in a separate home folder (`~/.baton-compat/home`): test sessions,
+configs and sign-in tokens never touch your everyday ones. Claude Code and Codex need a one-time sign-in
+there: `npm run compat:smoke -- --login` (in a terminal). Antigravity uses its normal sign-in; OpenCode uses its free models, no sign-in. Each run is
+three short prompts per CLI on the cheapest model (Claude: Haiku, Codex: low effort).
+
+Test a specific binary instead of the one on PATH with `--bin codex=/path/to/dir`.
 
 ## Re-verifying after a CLI update
 
 1. Update the CLI on a test machine and run `npm run compat:check` (or `npm run compat:check -- codex`). It
    prints the installed version vs the verified one and fails if a flag Baton uses is missing from `--help`.
-2. In Baton, with that version: send a message in a new session, continue an old one, open a transcript, check
-   **Usage · limits** and add/test an MCP server for that CLI.
+2. Run `npm run compat:smoke` (or `-- codex`). Then, by hand, add/test an MCP server for that CLI.
 3. If everything works, update `verified` / `verifiedAt` in `server/compat.js` and the table above, with a
    CHANGELOG line ("Verified with Codex 0.167.2").
 4. If something broke, fix it, and keep a note here of the version where the change happened.
