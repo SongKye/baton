@@ -3,3 +3,6 @@ data/
 *.log
 .DS_Store
 .baton-uploads/
+
+# Claude Code project files (operator/developer skills, local settings): kept local, never shipped to users
+.claude/
