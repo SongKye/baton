@@ -71,6 +71,8 @@ function escapeCmd(cmd) { return cmd.replace(META, '^$1'); }
  */
 export function spawnCli(bin, args, opts = {}) {
   const env = { ...(opts.env || process.env), PATH: augmentedPath((opts.env || process.env).PATH) };
+  // Some CLIs resolve projects from PWD instead of getcwd(). Keep both in sync.
+  if (opts.cwd) env.PWD = path.resolve(opts.cwd);
   const resolved = which(bin) || bin;
   if (IS_WIN && /\.(cmd|bat)$/i.test(resolved)) {
     const line = [escapeCmd(path.normalize(resolved)), ...args.map((a) => escapeArg(String(a).replace(/\r?\n/g, ' ')))].join(' ');

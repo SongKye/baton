@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Weekly CLI auto-verification (run by the baton-compat systemd timer, Saturday 00:00; see compat-schedule.mjs).
 //
-// For each supported CLI: find its newest stable release -> if it's newer than the verified version, install it
+// For each supported CLI: find its newest stable release -> install and test it (including unchanged versions)
 // into ~/.baton-compat/versions (never on PATH, the everyday CLI is untouched) -> run compat:check + compat:smoke
 // against it ->
-//   passed, no removed fields  -> PR that bumps server/compat.json + docs + shape baselines, merged once CI is green
-//   passed, but fields removed -> the same PR, left open for review
+//   passed, no schema drift    -> PR that bumps server/compat.json + docs + shape baselines, merged once CI is green
+//   passed, schema review     -> the same PR, left open for review
 //   failed                     -> Claude Code tries to fix Baton on a branch; the result is re-tested and opened
 //                                 as a PR for review (never merged automatically), or an issue if nothing worked
 // The summary goes to ~/.baton-compat/last-run.json, which Baton shows in Settings and turns into a push
@@ -25,6 +25,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { osKey, OS_NAMES, recordVersion, writeDocsTable } from './lib-compat-table.mjs';
+import { shouldAttemptFix, needsReview, reportPassed, reportMatchesCheckout } from './lib-compat-contracts.mjs';
 
 const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BASE = path.join(os.homedir(), '.baton-compat');
@@ -177,16 +178,20 @@ async function install(tool, rel) {
   throw new Error(`don't know how to install ${tool}`);
 }
 
-/** compat:check + compat:smoke against the binary in binDir. Smoke also refreshes the shape baseline when it passes. */
-async function test(tool, binDir) {
+/** Check an exact binary without changing the stored schema baseline. */
+async function test(tool, binDir, expectedVersion) {
   const env = cleanEnv({ PATH: `${binDir}${path.delimiter}${process.env.PATH}`, BATON_NO_SHELL_ENV: '1' });
   const check = await sh(process.execPath, ['--no-warnings', 'scripts/compat-check.mjs', tool], { env, quiet: true, timeout: 5 * 60_000 });
   const json = path.join(os.tmpdir(), `baton-weekly-${tool}-${process.pid}.json`);
-  const smoke = await sh(process.execPath, ['--no-warnings', 'scripts/compat-smoke.mjs', tool, '--bin', `${tool}=${binDir}`, '--json', json, '--update-fixtures'], { env: cleanEnv(), quiet: true, timeout: 30 * 60_000 });
+  const smoke = await sh(process.execPath, ['--no-warnings', 'scripts/compat-smoke.mjs', tool, '--bin', `${tool}=${binDir}`, '--expect', `${tool}=${expectedVersion}`, '--strict', '--json', json], { env: cleanEnv(), quiet: true, timeout: 30 * 60_000 });
   let report = null;
   try { report = JSON.parse(await fsp.readFile(json, 'utf8'))[0]; } catch { /* crashed */ }
   await fsp.rm(json, { force: true });
-  return { checkOk: check.code === 0, checkOut: check.out.trim(), smokeOk: smoke.code === 0 && report?.ok === true, report, smokeOut: smoke.out.trim() };
+  return { expectedVersion, checkOk: check.code === 0, checkOut: check.out.trim(), smokeOk: smoke.code === 0 && reportPassed(report, expectedVersion), report, smokeOut: smoke.out.trim() };
+}
+
+async function saveShapes(report) {
+  if (report?.ok && report.shapes) await fsp.writeFile(path.join(WORK, 'scripts', 'compat-fixtures', `${report.tool}.json`), JSON.stringify({ version: report.version, ...report.shapes }, null, 1) + '\n');
 }
 
 // ------------------------------------------------------------------ editing the repo for a bump
@@ -220,7 +225,8 @@ async function bumpFiles(bumps, { os = osKey(), changelog = 'weekly automatic ch
 async function repoChecks() {
   const files = [...['server', 'server/sources', 'public', 'scripts'].flatMap((d) => fs.readdirSync(path.join(WORK, d)).filter((f) => /\.(m?js)$/.test(f)).map((f) => path.join(d, f)))];
   for (const f of files) { const r = await sh(process.execPath, ['--check', f], { quiet: true }); if (r.code) return `syntax error in ${f}: ${r.out.slice(0, 400)}`; }
-  for (const s of ['i18n-check.mjs', 'ci-boot.mjs']) { const r = await sh(process.execPath, ['--no-warnings', `scripts/${s}`], { quiet: true, timeout: 5 * 60_000 }); if (r.code) return `${s} failed: ${r.out.trim().slice(-600)}`; }
+  const r = await sh(process.execPath, ['--no-warnings', 'scripts/check.mjs'], { quiet: true, timeout: 15 * 60_000 });
+  if (r.code) return `regression checks failed: ${r.out.trim().slice(-1200)}`;
   return null;
 }
 
@@ -265,12 +271,13 @@ Find what changed in the new CLI and fix Baton's code so it works with ${r.to}. 
 version, so keep ${r.from} working too where the two differ (accept both shapes).
 
 Test the new version with:  npm run compat:smoke -- ${r.tool} --bin ${r.tool}=${r.binDir}
-Test the old one with:      npm run compat:smoke -- ${r.tool}
+Test the old one with:      npm run compat:smoke -- ${r.tool} --bin ${r.tool}=${r.oldBin || '(previous version unavailable)'} --expect ${r.tool}=${r.from}
 You may run the new binary directly from ${r.binDir} to inspect its --help, output and files (use a
 throwaway folder and HOME=$HOME/.baton-compat/home so nothing touches the user's real sessions).
 
-Rules: change only what the fix needs. Do not edit server/compat.json or scripts/compat-fixtures (the
-pipeline updates those). Do not commit, push or open PRs. Finish with a short plain-English summary:
+Rules: change only what the fix needs. Do not edit scripts/, .github/, package.json, package-lock.json or
+server/compat.json. The pipeline owns its tests and compatibility records; changing them cannot make a fix pass.
+Do not commit, push or open PRs. Finish with a short plain-English summary:
 what changed in ${NAMES[r.tool]} ${r.to}, what you changed in Baton, and the final test results.`;
 }
 
@@ -278,20 +285,42 @@ async function tryFix(r) {
   const branch = `compat/fix-${r.tool}-${r.to}`;
   await must('git', ['checkout', '--quiet', '--detach', '--force', REF]);
   await must('git', ['clean', '-fdq', '-e', 'node_modules']);
+  let oldError = null;
+  try { r.oldBin = await install(r.tool, { version: r.from }); }
+  catch (e) { oldError = `previous version unavailable: ${e.message}`; }
+  // Snapshot the verifier before the agent edits anything. Restore it before re-testing.
+  const protectedPaths = ['scripts', '.github', 'package.json', 'package-lock.json', 'server/compat.json'];
+  const protectedFiles = (await must('git', ['ls-files', '-z', '--', ...protectedPaths])).split('\0').filter(Boolean);
+  const originals = new Map(await Promise.all(protectedFiles.map(async (f) => [f, await fsp.readFile(path.join(WORK, f))])));
   log(`  asking Claude Code to fix ${NAMES[r.tool]} ${r.to} (up to 45 min)…`);
-  const res = await sh('claude', ['-p', '--output-format', 'json', '--model', FIX_MODEL, '--permission-mode', 'acceptEdits',
+  const res = await sh('claude', ['-p', '--output-format', 'json', '--model', FIX_MODEL, '--effort', 'medium', '--permission-mode', 'acceptEdits',
     '--allowedTools', 'Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash(npm run compat:smoke:*)', 'Bash(npm run compat:check:*)', 'Bash(node:*)', `Bash(${r.binDir}/*)`, 'Bash(git diff:*)', 'Bash(git status:*)', 'Bash(ls:*)', 'Bash(cat:*)', 'Bash(mkdir:*)'],
   { input: fixPrompt(r), env: cleanEnv(), timeout: 45 * 60_000, quiet: true });
   let summary = '';
   try { summary = JSON.parse(res.out.trim().split('\n').filter(Boolean).pop()).result || ''; } catch { summary = res.out.trim().slice(-2000); }
   const changed = (await sh('git', ['status', '--porcelain'], { quiet: true })).out.trim();
   if (!changed) return { outcome: 'no-change', summary };
-  const again = await test(r.tool, r.binDir);
-  const problem = await repoChecks();
-  const fixed = again.smokeOk && again.checkOk && !problem;
+  const altered = [];
+  for (const [f, original] of originals) {
+    const current = await fsp.readFile(path.join(WORK, f)).catch(() => null);
+    if (!current?.equals(original)) {
+      altered.push(f);
+      await fsp.mkdir(path.dirname(path.join(WORK, f)), { recursive: true });
+      await fsp.writeFile(path.join(WORK, f), original);
+    }
+  }
+  const added = (await must('git', ['ls-files', '--others', '--exclude-standard', '-z', '--', ...protectedPaths])).split('\0').filter(Boolean);
+  for (const f of added) { altered.push(f); await fsp.rm(path.join(WORK, f), { force: true }); }
+  if (!(await sh('git', ['status', '--porcelain'], { quiet: true })).out.trim()) {
+    return { outcome: 'no-change', summary: `${summary}\nOnly verifier changes were made and restored: ${altered.join(', ')}` };
+  }
+  const again = await test(r.tool, r.binDir, r.to);
+  const previous = r.oldBin ? await test(r.tool, r.oldBin, r.from) : null;
+  const problem = [oldError, altered.length ? `verifier changes restored; review required: ${altered.join(', ')}` : null, await repoChecks()].filter(Boolean).join('\n');
+  const fixed = again.smokeOk && again.checkOk && previous?.smokeOk && previous?.checkOk && !problem;
   // the fix is code: installs need the next Baton release, so record the current version as the one that lacks it
   const batonNow = JSON.parse(await fsp.readFile(path.join(WORK, 'package.json'), 'utf8')).version;
-  if (fixed) await bumpFiles([{ tool: r.tool, to: r.to, needsBatonAfter: batonNow }]);
+  if (fixed) { await saveShapes(again.report); await bumpFiles([{ tool: r.tool, to: r.to, needsBatonAfter: batonNow }]); }
   const title = fixed ? `Fix ${NAMES[r.tool]} ${r.to} compatibility` : `[needs help] ${NAMES[r.tool]} ${r.to} breaks Baton (automatic fix incomplete)`;
   const body = `${NAMES[r.tool]} **${r.to}** (verified until now: ${r.from}) failed Baton's weekly live test. Claude Code attempted a fix.
 
@@ -301,6 +330,9 @@ ${(r.test.report?.steps || []).map((s) => `- ${s.ok ? '✅' : '❌'} ${s.name}${
 ## Test after the fix
 ${(again.report?.steps || []).map((s) => `- ${s.ok ? '✅' : '❌'} ${s.name}${s.ok ? '' : ` — ${s.detail.replace(/\n/g, ' ').slice(0, 300)}`}`).join('\n') || again.smokeOut.slice(-1500)}
 ${problem ? `\nRepo checks: ❌ ${problem}` : ''}
+
+## Previous supported version (${r.from})
+${previous ? (previous.smokeOk && previous.checkOk ? '✅ exact previous binary passed the same checks' : `❌ ${previous.smokeOut.slice(-1500)}`) : `Not verified: ${oldError}`}
 
 ## What Claude Code says
 ${summary.slice(0, 6000) || '(no summary)'}
@@ -319,7 +351,10 @@ async function recordOs(file) {
   const os = osKey();
   const table = JSON.parse(await fsp.readFile(path.join(WORK, 'server', 'compat.json'), 'utf8'));
   const cmpVer = (a, b) => cmp(a, b);
-  const passed = reports.filter((r) => r.ok && r.version && table[r.tool]);
+  const passed = reports.filter((r) => table[r.tool] && reportPassed(r, r.expectedVersion));
+  const checkout = { revision: (await must('git', ['rev-parse', 'HEAD'])).trim(), platform: process.platform, arch: process.arch };
+  const mismatched = passed.filter((r) => !reportMatchesCheckout(r, checkout));
+  if (mismatched.length) throw new Error(`Cannot record ${mismatched.map((r) => r.tool).join(', ')}: report must come from a clean checkout of ${checkout.revision} on ${checkout.platform}/${checkout.arch}. Re-run compat:smoke from that checkout.`);
   const fresh = passed.filter((r) => !table[r.tool].os?.[os]?.verified || cmpVer(r.version, table[r.tool].os[os].verified) > 0);
   for (const r of reports.filter((x) => !x.skipped && !x.ok)) log(`${NAMES[r.tool] || r.tool} ${r.version || ''} FAILED on ${OS_NAMES[os]}: not recorded`);
   if (!fresh.length) { log(`nothing new to record for ${OS_NAMES[os]} (${passed.map((r) => `${NAMES[r.tool]} ${r.version}`).join(', ') || 'no passes'})`); return; }
@@ -328,17 +363,18 @@ async function recordOs(file) {
   if (problem) throw new Error(`repo checks failed: ${problem}`);
   const names = fresh.map((r) => `${NAMES[r.tool]} ${r.version}`).join(', ');
   const failed = reports.filter((x) => !x.skipped && !x.ok);
+  const review = fresh.some((r) => needsReview(r.drift));
   const body = `Manual compatibility run on **${OS_NAMES[os]}** (\`npm run compat:smoke -- --report\`).
 
 | CLI | Version | Result |
 |---|---|---|
 ${reports.map((r) => `| ${NAMES[r.tool] || r.tool} | ${r.version || '—'} | ${r.skipped ? `skipped (${r.skipped})` : r.ok ? `✅ ${r.steps.length}/${r.steps.length} steps${fresh.includes(r) ? ' — **recorded**' : ' — already recorded'}` : `❌ ${r.steps.filter((x) => !x.ok).map((x) => x.name).join(', ')}`} |`).join('\n')}
 ${failed.length ? `\n### Failures (not recorded)\n${failed.map((r) => `**${NAMES[r.tool]} ${r.version}**\n${r.steps.filter((x) => !x.ok).map((x) => `- ${x.name}: ${x.detail.replace(/\n/g, ' ').slice(0, 300)}`).join('\n')}`).join('\n\n')}\n` : ''}
-Updates the ${OS_NAMES[os]} column of \`server/compat.json\` and docs/compatibility.md. Merged automatically once CI is green.
+Updates the ${OS_NAMES[os]} column of \`server/compat.json\` and docs/compatibility.md. ${review ? 'Left open for review: missing baseline or output schema drift.' : 'Merged automatically once CI is green.'}
 
 🤖 Generated by \`npm run compat:smoke -- --report\``;
   const url = await commitAndPr({ branch: `compat/${os}-${today()}`, title: `Verified on ${OS_NAMES[os]}: ${names}`, body, message: `chore: verified on ${OS_NAMES[os]}: ${names}\n\nManual compat:smoke --report run.` });
-  if (url) log(`PR ${url}: ${await mergeWhenGreen(url)}`);
+  if (url) log(`PR ${url}: ${review ? 'review required' : await mergeWhenGreen(url)}`);
 }
 
 async function main() {
@@ -351,6 +387,16 @@ async function main() {
   log(`weekly compat run${DRY ? ' (dry run)' : ''} at ${(await sh('git', ['rev-parse', '--short', 'HEAD'], { quiet: true })).out.trim()} for ${tools.join(', ')}`);
   const state = { runAt: new Date().toISOString(), dryRun: DRY, results: [], prs: [], needsAttention: false, log: logFile };
 
+  const preflight = await repoChecks();
+  if (preflight) {
+    state.needsAttention = true;
+    state.results.push({ tool: 'preflight', status: 'error', note: preflight });
+    state.finishedAt = new Date().toISOString();
+    await fsp.writeFile(STATE, JSON.stringify(state, null, 2));
+    log(`offline checks failed; no live AI verification started: ${preflight}`);
+    return;
+  }
+
   for (const tool of tools) {
     const r = { tool, from: compat[tool].verified, to: null, status: 'error', note: '' };
     state.results.push(r);
@@ -358,31 +404,39 @@ async function main() {
       const rel = await latestRelease(tool);
       if (!rel) { r.note = 'could not read the latest release'; log(`${tool}: ${r.note}`); state.needsAttention = true; continue; }
       r.to = rel.version;
-      if (cmp(rel.version, r.from) <= 0) { r.status = 'up-to-date'; log(`${tool}: latest stable ${rel.version}, verified ${r.from} — nothing to do`); continue; }
-      log(`${tool}: new release ${rel.version} (verified ${r.from}) — installing`);
+      r.newRelease = cmp(rel.version, r.from) > 0;
+      if (cmp(rel.version, r.from) < 0) { r.status = 'error'; r.note = 'release feed is older than the verified version'; state.needsAttention = true; continue; }
+      log(`${tool}: ${r.newRelease ? 'new release' : 'scheduled health check'} ${rel.version} (verified ${r.from}) — installing`);
       r.binDir = await install(tool, rel);
       log(`${tool}: testing ${rel.version}…`);
-      r.test = await test(tool, r.binDir);
+      r.test = await test(tool, r.binDir, r.to);
+      if (!r.test.smokeOk && r.test.report?.steps?.some((s) => !s.ok && s.category === 'network')) {
+        log(`${tool}: transient failure — retrying once`);
+        r.test = await test(tool, r.binDir, r.to);
+      }
+      await fsp.writeFile(path.join(LOGS, `${today()}-${tool}-${Date.now()}.json`), JSON.stringify(r.test, null, 2));
       const rep = r.test.report;
       if (rep?.skipped) { r.status = 'skipped'; r.note = rep.skipped; state.needsAttention = true; log(`${tool}: skipped — ${rep.skipped}`); continue; }
       for (const s of rep?.steps || []) log(`  ${s.ok ? '✓' : '✗'} ${s.name}${s.ok ? '' : ` — ${s.detail.split('\n')[0]}`}`);
       if (r.test.smokeOk && r.test.checkOk) {
-        r.status = rep.drift?.removed?.length ? 'passed-drift' : 'passed';
-        log(`${tool}: ${rel.version} passed${r.status === 'passed-drift' ? ` (${rep.drift.removed.length} fields disappeared, needs review)` : ''}`);
+        r.status = needsReview(rep.drift) ? 'passed-drift' : 'passed';
+        if (r.status === 'passed-drift') state.needsAttention = true;
+        log(`${tool}: ${rel.version} passed${r.status === 'passed-drift' ? ` (schema/baseline needs review)` : ''}`);
       } else {
-        r.status = 'failed';
+        r.status = shouldAttemptFix(r.test) && r.newRelease ? 'failed' : 'error';
+        r.note = (rep?.steps || []).filter((s) => !s.ok).map((s) => `${s.name}: ${s.category || 'unknown'} — ${s.detail}`).join('; ') || 'verification did not produce a valid report';
+        state.needsAttention = true;
         if (!r.test.checkOk) log(`  ✗ flag check: ${r.test.checkOut.split('\n').filter((l) => l.includes('✗')).join('; ')}`);
         log(`${tool}: ${rel.version} FAILED`);
       }
     } catch (e) { r.status = 'error'; r.note = e.message; state.needsAttention = true; log(`${tool}: error — ${e.message}`); }
   }
 
-  // 1) passed -> one bump PR (auto-merge when no fields disappeared)
-  const passed = state.results.filter((r) => r.status === 'passed' || r.status === 'passed-drift');
+  // 1) new versions that passed -> one bump PR (auto-merge only without schema drift)
+  const passed = state.results.filter((r) => r.newRelease && (r.status === 'passed' || r.status === 'passed-drift'));
   if (passed.length) {
     try {
-      // the smoke runs already refreshed the shape baselines of the passing CLIs; drop those of failing ones
-      for (const r of state.results.filter((x) => x.status === 'failed')) await sh('git', ['checkout', '--', `scripts/compat-fixtures/${r.tool}.json`], { quiet: true });
+      for (const r of passed) await saveShapes(r.test.report);
       await bumpFiles(passed.map((r) => ({ tool: r.tool, to: r.to })));
       const problem = await repoChecks();
       if (problem) throw new Error(`repo checks failed after the bump: ${problem}`);
@@ -392,12 +446,12 @@ async function main() {
 
 | CLI | Verified until now | New | Result |
 |---|---|---|---|
-${passed.map((r) => `| ${NAMES[r.tool]} | ${r.from} | **${r.to}** | ${(r.test.report.steps || []).filter((s) => s.ok).length}/${(r.test.report.steps || []).length} steps pass${r.status === 'passed-drift' ? ', **fields disappeared**' : ''} |`).join('\n')}
+${passed.map((r) => `| ${NAMES[r.tool]} | ${r.from} | **${r.to}** | ${(r.test.report.steps || []).filter((s) => s.ok).length}/${(r.test.report.steps || []).length} steps pass${r.status === 'passed-drift' ? ', **schema review required**' : ''} |`).join('\n')}
 
-Steps: new session, resume, session list, transcript, one-shot, limits (where the CLI has them), model list; plus \`compat:check\` (flags).
-${drift.length ? `\n## Fields that disappeared (review before merging)\nEvery step still passes, but these fields are gone from the CLI's output or session files. Check whether a feature the test doesn't cover reads them.\n${drift.map((r) => `\n**${NAMES[r.tool]}** (since ${r.test.report.drift.baseline}):\n${r.test.report.drift.removed.slice(0, 40).map((p) => `- \`${p}\``).join('\n')}`).join('\n')}\n` : ''}
+Steps: context-preserving resume, ordered transcript, plan/read, file edit and command, Claude question/answer, one-shot, limits, concrete model list; plus \`compat:check\` (flags).
+${drift.length ? `\n## Schema changes (review before merging)\nEvery step passes, but fields, types or observed event kinds changed (or the baseline is missing). Review the report before accepting a new baseline.\n${drift.map((r) => `\n**${NAMES[r.tool]}** (since ${r.test.report.drift.baseline}):\n${[...r.test.report.drift.removed, ...(r.test.report.drift.changed || []), ...(r.test.report.drift.missingKinds || []).map((k) => `unobserved kind: ${k}`)].slice(0, 40).map((p) => `- \`${p}\``).join('\n')}`).join('\n')}\n` : ''}
 ${passed.some((r) => r.test.report.drift?.added?.length) ? `\n<details><summary>New fields</summary>\n\n${passed.map((r) => (r.test.report.drift?.added || []).slice(0, 40).map((p) => `- ${NAMES[r.tool]}: \`${p}\``).join('\n')).join('\n')}\n</details>\n` : ''}
-Updates \`server/compat.json\`, the shape baselines, docs and CHANGELOG. ${drift.length ? '**Left open for review** because fields disappeared.' : 'Merged automatically once CI is green.'}
+Updates \`server/compat.json\`, the shape baselines, docs and CHANGELOG. ${drift.length ? '**Left open for review** because the schema needs review.' : 'Merged automatically once CI is green.'}
 
 🤖 Generated by Baton's weekly compatibility check (scripts/compat-weekly.mjs)`;
       const url = await commitAndPr({ branch: `compat/verify-${today()}`, title: `Verified with ${names}`, body, message: `chore: verified with ${names}\n\nWeekly automatic check (scripts/compat-weekly.mjs): compat:check and compat:smoke pass.` });
@@ -408,7 +462,7 @@ Updates \`server/compat.json\`, the shape baselines, docs and CHANGELOG. ${drift
         pr.merged = pr.result === 'merged';
         log(`verify PR ${url}: ${pr.result}`);
         if (!pr.merged) state.needsAttention = true;
-      } else if (drift.length) { log(`verify PR ${url || '(dry run)'}: left open for review (fields disappeared)`); state.needsAttention = true; }
+      } else if (drift.length) { log(`verify PR ${url || '(dry run)'}: left open for review (schema/baseline)`); state.needsAttention = true; }
     } catch (e) { log(`bump PR: error — ${e.message}`); state.needsAttention = true; state.results.push({ tool: 'bump', status: 'error', note: e.message }); }
   }
 
@@ -428,7 +482,10 @@ Updates \`server/compat.json\`, the shape baselines, docs and CHANGELOG. ${drift
     } catch (e) { log(`${r.tool}: fix attempt error — ${e.message}`); r.fix = { outcome: 'error', note: e.message }; }
   }
 
-  for (const r of state.results) { delete r.test; delete r.binDir; }
+  for (const r of state.results) {
+    if (r.test?.report) r.verification = { version: r.test.report.version, revision: r.test.report.revision, dirty: r.test.report.dirty, platform: r.test.report.platform, checkedAt: r.test.report.checkedAt, generation: r.test.report.generation, steps: r.test.report.steps, drift: r.test.report.drift };
+    delete r.test; delete r.binDir; delete r.oldBin;
+  }
   state.finishedAt = new Date().toISOString();
   await fsp.writeFile(STATE, JSON.stringify(state, null, 2));
   log(`done${state.needsAttention ? ' — needs attention' : ''}`);

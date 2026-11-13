@@ -1292,5 +1292,7 @@
  "지금 버전에서 올릴 검증된 버전이 없어요": "There's no verified version to update to",
  "다른 OS에서 검증된 버전이에요. 이 OS({os})에서는 아직 확인 전이에요.": "Verified on another OS. Not checked on this one ({os}) yet.",
  "다른 OS에서 검증됨": "Verified on another OS",
- "OS별 검증": "Verified on"
+ "OS별 검증": "Verified on",
+ "복원할 위치에 파일이 이미 있어요. 휴지통 원본은 보관했어요: {path}": "A file already exists at the restore location. The original remains in Trash: {path}",
+ "복원할 백업 파일이 없어요. 휴지통 기록은 보관했어요: {path}": "A backup file is missing. The Trash record has been preserved: {path}"
 }

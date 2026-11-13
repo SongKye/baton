@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Added
+- Live compatibility checks now include trash/restore of the generated test session. Offline fixtures cover old/current Claude, Codex and Antigravity histories alongside existing OpenCode DB/JSON tests; Chromium tests cover reconnect, question recovery and two-tab answers in desktop/mobile viewports.
+- Stronger live CLI compatibility checks: random-context resume, ordered transcripts, file reads/edits, command execution, Claude question/answer and concrete model catalogs, with exact binary/version evidence and typed output-shape reports.
+- An isolated `npm test` suite shared by CI and automatic fixes, including four CLI protocol doubles, stop/concurrency and HTTP stream replay, compatibility policy checks and previously unconnected access/folder/Codex-index regressions.
 - **Create skills by describing them**: Tools → Skills → **New skill**. Say what you want in plain words, choose everywhere (global) or one project, and which CLIs should use it. An AI CLI writes the SKILL.md (plus helper scripts when they help); you review, edit or ask for changes, then Baton saves it into every folder the chosen CLIs read — one copy per shared folder, so nothing shows up twice. After saving, try it straight away in a new chat with suggested prompts.
 - Your own skills can now be edited (by hand or with AI), copied to other CLIs and deleted from the skill page. Overwritten and deleted skills are backed up in `data/skill-backups` for 30 days.
 - **Skills on the project page**: each project now lists its own skills (one row per skill, with the CLIs that read it and how often it was used there), plus a **New skill for this project** button. Global skills are folded away underneath.
@@ -20,11 +23,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Verified per OS**: the compatibility table records which CLI version was verified on Linux, Windows and macOS. Settings shows **Verified** only when your installed version was verified on your OS, otherwise **Verified on another OS**, plus a line per OS. Maintainers record Windows or macOS with `npm run compat:smoke -- --report` (now isolated on Windows too); the weekly job records Linux.
 
 ### Fixed
+- Antigravity sessions whose conversation files have been permanently deleted no longer reappear from stale summary database entries.
+- Restoring a session preserves its Trash backup when the destination already exists or a backup file is missing, and rolls back files already moved if a later move fails.
+- Delayed tool failures update the live chat display immediately, and completed replies no longer regain the typing cursor on a pending render frame.
+- Long chat runs retain increasing event ids and archive older events for lossless replay during the server process lifetime; reconnects no longer use a truncated array offset.
+- CLI output without a final newline is parsed, incomplete/nonzero exits cannot be reported as successful chat completion, and Stop terminates the Unix process group including tool descendants.
+- Large compatibility reports are written to a temporary file before process exit instead of being truncated in a stdout pipe.
+- CLI child processes receive a `PWD` matching their requested working directory, so OpenCode does not use the server's original directory for a new project.
 - OpenCode configs in the newer `mcp.servers` layout are read correctly (and written in that layout); remote servers with header keys set `"oauth": false`. Cursor stdio entries include `"type": "stdio"`.
 - Antigravity skills in `~/.gemini/config/skills` and a project's `.agents/skills`, and OpenCode / Cursor skills in their own folders, now appear on the Skills page and in the @ picker.
 - Skill descriptions written as YAML block scalars (`description: >-`) no longer show a stray `>-`.
 
 ### Changed
+- Automatic compatibility fixes explicitly use medium reasoning effort with the configured Claude model (Opus 5.5 by default).
+- Manual compatibility reports must match the recording checkout's revision, OS and architecture and come from a clean worktree before they can update verified versions.
+- Weekly compatibility checks also exercise unchanged CLI versions. Authentication/quota/environment failures do not trigger code fixes; network failures are retried once. Ready fix PRs require both exact old/new binaries and the full offline regression suite. Modified verifier files are restored before re-testing. Schema drift and missing/untyped baselines block auto-merge on all OS report paths.
 - **OpenCode is no longer beta**: verified with OpenCode 1.19.5 on a live install (free models, no sign-in): chat, resume, session list, transcript, briefs and the model picker.
 - The project page's MCP section shows only servers set up for that project; global servers are folded underneath. Folded sections remember whether you left them open.
 - The project page's session list shows 4 sessions per page with previous / next buttons instead of growing with "Show more". Sessions picked in select mode stay picked across pages.

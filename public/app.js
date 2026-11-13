@@ -1468,7 +1468,7 @@ function liveRun(container, runId, { onSession, onDone } = {}) {
   const mark = (s) => { s.dirty = true; if (!rafPending) { rafPending = true; requestAnimationFrame(flush); } };
   const lastSeg = () => segs[segs.length - 1];
   const handle = (ev) => {
-    if (ev.i != null) lastI = ev.i;
+    if (ev.i != null) { if (ev.i <= lastI) return; lastI = ev.i; }
     if (ev.t === 'session') onSession?.(ev.id);
     else if (ev.t === 'thinking') { thinking = true; drawStatus(); }
     else if (ev.t === 'text') {
@@ -1483,7 +1483,7 @@ function liveRun(container, runId, { onSession, onDone } = {}) {
       if (!s || s.type !== 'tools') { s = { type: 'tools', items: [], el: document.createElement('div') }; el.insertBefore(s.el, status); segs.push(s); }
       s.items.push({ role: 'tool', tool: { name: ev.name, summary: ev.summary } }); mark(s);
     } else if (ev.t === 'tool_done') {
-      const s = lastSeg(); if (s?.type === 'tools') { const it = [...s.items].reverse().find((x) => x.tool && x.tool.done == null); if (it) { it.tool.done = true; it.tool.error = ev.error; } }
+      const s = lastSeg(); if (s?.type === 'tools') { const it = [...s.items].reverse().find((x) => x.tool && x.tool.done == null); if (it) { it.tool.done = true; it.tool.error = ev.error; mark(s); } }
     } else if (ev.t === 'mcp') {
       // only speak up when something is wrong — a healthy MCP list would just be noise.
       // claude.ai connectors that were never authorized (Gmail/Calendar/Drive come attached to the
@@ -1514,7 +1514,9 @@ function liveRun(container, runId, { onSession, onDone } = {}) {
   const finish = (ev) => {
     if (closed) return; closed = true;
     clearInterval(timer); es?.close(); status.remove();
-    for (const s of segs) if (s.type === 'text') s.el.classList.remove('typing-caret');
+    for (const s of segs) if (s.type === 'text') { s.ended = true; mark(s); }
+    flush();
+    document.removeEventListener('visibilitychange', onVis);
     onDone?.(ev, el);
   };
   const connect = () => {

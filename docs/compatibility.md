@@ -130,24 +130,37 @@ new CLI versions, a newer CLI may have migrated its data, and the same CLI is us
 
 `npm run compat:smoke` drives each supported CLI through Baton's own code, the way a user would:
 
-1. **New session**: a one-line prompt; the CLI must report a session id and reply.
-2. **Resume session**: a second prompt into the same session.
-3. **Session list**: the session must show up in Baton's index (session files are where Baton expects).
-4. **Transcript**: Baton must read both prompts and replies back from the session file.
-5. **One-shot**: the path used for briefs and skill/MCP drafts.
-6. **Limits**: the live usage windows.
-7. **Model list**: the model picker gets a list.
+1. **CLI contract**: executable/version identity and successful help commands with every required flag.
+2. **New session and resume**: store a random value in the first turn, recall it without repeating it in the second; the session id must remain the same.
+3. **Session list, transcript and restore**: find the session in the requested project directory and read all four user/assistant messages back in order. Trash only that generated test session, verify it disappears, then restore it with the same project and full transcript. File checks stop if the project directory does not match.
+4. **Plan/read**: read a randomly generated file through a tool without changing it.
+5. **File edit and command**: independently uppercase that file in automatic edit mode and execute a command in full permission mode. Check actual file contents, a randomly generated command marker, and tool progress/completion events.
+6. **Question/answer (Claude)**: receive an `AskUserQuestion` control request, submit an answer through Baton, and see the chosen answer in the reply.
+7. **One-shot**: the path used for briefs and skill/MCP drafts.
+8. **Limits**: check usage windows, percentages and reset timestamps. Authentication, quota and network failures are classified separately.
+9. **Model list**: concrete model ids, with a successful live CLI refresh for Codex, Antigravity and OpenCode. Claude's built-in catalog is explicitly recorded as built-in, not a live listing.
 
-It also records the **shape** of every streamed event and session-file entry (each key path, such as
-`result usage.input_tokens`) and compares it with `scripts/compat-fixtures/<tool>.json`. A renamed or
-removed field shows up even when every step still passes. Store a new baseline with `--update-fixtures`.
+Each run uses a new project inside the test home. Reports include the executable, actual/expected CLI version,
+Baton git revision and dirty-worktree flag, OS/architecture, Node version, check time and the result/category of every step.
+Large reports are passed through a temporary file, so exiting the test process cannot truncate a stdout pipe.
+
+It also records **key paths and value types** of streamed events and JSONL entries and compares them with
+`scripts/compat-fixtures/<tool>.json`. Removed fields, changed types, unobserved event kinds and a missing or
+untyped baseline require review. An unobserved event can be nondeterministic; it is not by itself a failed
+behavioral test. Store a reviewed baseline with `--update-fixtures`.
+
+SQLite/protobuf storage still receives the live transcript check, but does not yet receive a raw schema diff.
+This suite does not verify every model, provider, MCP, skill, image or mobile browser; see the coverage plan below.
 
 It uses your real subscriptions, but in a separate home folder (`~/.baton-compat/home`): test sessions,
 configs and sign-in tokens never touch your everyday ones. Claude Code and Codex need a one-time sign-in
 there: `npm run compat:smoke -- --login` (in a terminal). Antigravity uses its normal sign-in; OpenCode uses its free models, no sign-in. Each run is
-three short prompts per CLI (Claude Code: Sonnet 5.5, Codex: low effort, others: account default).
+six short prompts per CLI (seven for Claude, including the question/answer check). Models: Claude Code: Sonnet 5.5, Codex: low effort, others: account default.
 
 Test a specific binary instead of the one on PATH with `--bin codex=/path/to/dir`.
+Use `--expect codex=0.156.0` to require an exact version and `--strict` to fail when a requested CLI is skipped.
+A run where no CLI passes exits unsuccessfully even without `--strict`. An install failure never falls back to
+an unrelated binary on PATH. The weekly job always supplies both an explicit binary directory and an expected version.
 
 ## Weekly auto-check
 
@@ -163,19 +176,23 @@ Antigravity and OpenCode can only use their own vendor's models, so they use the
 written by Claude Code with Opus 5.5 (`BATON_COMPAT_FIX_MODEL`). Version-bump PRs need no AI.
 
 1. **New release?** Claude Code's npm `stable` tag, Codex's and OpenCode's npm `latest`, and Antigravity's
-   release manifest. If it isn't newer than the verified version, nothing else happens.
+   release manifest. An unchanged version is also tested as a scheduled health check; a passing unchanged version does not create a version-bump PR.
 2. **Install** that release into `~/.baton-compat/versions/<tool>/<version>`, off PATH. Your everyday CLI is
    untouched. Antigravity's download is checked against the manifest's SHA-512.
 3. **Test** it with `compat:check` and `compat:smoke`, from a separate git worktree (`~/.baton-compat/work`)
    checked out at `origin/main`. The folder Baton runs from is never touched.
 4. **Passed** → one PR that bumps `server/compat.json`, the shape baselines, the docs and the CHANGELOG. It is
-   merged automatically once CI is green, unless fields disappeared from the CLI's output, in which case it
-   stays open for review.
-5. **Failed** → Claude Code (your everyday sign-in) gets the failure report and this page, fixes Baton on a
-   branch, and the pipeline re-tests. The result is always opened as a PR for review, never merged
-   automatically: a ready PR if the test passes, a draft if not, or an issue if nothing could be changed.
+   merged automatically once CI is green, unless the schema/baseline needs review, in which case it stays open.
+   Health-check failures and schema drift are recorded even without a new CLI release.
+5. **Failed** → authentication, quota, environment and unclassified failures are reported for attention rather
+   than sent to an automatic code fixer. Network failures get one retry. A new version with a contract failure
+   can be sent to Claude Code (your everyday sign-in). The pipeline then re-tests **both the exact new and previous
+   verified binaries**, and runs the same isolated offline regression suite as CI. Browser checks run separately on the PR. If the old binary is unavailable,
+   the fix cannot be marked ready. Verifier/CI/package/compat-table edits by the fixer are restored before
+   re-testing and require review. Fix PRs are never merged automatically: ready when all required checks pass,
+   draft otherwise, or an issue when nothing could be changed.
 
-The result goes to `~/.baton-compat/last-run.json` and the log to `~/.baton-compat/logs/<date>.log`. Baton
+The result goes to `~/.baton-compat/last-run.json` and the log to `~/.baton-compat/logs/<date>.log`. Detailed test reports are retained beside the log. Baton
 shows it under **Settings → Supported AI tool versions → Weekly auto-check**. It sends a push notification when
 something needs a look, and otherwise records a quiet inbox entry.
 
@@ -195,10 +212,14 @@ The weekly job verifies Linux. To record another OS, on a computer with that OS,
 It installs **each CLI's verified version** into `~/.baton-compat/versions` (off PATH, so the CLIs you use
 are untouched and a CLI you don't have installed is still tested) and runs the same live test. It then opens a
 PR that writes every passing version into that OS's column of `server/compat.json` and this page, and merges
-the PR once CI is green. Add `--installed` to test the CLIs installed on that computer instead, or use
+the PR once CI is green only when its schema/baseline does not require review. Add `--installed` to test the CLIs installed on that computer instead, or use
 `--install` to test without recording. Antigravity has no versioned installer, so the installed one is used.
 Failures are listed in the output and the PR but never recorded. Without push access, it only prints the
 results.
+
+Reports can be recorded only when their Baton revision matches the recording worktree, `dirty` is false,
+and OS/architecture match. Run from a clean checkout of the target revision; results from local edits cannot
+certify the unmodified release.
 
 Users see this per OS. **Verified** means the installed version was verified on their OS. **Verified on
 another OS** means it was verified elsewhere but not on theirs yet. Settings also lists the verified version on
@@ -215,3 +236,43 @@ counts as Linux.
 3. If everything works, update `verified` / `verifiedAt` in `server/compat.json` and the table above, with a
    CHANGELOG line ("Verified with Codex 0.167.2"). The weekly auto-check does this for you.
 4. If something broke, fix it, and keep a note here of the version where the change happened.
+
+## Regression suite and remaining coverage
+
+`npm test` runs the same offline checks in CI and in the weekly fix pipeline, using a temporary Baton
+installation and home. The runner tests start local fake executables for all four supported CLIs and exercise
+real process spawning, JSON parsing, permission arguments, tool progress, Claude questions (answer, skip,
+duplicate/stale answer and denied approvals), failure/limit states, stop/concurrent runs and HTTP SSE replay.
+They also verify that incomplete output and a nonzero exit cannot be reported as success.
+
+Long runs retain monotonic event ids. Events outside the memory window are archived in private temporary files
+and replayed on reconnect, then deleted when the run expires or the server exits. This preserves replay during
+a server process's lifetime; it is not persistence across a server restart.
+
+The policy tests cover same-version health checks, environment-vs-contract failures, drift review, old/new
+binary pinning, restoring modified verifiers and large/missing child reports. Existing access, folder and
+Codex indexing regressions now run in CI too (folder/symlink tests remain Unix-only).
+
+`npm run test:browser` adds Chromium checks of the production live renderer, question UI, runner and SSE route
+in desktop and mobile viewport sizes. It verifies disconnection/replay, question recovery after reload,
+two-tab answer handling and delayed tool-error rendering. The surrounding navigation shell and CLI are fixtures;
+this does not replace full-app navigation or real-phone testing. CI installs Playwright separately. Locally,
+set `BATON_PLAYWRIGHT` to an installed `playwright`/`playwright-core` package directory and optionally
+`BATON_BROWSER` to a Chromium executable.
+
+Offline session tests cover Claude/Codex/Antigravity old/current transcript fixtures and OpenCode DB/JSON
+storage, including trash/restore, full transcript and companion-file preservation. Conflicting destinations,
+missing backups and a failure partway through restoration must preserve recoverable originals.
+
+Remaining work, **not implied by a passing compatibility report**:
+
+- Live image input, actual MCP tool invocation and actual skill discovery/application.
+- Project moves and end-to-end CLI storage migrations across actual version upgrades.
+- CLI-to-CLI handoff, token aggregation, scheduled messages and terminal-session completion notifications.
+- Full-app browser navigation and real phone push/foreground/background checks.
+- Raw SQLite/protobuf schema drift, negative permission enforcement, selected model/effort behavior,
+  additional provider profiles and live Windows/macOS runs.
+
+The Korean implementation checklist is in [compatibility-checks.ko.md](compatibility-checks.ko.md).
+
+Automatic compatibility fixes use Claude Opus 5.5 with `--effort medium`; `BATON_COMPAT_FIX_MODEL` can override the model.

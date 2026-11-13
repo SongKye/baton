@@ -1,0 +1,158 @@
+// Exercise actual spawning/parsing/control and the production SSE handler against local fake CLIs.
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import vm from 'node:vm';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+if (!process.argv.includes('--child')) {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'baton-runner-'));
+  try {
+    const app = path.join(tmp, 'app'), home = path.join(tmp, 'home'), bin = path.join(tmp, 'bin');
+    await fs.mkdir(path.join(app, 'public'), { recursive: true });
+    await fs.mkdir(home); await fs.mkdir(bin);
+    for (const d of ['server', 'scripts', 'public/locales']) await fs.cp(path.join(root, d), path.join(app, d), { recursive: true });
+    await fs.copyFile(path.join(root, 'public/app.js'), path.join(app, 'public/app.js'));
+    await fs.copyFile(path.join(root, 'package.json'), path.join(app, 'package.json'));
+    await fs.symlink(path.join(root, 'node_modules'), path.join(app, 'node_modules'), 'junction');
+    const fixture = path.join(app, 'scripts', 'runner-fixture.mjs');
+    const quote = (s) => "'" + s.replaceAll("'", "'\\''") + "'";
+    for (const tool of ['claude', 'codex', 'agy', 'opencode']) {
+      const win = process.platform === 'win32';
+      await fs.writeFile(path.join(bin, tool + (win ? '.cmd' : '')), win
+        ? `@echo off\r\n"${process.execPath}" "${fixture}" ${tool} %*\r\n`
+        : `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fixture)} ${tool} "$@"\n`, { mode: 0o755 });
+    }
+    const env = { ...process.env, HOME: home, USERPROFILE: home, BATON_NO_SHELL_ENV: '1', PATH: bin + path.delimiter + process.env.PATH };
+    for (const key of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME']) delete env[key];
+    execFileSync(process.execPath, ['--no-warnings', path.join(app, 'scripts', 'runner-check.mjs'), '--child', ...process.argv.slice(2)], { cwd: app, env, stdio: 'inherit', timeout: 120000 });
+  } finally { await fs.rm(tmp, { recursive: true, force: true }); }
+} else {
+  const runner = await import('../server/runner.js');
+  const finished = (run, onEvent) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { runner.stopRun(run.id); reject(new Error(`fixture timed out: ${run.tool} ${run.prompt}; ${run.stderr}`)); }, 15000);
+    const listener = (ev) => {
+      try {
+        onEvent?.(ev);
+        if (ev.t === 'done') { clearTimeout(timer); run.listeners.delete(listener); resolve(ev); }
+      } catch (e) { clearTimeout(timer); run.listeners.delete(listener); runner.stopRun(run.id); reject(e); }
+    };
+    run.listeners.add(listener);
+  });
+  const start = (tool, name, extra = {}, opts = {}) => runner.startRun({ tool, cwd: os.homedir(), prompt: JSON.stringify({ name, ...extra }), perm: 'plan', ...opts });
+  const project = path.join(os.homedir(), '프로젝트 with spaces');
+  await fs.mkdir(project);
+  for (const tool of ['claude', 'codex', 'agy', 'opencode']) {
+    const cwdFile = path.join(os.homedir(), `${tool}-cwd.json`);
+    assert((await finished(start(tool, 'tools', { cwdFile }, { cwd: project }))).ok);
+    const location = JSON.parse(await fs.readFile(cwdFile, 'utf8'));
+    assert.equal(await fs.realpath(location.cwd), await fs.realpath(project));
+    assert.equal(await fs.realpath(location.pwd), await fs.realpath(project));
+    for (const name of ['tools', 'no-newline', 'incomplete', 'error', 'nonzero']) {
+      const run = start(tool, name);
+      const end = await finished(run);
+      assert.equal(end.ok, ['tools', 'no-newline'].includes(name), `${tool}/${name}: ${end.error}`);
+      assert(run.events.some((e) => e.t === 'text' && e.text.includes('한글 😀')));
+      if (name === 'tools') {
+        assert(run.events.some((e) => e.t === 'tool'));
+        assert(run.events.some((e) => e.t === 'tool_done' && !e.error));
+      }
+      if (name === 'error') assert.equal(end.limited, true);
+      assert.equal(runner.activeRunFor(`${tool}:${run.sessionId}`), null);
+    }
+    for (const perm of ['plan', 'auto', 'full']) {
+      const argsFile = path.join(os.homedir(), 'args.json');
+      const run = start(tool, 'tools', { argsFile }, { perm, sessionId: `${tool}-test`, model: 'fixture-model', effort: 'low' });
+      assert((await finished(run)).ok);
+      const args = await fs.readFile(argsFile, 'utf8');
+      assert(args.includes('fixture-model') && args.includes(`${tool}-test`));
+      const expected = tool === 'claude' ? { plan: 'plan', auto: 'auto', full: '--dangerously-skip-permissions' }
+        : tool === 'codex' ? { plan: 'read-only', auto: 'workspace-write', full: '--dangerously-bypass-approvals-and-sandbox' }
+          : tool === 'agy' ? { plan: 'plan', auto: 'accept-edits', full: '--dangerously-skip-permissions' }
+            : { plan: 'plan', auto: 'build', full: 'build' };
+      assert(args.includes(expected[perm]), `${tool}/${perm} args`);
+    }
+  }
+  for (const answer of [{ 'Pick?': 'Yes' }, { 'Pick?': 'free text' }, null]) {
+    const run = start('claude', 'ask');
+    const end = await finished(run, (ev) => {
+      if (ev.t !== 'ask') return;
+      assert.equal(runner.answerRun(run.id, 'wrong-id', answer), false);
+      assert.equal(runner.answerRun(run.id, ev.requestId, answer), true);
+      assert.equal(runner.answerRun(run.id, ev.requestId, answer), false);
+    });
+    assert(end.ok);
+    const text = run.events.filter((e) => e.t === 'text').map((e) => e.text).join('');
+    assert(text.includes(answer ? 'updatedInput' : 'deny'));
+    assert.equal(runner.answerRun(run.id, 'question-1', answer), false);
+  }
+  const denied = start('claude', 'deny');
+  assert((await finished(denied)).ok);
+  assert(denied.events.some((e) => e.t === 'text' && e.text.includes('deny')));
+  const pidFile = path.join(os.homedir(), 'child.pid');
+  const stopped = start('codex', 'hang', { pidFile }, { sessionId: 'busy' });
+  assert.throws(() => start('codex', 'tools', {}, { sessionId: 'busy' }), (e) => e.code === 'BUSY');
+  const other = start('claude', 'tools');
+  const otherDone = finished(other);
+  const end = await finished(stopped, (ev) => { if (ev.t === 'text') runner.stopRun(stopped.id); });
+  assert.equal(end.ok, false);
+  assert.equal(stopped.stopped, true);
+  assert((await otherDone).ok, 'stopping one session must not stop another');
+  assert.equal(runner.activeRunFor('codex:busy'), null);
+  assert((await finished(start('codex', 'tools', {}, { sessionId: 'busy' }))).ok);
+
+  for (const tool of ['claude', 'codex', 'opencode']) {
+    const oneShotArgs = path.join(os.homedir(), `oneshot-${tool}.json`);
+    await assert.rejects(runner.oneShot({ tool, cwd: os.homedir(), model: 'fixture-model', effort: 'low', prompt: JSON.stringify({ name: 'error', argsFile: oneShotArgs }) }));
+    const args = JSON.parse(await fs.readFile(oneShotArgs, 'utf8'));
+    assert(args.includes('fixture-model'));
+    assert(args.includes(tool === 'codex' ? 'model_reasoning_effort="low"' : 'low'));
+
+  }
+  // Run the actual SSE route function with the real run object, over HTTP.
+  const source = await fs.readFile(path.join(root, 'server', 'index.js'), 'utf8');
+  const code = source.slice(source.indexOf('function streamRun('), source.indexOf('// ---------- the agent asked'));
+  const ctx = vm.createContext({ getRun: runner.getRun, publicRun: runner.publicRun, setInterval, clearInterval, send: (res, status, body) => { res.writeHead(status); res.end(JSON.stringify(body)); } });
+  vm.runInContext(code, ctx);
+  if (process.argv.includes('--browser')) {
+    const { checkBrowser } = await import('./browser-run-check.mjs');
+    await checkBrowser({ root, runner, streamRun: ctx.streamRun, start, finished, home: os.homedir() });
+  }
+  const many = start('claude', 'many');
+  assert((await finished(many)).ok);
+  const server = http.createServer((req, res) => {
+    const params = new URL(req.url, 'http://local').searchParams;
+    ctx.streamRun(req, res, params.get('run') || many.id, Number(params.get('from')));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    for (const from of [0, 5000, 20000]) {
+      const response = await fetch(`${url}?from=${from}`);
+      const events = (await response.text()).split('\n\n').filter((s) => s.startsWith('data: ')).map((s) => JSON.parse(s.slice(6)));
+      assert.equal(events.filter((e) => e.t === 'text').map((e) => e.text).join(''), [...many.eventLog.replay(from)].filter((e) => e.t === 'text').map((e) => e.text).join(''));
+      assert.equal(events.at(-1).t, 'done');
+      assert.equal(events.at(-1).ok, true);
+    }
+    const releaseFile = path.join(os.homedir(), 'release-slow');
+    const slow = start('claude', 'slow', { releaseFile });
+    const slowDone = finished(slow);
+    const response = await fetch(`${url}?run=${slow.id}`);
+    const reader = response.body.getReader();
+    let received = '', last = -1;
+    while (!received.slice(0, received.lastIndexOf('\n\n')).includes('first')) received += new TextDecoder().decode((await reader.read()).value);
+    for (const frame of received.slice(0, received.lastIndexOf('\n\n')).split('\n\n')) if (frame.startsWith('data: ')) last = JSON.parse(frame.slice(6)).i;
+    await reader.cancel(); // phone disconnects while the run continues
+    await fs.writeFile(releaseFile, 'continue');
+    assert((await slowDone).ok);
+    const remaining = await (await fetch(`${url}?run=${slow.id}&from=${last + 1}`)).text();
+    const replayed = remaining.split('\n\n').filter((s) => s.startsWith('data: ')).map((s) => JSON.parse(s.slice(6)));
+    assert(!replayed.some((e) => e.t === 'text' && e.text.includes('first')));
+    assert(replayed.some((e) => e.t === 'text' && e.text.includes('second')));
+    assert.equal(replayed.at(-1).t, 'done');
+  } finally { await new Promise((resolve) => server.close(resolve)); many.eventLog.dispose(); }
+  console.log('PASS: four CLI parsers, permissions, incomplete/nonzero exits, questions, cancellation/concurrency, one-shot failures, HTTP SSE replay');
+}
