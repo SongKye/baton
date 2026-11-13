@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- Phone: the screen no longer goes black after leaving a chat (it used to stay black until you dragged it). Leaving a chat now closes the keyboard and stops the message list first, and each screen change asks the phone to repaint. (#71)
 ### Added
 - **Fold long project memos**: a memo longer than about seven lines folds to a short preview with a fade; **Expand / Collapse** next to the Memo heading opens it, and Baton remembers your choice per project.
 - Live compatibility checks now include trash/restore of the generated test session. Offline fixtures cover old/current Claude, Codex and Antigravity histories alongside existing OpenCode DB/JSON tests; Chromium tests cover reconnect, question recovery and two-tab answers in desktop/mobile viewports.
