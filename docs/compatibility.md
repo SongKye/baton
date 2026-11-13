@@ -184,6 +184,8 @@ Try it without pushing anything: `npm run compat:weekly -- --dry-run` (`--only c
 
 ## Manual check on Windows or macOS
 
+Step-by-step for Windows, copy-paste only (Korean): [windows-compat-check.ko.md](windows-compat-check.ko.md).
+
 The weekly job verifies Linux. To record another OS, on a computer with that OS, in a Baton checkout whose
 `origin` is `SongKye/baton`, with the GitHub CLI (`gh`) signed in to an account that can push:
 

@@ -24,7 +24,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -152,15 +152,26 @@ async function installVersion(tool, version) {
 /** One-time sign-in for the test home. Separate tokens from the everyday CLIs, so neither logs the other out. */
 async function login() {
   await fsp.mkdir(TEST_HOME, { recursive: true });
+  const win = process.platform === 'win32';
+  const table = JSON.parse(await fsp.readFile(path.join(REPO, 'server', 'compat.json'), 'utf8'));
+  const onPath = (tool) => spawnSync(win ? 'where' : 'which', [tool], { stdio: 'ignore' }).status === 0;
+  // a CLI that isn't installed on this computer: sign in with the verified version from the test folder
+  const cmdFor = async (tool) => {
+    if (onPath(tool)) return tool;
+    console.log(`${tool} isn't installed here: installing ${tool} ${table[tool].verified} into the test folder for the sign-in…`);
+    return path.join(await installVersion(tool, table[tool].verified), win ? `${tool}.cmd` : tool);
+  };
   const run = (cmd, args) => new Promise((resolve) => {
-    console.log(`\n$ HOME=${TEST_HOME} ${cmd} ${args.join(' ')}`);
-    // shell on Windows: npm-installed CLIs are .cmd shims that Node only starts through one
-    spawn(cmd, args, { cwd: TEST_HOME, stdio: 'inherit', shell: process.platform === 'win32', env: { ...process.env, HOME: TEST_HOME, USERPROFILE: TEST_HOME } }).on('close', resolve).on('error', (e) => { console.log(e.message); resolve(1); });
+    console.log(`\n$ ${cmd} ${args.join(' ')}   (home: ${TEST_HOME})`);
+    // shell on Windows: npm-installed CLIs are .cmd shims that Node only starts through one (quoted: paths may have spaces)
+    spawn(win && cmd.includes(path.sep) ? `"${cmd}"` : cmd, args, { cwd: TEST_HOME, stdio: 'inherit', shell: win, env: { ...process.env, HOME: TEST_HOME, USERPROFILE: TEST_HOME } })
+      .on('close', resolve).on('error', (e) => { console.log(e.message); resolve(1); });
   });
   console.log(`Signing in the test copies of Claude Code and Codex (test home: ${TEST_HOME}).\nUse the same accounts as usual; your everyday sign-ins are not touched. Antigravity needs nothing.`);
-  await run('claude', ['auth', 'login']);
-  await run('codex', ['login', '--device-auth']);
-  console.log('\nDone. Check with: npm run compat:smoke');
+  const a = await run(await cmdFor('claude'), ['auth', 'login']);
+  const b = await run(await cmdFor('codex'), ['login', '--device-auth']);
+  const ok = fs.existsSync(path.join(TEST_HOME, '.claude', '.credentials.json')) && fs.existsSync(path.join(TEST_HOME, '.codex', 'auth.json'));
+  console.log(ok ? '\nDone: both are signed in.' : `\nNot finished (claude exit ${a}, codex exit ${b}). Run the same command again.`);
 }
 
 // ------------------------------------------------------------------ child (inside the copy, HOME = test home)
