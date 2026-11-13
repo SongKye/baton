@@ -1,8 +1,5 @@
 # Deployment readiness and release verification
 
-The project skill `.claude/skills/baton-release/SKILL.md` walks an AI session through this whole
-procedure in the right order ("릴리스해줘" triggers it); the notes below are the reference.
-
 Run `npm run release:check` at the start of release work. It checks versions,
 release notes, a clean working tree, GitHub DNS, remote read access and GitHub CLI
 repository permission. It does not publish, test Git metadata writes or prove
