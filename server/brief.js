@@ -3,7 +3,7 @@ import { decoratedSessions, findSession, readMessages, sessionsOfProject } from 
 import { gitInfo, projectDocs, projectName, projectFingerprint } from './projects.js';
 import { getBrief, saveBrief, getSettings } from './store.js';
 import { oneShot } from './runner.js';
-import { DATA_DIR, clip, oneLine, shortHome } from './util.js';
+import { clip, oneLine, shortHome } from './util.js';
 import { tr, lang } from './i18n.js';
 import { binFor, TOOL_IDS } from './tools.js';
 import { claudeProvider, codexProvider } from './providers.js';
@@ -110,7 +110,7 @@ export async function ensureBrief(project, { force = false } = {}) {
     const { text } = await buildContext(project.id);
     const st = getSettings();
     const { tool: briefTool, model: briefModel } = await briefTarget(st);
-    const out = await oneShot({ tool: briefTool, model: briefModel, prompt: PROMPT(clip(text, 40000), lang() === 'ko' ? 'Korean' : 'English'), cwd: DATA_DIR });
+    const out = await oneShot({ tool: briefTool, model: briefModel, prompt: PROMPT(clip(text, 40000), lang() === 'ko' ? 'Korean' : 'English') });
     const brief = parseJson(out);
     saveBrief(project.id, fp, brief);
     return getBrief(project.id);

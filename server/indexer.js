@@ -10,6 +10,7 @@ import { projectRoot, groupProjects } from './projects.js';
 import { allSessionMeta, allProjectMeta, allBriefs, cwdOverrides } from './store.js';
 import { activeRunFor, childPids } from './runner.js';
 import { trashedKeys } from './trash.js';
+import { isInternalCwd } from './util.js';
 
 let snapshot = { at: 0, sessions: [], byKey: new Map(), byFile: new Map() };
 let refreshing = null;
@@ -24,7 +25,8 @@ async function rebuild() {
   noteCursorDirs([...cl, ...cx, ...ag, ...oc].map((s) => s.cwd));
   const cu = await listCursor().catch((e) => { console.warn('[cursor]', e.message); return []; });
   const moved = cwdOverrides(); // sessions the user moved to another folder in Baton
-  const sessions = [...cl, ...cx, ...ag, ...oc, ...cu].map((s) => {
+  // Baton's own one-shot calls (and their older copies under data/) are not the user's sessions: never list them.
+  const sessions = [...cl, ...cx, ...ag, ...oc, ...cu].filter((s) => !isInternalCwd(s.cwd)).map((s) => {
     const key = `${s.tool}:${s.id}`;
     const cwd = moved.get(key) || s.cwd;
     return { ...s, key, cwd, origCwd: s.cwd, moved: moved.has(key), project: projectRoot(cwd) };

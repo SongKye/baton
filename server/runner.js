@@ -17,9 +17,9 @@ import { tr } from './i18n.js';
 import { EventEmitter } from 'node:events';
 import crypto from 'node:crypto';
 import { summarizeTool } from './sources/common.js';
-import { getKV, setKV } from './store.js';
+import { getKV, setKV, patchSessionMeta } from './store.js';
 import { codexDefaultFallback } from './providers.js';
-import { clip } from './util.js';
+import { clip, ONESHOT_DIR } from './util.js';
 import { noteMcpStatus } from './mcp.js';
 import { createRunEvents } from './run-events.js';
 
@@ -451,8 +451,30 @@ process.once('exit', () => {
   }
 });
 
-/** One-shot, non-persisted completion (project briefs, skill drafts). Resolves to the final text. */
-export function oneShot({ tool, model, effort, prompt, cwd, timeoutMs = 180000, signal = null, failLabel = '' }) {
+/**
+ * The session a one-shot call left behind in the CLI's own storage, read from its JSON output
+ * (OpenCode: `sessionID` on every event; Antigravity: `conversation_id`; Cursor: `session_id`). Claude and Codex
+ * don't save one-shot sessions. Returns null when none is found.
+ */
+export function oneShotSessionId(tool, out) {
+  if (!['opencode', 'agy', 'cursor'].includes(tool)) return null;
+  for (const line of String(out).split('\n')) {
+    let e; try { e = JSON.parse(line); } catch { continue; }
+    const id = e?.sessionID || e?.conversation_id || e?.session_id || e?.part?.sessionID;
+    if (typeof id === 'string' && id) return id;
+  }
+  return null;
+}
+
+/**
+ * One-shot, non-persisted completion (project briefs, skill drafts, connection checks). Resolves to the final text.
+ * Always runs in Baton's own one-shot folder, outside every project: OpenCode / Antigravity / Cursor keep these
+ * calls as real sessions (no "don't save" flag), so the session is also hidden, and the indexer drops anything
+ * recorded in that folder as a safety net.
+ */
+export function oneShot({ tool, model, effort, prompt, timeoutMs = 180000, signal = null, failLabel = '' }) {
+  const cwd = ONESHOT_DIR;
+  try { fs.mkdirSync(cwd, { recursive: true }); } catch { /* spawn reports it */ }
   return new Promise((resolve, reject) => {
     let bin, args, stdin = true;
     if (tool === 'opencode') {
@@ -496,6 +518,8 @@ export function oneShot({ tool, model, effort, prompt, cwd, timeoutMs = 180000, 
     child.on('close', (code) => {
       clearTimeout(timer);
       if (child.pid) childPids.delete(child.pid);
+      const sid = oneShotSessionId(tool, out); // before the failure checks: a failed call can still leave a session
+      if (sid) { try { patchSessionMeta(`${tool}:${sid}`, { hidden: true }); } catch { /* the folder rule still hides it */ } }
       if (signal?.aborted) return reject(new Error(tr('취소했어요')));
       if (code !== 0) return reject(new Error(`${failLabel || tr('요약 생성 실패')} (code ${code}): ${clip(err || out, 400)}`));
       try {
