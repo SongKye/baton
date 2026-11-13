@@ -15,6 +15,9 @@ successful local tests alone do not establish deployment capability.
 
 ## Publish a fix
 
+0. Run `npm run compat:release` on the maintainer machine. `compat.json` ships in the release as the
+   "verified" table, so each CLI's verified version is re-tested with exactly this code. `release:check`
+   blocks until this has passed for the current `server/` tree. The version bump doesn't affect it.
 1. Inspect the working tree and include only the intended changes. Do not commit
    unrelated concurrent work. Review the final diff and run relevant local checks.
 2. Run CI for the candidate commit, including Windows PowerShell 5.1 parsing and

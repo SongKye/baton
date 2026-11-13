@@ -1,89 +1,92 @@
-// Regression: Settings reads the latest compatibility table from GitHub (server/compat.js compatInfo) and offers
-// "update the CLI" / "update Baton" at the right times. Serves fake tables from a local HTTP server and checks
-// the decision for each case. Runs the real module in a throwaway copy (its own data/).
+// Regression: what Settings says about each CLI (server/compat.js compatInfo).
+// - "Verified" always comes from this release's own compat.json, per OS.
+// - The newest Baton release's table (from GitHub at that release tag) is advice only: "update Baton" when it
+//   supports an installed CLI version this release doesn't. Nothing is read from main.
+// Serves fake tables from a local HTTP server and runs the real module in a throwaway copy (its own data/).
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 if (process.argv[2] === '--child') {
   const m = await import(pathToFileURL(path.join(repo, 'server', 'compat.js')).href);
-  const local = m.COMPAT.codex.verified; // e.g. 0.156.0
+  const local = m.COMPAT.codex.verified;
   const B = m.BATON_VERSION;
   const bump = (v, i = 1) => v.split('.').map((x, k) => (k === 1 ? Number(x) + i : k === 2 ? 0 : x)).join('.');
-  const newer = bump(local, 10);
+  const newer = bump(local, 10), nextBaton = bump(B, 1);
   const cases = JSON.parse(process.argv[3]);
-  const results = {};
-  for (const [name, table] of Object.entries(cases)) {
-    await fetch(`${process.env.BATON_COMPAT_URL}?set=${encodeURIComponent(JSON.stringify(table).replaceAll('NEWER', newer).replaceAll('LOCAL', local).replaceAll('BATON', B))}`);
-    await m.refreshRemote({ force: true });
-    results[name] = {
-      older: m.compatInfo('codex', bump(local, -1)),
-      same: m.compatInfo('codex', local),
-      newer: m.compatInfo('codex', newer),
-      newerReleased: m.compatInfo('codex', newer, { latestBaton: bump(B, 1) }),
+  const out = {};
+  for (const [name, { table, latest }] of Object.entries(cases)) {
+    const body = JSON.stringify(table).replaceAll('NEWER', newer).replaceAll('LOCAL', local);
+    await fetch(`${process.env.BATON_COMPAT_URL}?set=${encodeURIComponent(body)}`);
+    const latestBaton = latest === 'next' ? nextBaton : latest === 'same' ? B : null;
+    await m.refreshRemote({ latestBaton, force: true });
+    out[name] = {
+      older: m.compatInfo('codex', bump(local, -1), { latestBaton }),
+      same: m.compatInfo('codex', local, { latestBaton }),
+      newer: m.compatInfo('codex', newer, { latestBaton }),
     };
   }
-  console.log(JSON.stringify({ local, newer, B, results }));
+  console.log(JSON.stringify({ local, newer, nextBaton, out }));
   process.exit(0);
 }
 
 let table = '{}';
+let hits = 0;
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   if (u.searchParams.has('set')) { table = u.searchParams.get('set'); res.end('ok'); return; }
+  hits++;
   res.setHeader('content-type', 'application/json'); res.end(table);
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const url = `http://127.0.0.1:${server.address().port}/compat.json`;
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'baton-compat-remote-'));
+const run = (env) => new Promise((resolve, reject) => execFile(process.execPath,
+  ['--no-warnings', path.join(tmp, 'app', 'scripts', 'compat-remote-check.mjs'), '--child', JSON.stringify(cases)],
+  { encoding: 'utf8', env: { ...process.env, BATON_COMPAT_URL: url, ...env } }, (err, stdout, stderr) => (err ? reject(new Error(stderr || err.message)) : resolve(JSON.parse(stdout.trim().split('\n').pop())))));
+const covers = { codex: { level: 'supported', verified: 'NEWER', verifiedAt: '2099-01-01', os: { linux: { verified: 'NEWER', verifiedAt: '2099-01-01' } } } };
+const cases = {
+  thisIsNewest: { table: covers, latest: 'same' }, // a newer table on main must not matter: only releases count
+  noReleaseInfo: { table: covers, latest: null },
+  nextCovers: { table: covers, latest: 'next' },
+  nextDoesNot: { table: { codex: { level: 'supported', verified: 'LOCAL', verifiedAt: '2099-01-01', os: { linux: { verified: 'LOCAL', verifiedAt: '2099-01-01' } } } }, latest: 'next' },
+  unreachable: { table: 'not json', latest: 'next' },
+};
 try {
   const app = path.join(tmp, 'app');
   for (const d of ['server', 'scripts']) await fs.cp(path.join(repo, d), path.join(app, d), { recursive: true });
   await fs.copyFile(path.join(repo, 'package.json'), path.join(app, 'package.json'));
   await fs.symlink(path.join(repo, 'node_modules'), path.join(app, 'node_modules'), 'junction').catch(() => {});
-  const cases = {
-    unreachable: 'not json',
-    dataOnly: { codex: { level: 'supported', verified: 'NEWER', verifiedAt: '2099-01-01' } },
-    needsRelease: { codex: { level: 'supported', verified: 'NEWER', verifiedAt: '2099-01-01', needsBatonAfter: 'BATON' } },
-    alreadyHasFix: { codex: { level: 'supported', verified: 'NEWER', verifiedAt: '2099-01-01', needsBatonAfter: '0.0.1' } },
-  };
-  const out = await new Promise((resolve, reject) => {
-    // async: the parent's HTTP server has to keep answering while the child runs
-    import('node:child_process').then(({ execFile }) => execFile(process.execPath, ['--no-warnings', path.join(app, 'scripts', 'compat-remote-check.mjs'), '--child', JSON.stringify(cases)],
-      { encoding: 'utf8', env: { ...process.env, BATON_COMPAT_URL: url } }, (err, stdout, stderr) => (err ? reject(new Error(stderr || err.message)) : resolve(stdout))));
-  });
-  const { local, newer, results: r } = JSON.parse(out.trim().split('\n').pop());
 
-  // no usable table: this Baton's own table decides
-  assert.equal(r.unreachable.same.state, 'verified');
-  assert.equal(r.unreachable.older.action, 'cli-update');
-  assert.equal(r.unreachable.older.target, local);
-  assert.equal(r.unreachable.newer.state, 'newer');
+  const { local, newer, nextBaton, out: r } = await run({ BATON_COMPAT_OS: 'linux' });
+  for (const [name, c] of Object.entries(r)) {
+    // "verified" is always this release's own table
+    assert.equal(c.same.state, 'verified', `${name}: own table decides`);
+    assert.equal(c.same.hereVerified, local, `${name}: hereVerified is local`);
+    assert.equal(c.newer.state, 'newer', `${name}: a newer CLI is never "verified" from GitHub`);
+    assert.equal(c.older.action, 'cli-update', `${name}: older -> update the CLI`);
+    assert.equal(c.older.target, local, `${name}: to this release's verified version`);
+  }
+  assert.equal(r.thisIsNewest.newer.action, null);
+  assert.equal(r.noReleaseInfo.newer.action, null);
+  assert.equal(r.nextCovers.newer.action, 'baton-update');
+  assert.equal(r.nextCovers.newer.target, nextBaton);
+  assert.equal(r.nextDoesNot.newer.action, null);
   assert.equal(r.unreachable.newer.action, null);
+  assert.ok(newer);
 
-  // newer version verified without code changes: this Baton supports it too
-  assert.equal(r.dataOnly.newer.state, 'verified');
-  assert.equal(r.dataOnly.newer.verified, newer);
-  assert.equal(r.dataOnly.newer.source, 'github');
-  assert.equal(r.dataOnly.same.action, 'cli-update'); // installed is now older than supported
-  assert.equal(r.dataOnly.same.target, newer);
+  // verified only on another OS: not "verified" here
+  const win = await run({ BATON_COMPAT_OS: 'windows' });
+  assert.equal(win.out.thisIsNewest.same.hereVerified, null);
+  assert.equal(win.out.thisIsNewest.same.platforms.linux, local);
 
-  // newer version needs a Baton release after this one
-  assert.equal(r.needsRelease.same.state, 'verified'); // own table still applies
-  assert.equal(r.needsRelease.same.action, null);
-  assert.equal(r.needsRelease.newer.action, 'baton-next'); // not released yet
-  assert.equal(r.needsRelease.newerReleased.action, 'baton-update'); // released: update Baton
-
-  // the fix is already in this Baton
-  assert.equal(r.alreadyHasFix.newer.state, 'verified');
-  assert.equal(r.alreadyHasFix.newer.action, null);
-
-  console.log('compat-remote-check: ok');
+  console.log(`compat-remote-check: ok (${hits} table fetches, only for a newer release)`);
 } finally {
   server.close();
   await fs.rm(tmp, { recursive: true, force: true });
