@@ -83,6 +83,7 @@ If a feature breaks right after a CLI update, look here first. The file shows wh
 | `-p=… --output-format stream-json --conversation --model --effort --mode plan\|accept-edits --dangerously-skip-permissions` | Chat | `server/runner.js` `agyCmd` |
 | Events `init` (`conversation_id`), `step_update` (`step_type`, `state`, `text_delta`, `tool_name`), `result` (`status`, `denied_actions`) | Live chat view | `server/runner.js` `agyParser` |
 | `~/.gemini/antigravity-cli/conversation_summaries.db`, `conversations/<id>.db` (table `steps`, **undocumented protobuf**: step types 14/15, field paths in the file header) | Session list, transcripts, token usage | `server/sources/agy.js`, `server/usage.js` |
+| `-p … --output-format json` one-shot: `conversation_id` in the result (the conversation Antigravity keeps for the call is hidden; there is no "don't save" flag) | Briefs, drafts, connection check | `server/runner.js` `oneShot`, `oneShotSessionId` |
 | `-p=/usage --output-format json` (`command.data.groups[].buckets[]`) | Live limits | `server/limits.js` |
 | `models`, `mcp list`; `~/.gemini/antigravity-cli/settings.json`, `~/.gemini/config/mcp_config.json` | Model picker, MCP | `server/models.js`, `server/mcp*.js` |
 | `~/.gemini/antigravity-cli/antigravity-oauth-token` | Sign-in state | `server/tools.js` |
@@ -97,6 +98,7 @@ numbers without notice.
 | `run --format json --session --model --variant --agent plan\|build --file` | Chat, continue a session | `server/runner.js` `opencodeCmd`, `opencodeParser` |
 | Events `text`, `reasoning`, `tool_use`/`tool` (`part.state`), `step_finish` (`part.tokens`, `part.cost`), `error`; `sessionID` on every event | Live chat view, tokens | `server/runner.js` |
 | `<data>/opencode/opencode.db` (1.x, tables `session` / `message` / `part`) or the older `storage/*.json` | Session list, transcripts, token usage | `server/sources/opencode.js`, `server/usage.js` |
+| `run --format json` one-shot: `sessionID` in the output events (the session OpenCode keeps for the call is hidden; there is no "don't save" flag) | Briefs, drafts, connection check | `server/runner.js` `oneShot`, `oneShotSessionId` |
 | `models --verbose` | Model picker | `server/models.js` |
 | `<data>/opencode/auth.json`, `~/.config/opencode/opencode.json` (`provider`, `mcp`) | Sign-in, own servers, MCP | `server/tools.js`, `server/connect.js`, `server/mcp*.js` |
 

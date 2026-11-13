@@ -154,7 +154,7 @@ export async function testConnection(tool) {
   if (!binFor(tool)) throw new Error(tr('먼저 설치해주세요'));
   const t0 = Date.now();
   try {
-    const out = await oneShot({ tool, model: null, prompt: 'Reply with exactly: OK', cwd: os.tmpdir(), timeoutMs: 90_000 });
+    const out = await oneShot({ tool, model: null, prompt: 'Reply with exactly: OK', timeoutMs: 90_000 });
     return { ok: true, reply: String(out).trim().slice(0, 200), ms: Date.now() - t0 };
   } catch (e) {
     return { ok: false, error: String(e.message || e).slice(0, 600), ms: Date.now() - t0 };

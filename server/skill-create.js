@@ -269,7 +269,7 @@ export async function startDraft(b = {}) {
   for (const [id, j] of drafts) if (j.endedAt && Date.now() - j.endedAt > 3600_000) drafts.delete(id);
   const job = { id: crypto.randomUUID(), status: 'running', tool, startedAt: Date.now(), ctl: new AbortController() };
   drafts.set(job.id, job);
-  oneShot({ tool, model: '', prompt, cwd: DATA_DIR, timeoutMs: 6 * 60_000, signal: job.ctl.signal, failLabel: tr('스킬 초안을 만들지 못했어요') })
+  oneShot({ tool, model: '', prompt, timeoutMs: 6 * 60_000, signal: job.ctl.signal, failLabel: tr('스킬 초안을 만들지 못했어요') })
     .then((out) => {
       const d = parseBundle(out);
       if (fixedName) d.name = fixedName;

@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { HOME, DATA_DIR, clip, shortHome } from './util.js';
+import { HOME, clip, shortHome } from './util.js';
 import { oneShot } from './runner.js';
 import { binFor } from './tools.js';
 import { runCli, which, OS_NAME } from './platform.js';
@@ -230,7 +230,7 @@ export async function startMcpDraft(b = {}) {
   (async () => {
     const refs = previous ? '' : await material(request);
     const prompt = mcpPrompt({ request: masked.text, feedback: maskedFb.text, previous, failure, where, tools, language, refs, runners: launchers() });
-    const out = await oneShot({ tool, model: '', prompt, cwd: DATA_DIR, timeoutMs: 5 * 60_000, signal: job.ctl.signal, failLabel: tr('MCP 설정을 만들지 못했어요') });
+    const out = await oneShot({ tool, model: '', prompt, timeoutMs: 5 * 60_000, signal: job.ctl.signal, failLabel: tr('MCP 설정을 만들지 못했어요') });
     const d = parseMcpDraft(out);
     const used = PH_KEYS(d.form);
     d.prefill = Object.fromEntries(Object.entries(pasted).filter(([k]) => used.has(k)));

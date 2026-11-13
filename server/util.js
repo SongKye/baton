@@ -10,6 +10,17 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 export const DATA_DIR = path.join(ROOT, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
+/** Where Baton's own background calls (briefs, skill/MCP drafts, connection checks) run: outside every project. */
+export const ONESHOT_DIR = path.join(os.tmpdir(), 'baton-oneshot');
+
+/** Sessions recorded in Baton's own working folders (the one-shot folder, or `data/` in older versions) are never the user's. */
+export function isInternalCwd(cwd) {
+  if (!cwd) return false;
+  const norm = (p) => path.resolve(String(p)).replace(/[\\/]+$/, '');
+  const c = norm(cwd), eq = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+  return eq(c, norm(ONESHOT_DIR)) || eq(c, norm(DATA_DIR));
+}
+
 export const now = () => Date.now();
 export const DAY = 86400000;
 

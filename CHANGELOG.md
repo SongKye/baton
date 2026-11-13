@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- **Baton's own background calls no longer show up as your sessions**: project summaries, skill / MCP drafts and connection checks used to run inside Baton's own folder, and OpenCode and Antigravity keep every such call as a real session, so stray sessions appeared under the "baton" project. These calls now run in one dedicated temporary folder outside every project, their sessions are hidden, and anything recorded in that folder (or left over in `~/baton/data` by earlier versions) is never listed.
+
 ## [0.10.0] - 2026-11-14
 
 ### Added

@@ -379,7 +379,7 @@ async function child(tool) {
 
     await step('one-shot', async () => {
       allowGeneration();
-      const text = await runner.oneShot({ tool, model, effort, cwd, prompt: 'Reply with exactly the word BATONSMOKETHREE and nothing else.', timeoutMs: 240_000 });
+      const text = await runner.oneShot({ tool, model, effort, prompt: 'Reply with exactly the word BATONSMOKETHREE and nothing else.', timeoutMs: 240_000 });
       expect(text, 'BATONSMOKETHREE');
     });
     if (HAS_LIMITS.has(tool)) await step('limits', async () => {

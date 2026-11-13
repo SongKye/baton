@@ -32,6 +32,7 @@ if (!process.argv.includes('--child')) {
   } finally { await fs.rm(tmp, { recursive: true, force: true }); }
 } else {
   const runner = await import('../server/runner.js');
+  const util = await import('../server/util.js');
   const finished = (run, onEvent) => new Promise((resolve, reject) => {
     const timer = setTimeout(() => { runner.stopRun(run.id); reject(new Error(`fixture timed out: ${run.tool} ${run.prompt}; ${run.stderr}`)); }, 15000);
     const listener = (ev) => {
@@ -120,12 +121,29 @@ if (!process.argv.includes('--child')) {
 
   for (const tool of ['claude', 'codex', 'opencode']) {
     const oneShotArgs = path.join(os.homedir(), `oneshot-${tool}.json`);
-    await assert.rejects(runner.oneShot({ tool, cwd: os.homedir(), model: 'fixture-model', effort: 'low', prompt: JSON.stringify({ name: 'error', argsFile: oneShotArgs }) }));
+    await assert.rejects(runner.oneShot({ tool, model: 'fixture-model', effort: 'low', prompt: JSON.stringify({ name: 'error', argsFile: oneShotArgs }) }));
     const args = JSON.parse(await fs.readFile(oneShotArgs, 'utf8'));
     assert(args.includes('fixture-model'));
     assert(args.includes(tool === 'codex' ? 'model_reasoning_effort="low"' : 'low'));
 
+    // One-shot calls always run in Baton's own folder, outside every project (CLIs that keep one-shot sessions
+    // would otherwise file them under whatever folder the caller passed, e.g. ~/baton/data -> the "baton" project)
+    const where = path.join(os.homedir(), `oneshot-${tool}-cwd.json`);
+    await assert.rejects(runner.oneShot({ tool, cwd: os.homedir(), prompt: JSON.stringify({ name: 'error', cwdFile: where }) }));
+    const loc = JSON.parse(await fs.readFile(where, 'utf8'));
+    assert.equal(await fs.realpath(loc.cwd), await fs.realpath(util.ONESHOT_DIR), `${tool}: one-shot ran in ${loc.cwd}`);
+    assert.equal(path.resolve(loc.pwd), path.resolve(util.ONESHOT_DIR), `${tool}: one-shot $PWD`);
   }
+  // The session a one-shot call leaves behind is found from the CLI's JSON output, however the event is named
+  assert.equal(runner.oneShotSessionId('opencode', '{"type":"step_start","sessionID":"ses_a","part":{}}\n{"type":"text","sessionID":"ses_a"}'), 'ses_a');
+  assert.equal(runner.oneShotSessionId('opencode', 'not json\n{"type":"x","part":{"sessionID":"ses_b"}}'), 'ses_b');
+  assert.equal(runner.oneShotSessionId('agy', '{"conversation_id":"c-1","status":"SUCCESS","response":"OK"}'), 'c-1');
+  assert.equal(runner.oneShotSessionId('cursor', '{"type":"result","session_id":"s-9"}'), 's-9');
+  assert.equal(runner.oneShotSessionId('claude', '{"session_id":"x"}'), null, 'claude/codex do not keep one-shot sessions');
+  assert.equal(runner.oneShotSessionId('opencode', 'garbage'), null);
+  // Sessions recorded in Baton's own folders are never listed
+  assert(util.isInternalCwd(util.ONESHOT_DIR) && util.isInternalCwd(path.join(util.ONESHOT_DIR, '/')) && util.isInternalCwd(util.DATA_DIR));
+  assert(!util.isInternalCwd(path.join(util.DATA_DIR, 'skill-backups')) && !util.isInternalCwd(util.ROOT) && !util.isInternalCwd(os.homedir()) && !util.isInternalCwd(null));
   // Run the actual SSE route function with the real run object, over HTTP.
   const source = await fs.readFile(path.join(root, 'server', 'index.js'), 'utf8');
   const code = source.slice(source.indexOf('function streamRun('), source.indexOf('// ---------- the agent asked'));
