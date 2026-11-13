@@ -772,6 +772,14 @@ function compatView(x) {
   return { installed, supported, note: t('설치된 버전을 읽지 못했어요'), pill: t('버전 확인 불가'), cls: 'warn' };
 }
 const compatLines = (cv) => `${t('설치된 버전')}: <strong class="cv">${cv.installed}</strong><br>${t('Baton 지원 버전')}: <strong class="cv">${cv.supported}</strong>${cv.note ? `<br>${cv.note}` : ''}`;
+/** What the user can do about a version mismatch (server/compat.js compatInfo action) -> { note, button } */
+function compatAction(x) {
+  const c = x.compat || {};
+  if (c.action === 'cli-update') return { note: t('검증된 버전으로 올릴 수 있어요'), button: `<button class="btn sm primary" data-job="cli-update" data-tool="${x.id}">${x.id === 'agy' ? t('최신 버전으로 업데이트') : t('v{v}로 업데이트', { v: esc(c.target) })}</button>` };
+  if (c.action === 'baton-update') return { note: t('Baton을 업데이트하면 이 버전이 지원돼요'), button: `<button class="btn sm primary" data-batonupdate>${t('Baton 업데이트')}</button>` };
+  if (c.action === 'baton-next') return { note: t('이 버전은 다음 Baton 업데이트부터 지원돼요. 그때까지 일부 기능이 안 될 수 있어요.'), button: '' };
+  return { note: '', button: '' };
+}
 
 /** Settings → the weekly auto-check (scripts/compat-weekly.mjs): schedule, last run, PRs it opened. */
 function compatRunRow(cr) {
@@ -792,9 +800,18 @@ function compatCard(box) {
   api('/api/setup').then((st) => {
     if (!box.isConnected) return;
     box.innerHTML = st.tools.map((x) => {
-      const cv = compatView(x);
-      return `<div class="setting"><div class="l"><b>${esc(x.name)}</b><span>${compatLines(cv)}</span></div>${cv.pill ? `<span class="pill ${cv.cls}">${cv.pill}</span>` : ''}</div>`;
+      const cv = compatView(x), act = compatAction(x);
+      if (act.note) cv.note = act.note;
+      return `<div class="setting"><div class="l"><b>${esc(x.name)}</b><span>${compatLines(cv)}</span>${act.button ? `<div class="pact" style="margin-top:8px">${act.button}</div>` : ''}</div>${cv.pill ? `<span class="pill ${cv.cls}">${cv.pill}</span>` : ''}</div>${act.button ? `<div class="jobbox" hidden data-compatjob="${x.id}" style="margin:0 14px 10px"></div>` : ''}`;
     }).join('') + compatRunRow(st.compatRun) + `<p class="small muted" style="padding:10px 14px 4px">${t('Baton은 각 CLI의 실행 옵션·출력 형식·세션 파일에 맞춰 동작해요. CLI가 업데이트되면서 이게 바뀌면 일부 기능이 멈출 수 있어요.')} <a href="https://github.com/SongKye/baton/blob/main/docs/compatibility.md" target="_blank" rel="noopener">${t('자세히')} ↗</a></p>`;
+    $$('[data-batonupdate]', box).forEach((b) => (b.onclick = () => updateSheet()));
+    $$('[data-job="cli-update"]', box).forEach((b) => (b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const { job } = await api('/api/setup/jobs', { body: { action: 'cli-update', tool: b.dataset.tool } });
+        runJobBox($(`[data-compatjob="${b.dataset.tool}"]`, box), job, (ev) => { if (ev.ok) { toast(t('{x} 완료', { x: job.label })); setTimeout(() => compatCard(box), 1500); } else b.disabled = false; });
+      } catch (e) { toast(e.message, true); b.disabled = false; }
+    }));
   }).catch((e) => { if (box.isConnected) box.innerHTML = `<div class="setting"><div class="l"><span class="warn-text">${esc(e.message)}</span></div></div>`; });
 }
 
@@ -3904,13 +3921,14 @@ async function viewSetup() {
     const btns = [];
     if (!x.installed && x.canInstall) btns.push(`<button class="btn sm primary" data-job="install" data-tool="${x.id}">${t('원클릭 설치')}</button>`);
     if (x.installed && !x.loggedIn && x.loginKind !== 'terminal') btns.push(`<button class="btn sm ${state === 'login' ? 'primary' : ''}" data-job="login" data-tool="${x.id}">${LOGIN_LABEL[x.id] || t('구독 계정으로 로그인')}</button>`);
+    if (x.installed && compatAction(x).button) btns.push(compatAction(x).button);
     if (x.installed && (x.loggedIn || x.optionalLogin)) btns.push(`<button class="btn sm ghost" data-test="${x.id}">${t('연결 테스트')}</button>`);
     btns.push(`<a class="btn sm ghost" href="${esc(x.docs)}" target="_blank" rel="noopener">${t('문서')} ↗</a>`);
     return `<div class="card setup-tool" data-tool-card="${x.id}">
       <div class="sh"><span class="tool-avatar ${x.id}">${esc(TOOL[x.id]?.short || x.name[0])}</span>
         <div class="st"><b>${esc(x.name)}</b><span>${esc(x.vendor)}${x.version ? ` · v${esc(x.version)}` : ''}</span></div>${badge}</div>
       ${x.note ? `<p class="small muted">${esc(x.note)}</p>` : ''}
-      ${(() => { const cv = compatView(x); return `<p class="small ${cv.cls === 'warn' ? 'warn-text' : 'muted'}">${compatLines(cv)}</p>`; })()}
+      ${(() => { const cv = compatView(x), act = compatAction(x); if (act.note) cv.note = act.note; return `<p class="small ${cv.cls === 'warn' ? 'warn-text' : 'muted'}">${compatLines(cv)}</p>`; })()}
       ${x.loginExpired ? `<p class="small warn-text">${t('저장된 로그인이 만료됐어요. 다시 로그인하면 한도도 다시 보여요.')}</p>` : ''}
       ${state === 'login' && LOGIN_HINT[x.id] ? `<p class="small login-hint">${LOGIN_HINT[x.id]}</p>` : ''}
       ${!x.installed && x.installCmd ? `<details class="pcmd"><summary>${t('실행될 명령')}</summary><code>${esc(x.installCmd)}</code></details>` : ''}
@@ -4089,6 +4107,7 @@ async function viewSetup() {
     $$('code.copy', root).forEach((c) => (c.onclick = () => { navigator.clipboard?.writeText(c.dataset.copy); toast(t('복사했어요')); }));
     $$('[data-connect]', root).forEach((b) => (b.onclick = () => connectSheet(b.dataset.connect, () => setTimeout(render, 400))));
     $$('[data-test]', root).forEach((b) => (b.onclick = async () => { b.disabled = true; await testConnectionUi(b.dataset.test); b.disabled = false; }));
+    $$('[data-batonupdate]', root).forEach((b) => (b.onclick = () => updateSheet()));
     $$('[data-job]', root).forEach((b) => (b.onclick = async () => {
       const action = b.dataset.job, tool = b.dataset.tool || null;
       b.disabled = true;

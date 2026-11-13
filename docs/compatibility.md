@@ -101,6 +101,26 @@ Verified with the free models (no sign-in). OpenCode has no subscription limits,
 `cursor-agent -p --output-format stream-json --resume --model --force`, `~/.cursor/chats/*/store.db`,
 `~/.cursor/mcp.json`. Not verified against a live install.
 
+## Latest table and update buttons
+
+Baton reads the latest `server/compat.json` from GitHub (`main`, at most every 6 hours, last good copy kept
+offline). An install released before a CLI version was verified still knows about it:
+
+| Your CLI | Shown | Button |
+|---|---|---|
+| Older than the supported version | "You can update to the verified version" | **Update to vX** installs exactly that version, the way the CLI was installed (npm `-g`, `claude install X`, `opencode upgrade X`). Antigravity and Homebrew Codex can only go to their latest release |
+| Newer, verified without code changes | Verified (the newer table applies to this Baton too) | none |
+| Newer, verified only with a code fix | "Update Baton to support this version" | **Update Baton**, once a release with the fix exists; otherwise "supported from the next Baton update" |
+| Newer than anything verified | "Newer, not checked yet" | none (the weekly check catches up) |
+
+A code fix records `needsBatonAfter: "<version>"` on the CLI's entry: only Baton releases after that version
+have the fix. The weekly fix PR sets it to the Baton version on `main` at the time, so **cut a release after
+merging a fix PR**: until then, users see "supported from the next Baton update". A later data-only bump keeps
+the field.
+
+There is deliberately no downgrade button: Claude Code's auto-updater would undo it within hours, new models need
+new CLI versions, a newer CLI may have migrated its data, and the same CLI is used in the terminal too.
+
 ## Live test (`compat:smoke`)
 
 `npm run compat:smoke` drives each supported CLI through Baton's own code, the way a user would:

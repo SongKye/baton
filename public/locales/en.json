@@ -804,7 +804,7 @@
  "다시 켜지지 않았어요. PC에서 Baton을 직접 실행해주세요": "Baton didn't come back. Start it on your computer",
  "새 버전 알림": "New version alerts",
  "새 버전 알림은 비활성화되어 있어요. 아래 버전 항목에서 직접 확인할 수 있어요.": "New version alerts are disabled. Check manually in the version section below.",
- "Baton 업데이트": "Baton update",
+ "Baton 업데이트": "Update Baton",
  "세션 메뉴": "Session menu",
  "답 확인": "Review",
  "고칠 답을 누르면 그 질문으로 돌아가요": "Tap an answer to go back and change it",
@@ -1283,5 +1283,11 @@
  "검토할 PR": "PR to review",
  "확인 필요": "Needs a look",
  "정상": "OK",
- "매주 자동 검증": "Weekly auto-check"
+ "매주 자동 검증": "Weekly auto-check",
+ "검증된 버전으로 올릴 수 있어요": "You can update to the verified version",
+ "최신 버전으로 업데이트": "Update to latest",
+ "v{v}로 업데이트": "Update to v{v}",
+ "Baton을 업데이트하면 이 버전이 지원돼요": "Update Baton to support this version",
+ "이 버전은 다음 Baton 업데이트부터 지원돼요. 그때까지 일부 기능이 안 될 수 있어요.": "This version is supported from the next Baton update. Until then, some features may not work.",
+ "지금 버전에서 올릴 검증된 버전이 없어요": "There's no verified version to update to"
 }
