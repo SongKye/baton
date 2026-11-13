@@ -9,8 +9,11 @@
 //   npm run compat:smoke -- --json out.json      also write the full report
 //   npm run compat:smoke -- --update-fixtures    store the current event shapes as the new baseline
 //   npm run compat:smoke -- --login              one-time sign-in for the test home (run in a terminal)
-//   npm run compat:smoke -- --report             maintainers on Windows / macOS: record what passed on this OS in
-//                                                server/compat.json (a PR merged once CI is green)
+//   npm run compat:smoke -- --report             maintainers on Windows / macOS: install each CLI's verified version
+//                                                into ~/.baton-compat/versions (off PATH), test it, and record what
+//                                                passed on this OS in server/compat.json (a PR merged once CI is green)
+//   npm run compat:smoke -- --install            the same install step without recording
+//   npm run compat:smoke -- --report --installed record the CLIs installed on this computer instead
 //
 // Per CLI: new session -> resume it -> it shows up in the session list with a readable transcript ->
 // one-shot (briefs/drafts) -> live limits -> model list. Plus a shape diff (L3): every key path of the
@@ -30,6 +33,7 @@ const FIXTURES = path.join(REPO, 'scripts', 'compat-fixtures');
 const SMOKE_TOOLS = ['claude', 'codex', 'agy', 'opencode']; // Cursor is unverified and not supported
 const HAS_LIMITS = new Set(['claude', 'codex', 'agy']); // OpenCode has no subscription limits
 const MARK = '__BATON_SMOKE_REPORT__';
+const NPM_PKG = { claude: '@anthropic-ai/claude-code', codex: '@openai/codex', opencode: 'opencode-ai' };
 
 const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(n);
@@ -46,6 +50,19 @@ async function parent() {
   const named = argv.filter((a, i) => !a.startsWith('-') && !valueOf.has(argv[i - 1]));
   const tools = named.length ? named : SMOKE_TOOLS;
   const bins = Object.fromEntries(optAll('--bin').map((s) => s.split('=')));
+  // --report / --install: test exactly the verified version of each CLI, installed off PATH, so the OS columns
+  // compare like with like and a CLI that isn't installed on this computer still gets tested
+  if ((flag('--report') || flag('--install')) && !flag('--installed')) {
+    const table = JSON.parse(await fsp.readFile(path.join(REPO, 'server', 'compat.json'), 'utf8'));
+    for (const tool of tools) {
+      if (bins[tool]) continue;
+      const v = table[tool]?.verified;
+      if (!v) continue;
+      if (!NPM_PKG[tool]) { console.log(`${tool}: no versioned installer on this OS, testing the installed one (if any)`); continue; }
+      process.stdout.write(`installing ${tool} ${v} into the test folder… `);
+      try { bins[tool] = await installVersion(tool, v); console.log('ok'); } catch (e) { console.log(`failed: ${e.message}`); }
+    }
+  }
   const reports = [];
   for (const tool of tools) {
     process.stdout.write(`\n${tool}: `);
@@ -117,6 +134,19 @@ async function runChild(tool, binDir) {
   } finally {
     await fsp.rm(tmp, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/** npm install <pkg>@<version> into ~/.baton-compat/versions/<tool>/<version>; returns the folder with its binary. */
+async function installVersion(tool, version) {
+  const dir = path.join(os.homedir(), '.baton-compat', 'versions', tool, version);
+  const bin = path.join(dir, 'node_modules', '.bin');
+  const exe = path.join(bin, process.platform === 'win32' ? `${tool}.cmd` : tool);
+  if (fs.existsSync(exe)) return bin;
+  await fsp.mkdir(dir, { recursive: true });
+  const code = await new Promise((resolve) => spawn('npm', ['install', '--prefix', dir, '--no-audit', '--no-fund', '--silent', `${NPM_PKG[tool]}@${version}`],
+    { cwd: dir, stdio: ['ignore', 'ignore', 'inherit'], shell: process.platform === 'win32' }).on('close', resolve).on('error', () => resolve(1)));
+  if (code !== 0 || !fs.existsSync(exe)) throw new Error(`npm install ${NPM_PKG[tool]}@${version} failed`);
+  return bin;
 }
 
 /** One-time sign-in for the test home. Separate tokens from the everyday CLIs, so neither logs the other out. */
