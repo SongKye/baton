@@ -16,6 +16,10 @@ try {
   for (const f of ['package.json', 'package-lock.json']) await fs.copyFile(path.join(root, f), path.join(app, f));
   await fs.symlink(path.join(root, 'node_modules'), path.join(app, 'node_modules'), 'junction');
   const env = { ...process.env, HOME: home, USERPROFILE: home, APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local'), BATON_NO_SHELL_ENV: '1' };
+  if (process.platform === 'win32') {
+    // Shell special-folder APIs return empty strings when these profile folders do not exist.
+    for (const dir of [path.join(env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs'), env.LOCALAPPDATA, path.join(home, 'Desktop')]) await fs.mkdir(dir, { recursive: true });
+  }
   for (const key of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'BATON_PORT', 'BATON_HOST', 'BATON_ALLOWED_LOGINS']) delete env[key];
   // Endpoint checks must not discover a real CLI and use the maintainer's account.
   const bin = path.join(tmp, 'bin');
