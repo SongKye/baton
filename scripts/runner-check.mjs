@@ -104,6 +104,20 @@ if (!process.argv.includes('--child')) {
   assert.equal(runner.activeRunFor('codex:busy'), null);
   assert((await finished(start('codex', 'tools', {}, { sessionId: 'busy' }))).ok);
 
+  if (process.platform !== 'win32') {
+    // Runs are detached into their own process group; Baton exiting must still end them and their tools.
+    const orphanPid = path.join(os.homedir(), 'orphan.pid');
+    const script = `const r = await import(${JSON.stringify(new URL('../server/runner.js', import.meta.url).href)});
+      r.startRun({ tool: 'codex', cwd: process.env.HOME, perm: 'plan', prompt: JSON.stringify({ name: 'hang', pidFile: ${JSON.stringify(orphanPid)} }) });
+      const fs = await import('node:fs');
+      const wait = setInterval(() => { if (fs.existsSync(${JSON.stringify(orphanPid)})) { clearInterval(wait); process.exit(0); } }, 50);`;
+    execFileSync(process.execPath, ['--no-warnings', '--input-type=module', '-e', script], { timeout: 20000 });
+    const pid = Number(await fs.readFile(orphanPid, 'utf8'));
+    const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    for (let i = 0; i < 50 && alive(); i++) await new Promise((r) => setTimeout(r, 100));
+    assert(!alive(), 'a run\'s tool process must not outlive Baton');
+  }
+
   for (const tool of ['claude', 'codex', 'opencode']) {
     const oneShotArgs = path.join(os.homedir(), `oneshot-${tool}.json`);
     await assert.rejects(runner.oneShot({ tool, cwd: os.homedir(), model: 'fixture-model', effort: 'low', prompt: JSON.stringify({ name: 'error', argsFile: oneShotArgs }) }));

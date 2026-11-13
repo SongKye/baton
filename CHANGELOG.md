@@ -23,6 +23,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Verified per OS**: the compatibility table records which CLI version was verified on Linux, Windows and macOS. Settings shows **Verified** only when your installed version was verified on your OS, otherwise **Verified on another OS**, plus a line per OS. Maintainers record Windows or macOS with `npm run compat:smoke -- --report` (now isolated on Windows too); the weekly job records Linux.
 
 ### Fixed
+- Stopping or restarting Baton (Ctrl+C, a macOS service restart, closing the terminal) now also ends the AI replies still running, instead of leaving them running in the background.
 - Antigravity sessions whose conversation files have been permanently deleted no longer reappear from stale summary database entries.
 - Restoring a session preserves its Trash backup when the destination already exists or a backup file is missing, and rolls back files already moved if a later move fails.
 - Delayed tool failures update the live chat display immediately, and completed replies no longer regain the typing cursor on a pending render frame.

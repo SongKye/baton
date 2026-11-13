@@ -4,6 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { ROOT, HOME, DAY, clip, shortHome } from './util.js';
 import * as store from './store.js';
 import { decoratedSessions, projectsList, findSession, readMessages, getSnapshot, forceRefresh } from './indexer.js';
@@ -771,6 +772,10 @@ const server = http.createServer(async (req, res) => {
     else res.end();
   }
 });
+
+// Without handlers Node dies on these signals without running 'exit' hooks, which would leave
+// detached CLI runs and archived run events behind. Exit normally so those hooks clean up.
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.once(sig, () => process.exit(128 + os.constants.signals[sig]));
 
 let listening;
 try {
