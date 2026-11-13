@@ -1,11 +1,43 @@
 {
- "version": "0.156.0",
+ "version": "0.169.0",
  "stream": [
   "item.completed/agent_message item",
   "item.completed/agent_message item.id",
   "item.completed/agent_message item.text",
   "item.completed/agent_message item.type",
   "item.completed/agent_message type",
+  "item.completed/command_execution item",
+  "item.completed/command_execution item.aggregated_output",
+  "item.completed/command_execution item.command",
+  "item.completed/command_execution item.exit_code",
+  "item.completed/command_execution item.id",
+  "item.completed/command_execution item.status",
+  "item.completed/command_execution item.type",
+  "item.completed/command_execution type",
+  "item.completed/file_change item",
+  "item.completed/file_change item.changes",
+  "item.completed/file_change item.changes[].kind",
+  "item.completed/file_change item.changes[].path",
+  "item.completed/file_change item.id",
+  "item.completed/file_change item.status",
+  "item.completed/file_change item.type",
+  "item.completed/file_change type",
+  "item.started/command_execution item",
+  "item.started/command_execution item.aggregated_output",
+  "item.started/command_execution item.command",
+  "item.started/command_execution item.exit_code",
+  "item.started/command_execution item.id",
+  "item.started/command_execution item.status",
+  "item.started/command_execution item.type",
+  "item.started/command_execution type",
+  "item.started/file_change item",
+  "item.started/file_change item.changes",
+  "item.started/file_change item.changes[].kind",
+  "item.started/file_change item.changes[].path",
+  "item.started/file_change item.id",
+  "item.started/file_change item.status",
+  "item.started/file_change item.type",
+  "item.started/file_change type",
   "thread.started thread_id",
   "thread.started type",
   "turn.completed type",
@@ -21,6 +53,7 @@
   "file:event_msg/item_completed ordinal",
   "file:event_msg/item_completed payload",
   "file:event_msg/item_completed payload.completed_at_ms",
+  "file:event_msg/item_completed payload.content_token_count",
   "file:event_msg/item_completed payload.item",
   "file:event_msg/item_completed payload.item.content",
   "file:event_msg/item_completed payload.item.content[].text",
@@ -40,6 +73,7 @@
   "file:event_msg/task_complete payload.completed_at",
   "file:event_msg/task_complete payload.duration_ms",
   "file:event_msg/task_complete payload.last_agent_message",
+  "file:event_msg/task_complete payload.root_turn_id",
   "file:event_msg/task_complete payload.started_at",
   "file:event_msg/task_complete payload.time_to_first_token_ms",
   "file:event_msg/task_complete payload.turn_id",
@@ -52,6 +86,12 @@
   "file:event_msg/task_started payload.model_context_window",
   "file:event_msg/task_started payload.root_turn_id",
   "file:event_msg/task_started payload.started_at",
+  "file:event_msg/task_started payload.turn_attribution",
+  "file:event_msg/task_started payload.turn_attribution.initiating_agent_path",
+  "file:event_msg/task_started payload.turn_attribution.parent_turn_id",
+  "file:event_msg/task_started payload.turn_attribution.root_turn_id",
+  "file:event_msg/task_started payload.turn_attribution.turn_id",
+  "file:event_msg/task_started payload.turn_attribution.turn_trigger",
   "file:event_msg/task_started payload.turn_id",
   "file:event_msg/task_started payload.type",
   "file:event_msg/task_started timestamp",
@@ -75,10 +115,16 @@
   "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile",
   "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system",
   "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.entries",
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.entries[].access",
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.entries[].path",
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.entries[].path.type",
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.entries[].path.value",
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.entries[].path.value.kind",
   "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.type",
   "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.network",
   "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.type",
   "file:event_msg/thread_settings_applied payload.thread_settings.reasoning_effort",
+  "file:event_msg/thread_settings_applied payload.thread_settings.requested_approvals_reviewer",
   "file:event_msg/thread_settings_applied payload.thread_settings.runtime_workspace_roots",
   "file:event_msg/thread_settings_applied payload.type",
   "file:event_msg/thread_settings_applied timestamp",
@@ -93,6 +139,7 @@
   "file:event_msg/token_count payload.info.last_token_usage.output_tokens",
   "file:event_msg/token_count payload.info.last_token_usage.reasoning_output_tokens",
   "file:event_msg/token_count payload.info.last_token_usage.total_tokens",
+  "file:event_msg/token_count payload.info.last_usage_includes_reasoning",
   "file:event_msg/token_count payload.info.model_context_window",
   "file:event_msg/token_count payload.info.total_token_usage",
   "file:event_msg/token_count payload.info.total_token_usage.cache_write_input_tokens",
@@ -123,23 +170,122 @@
   "file:event_msg/token_count payload.type",
   "file:event_msg/token_count timestamp",
   "file:event_msg/token_count type",
+  "file:response_item/additional_tools metadata",
+  "file:response_item/additional_tools metadata.client_authored",
+  "file:response_item/additional_tools metadata.history_sequence",
+  "file:response_item/additional_tools metadata.mcp_attribution",
+  "file:response_item/additional_tools metadata.mcp_attribution.status",
+  "file:response_item/additional_tools metadata.sampled_through_sequence",
+  "file:response_item/additional_tools ordinal",
+  "file:response_item/additional_tools payload",
+  "file:response_item/additional_tools payload.id",
+  "file:response_item/additional_tools payload.role",
+  "file:response_item/additional_tools payload.tools",
+  "file:response_item/additional_tools payload.tools[].description",
+  "file:response_item/additional_tools payload.tools[].name",
+  "file:response_item/additional_tools payload.tools[].tools",
+  "file:response_item/additional_tools payload.tools[].tools[].description",
+  "file:response_item/additional_tools payload.tools[].tools[].format",
+  "file:response_item/additional_tools payload.tools[].tools[].format.definition",
+  "file:response_item/additional_tools payload.tools[].tools[].format.syntax",
+  "file:response_item/additional_tools payload.tools[].tools[].format.type",
+  "file:response_item/additional_tools payload.tools[].tools[].name",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.additionalProperties",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.cell_id",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.cell_id.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.cell_id.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.duration_ms",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.duration_ms.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.duration_ms.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.fork_turns",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.fork_turns.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.fork_turns.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.max_tokens",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.max_tokens.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.max_tokens.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.message",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.message.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.message.encrypted",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.message.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.model",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.model.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.model.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.path_prefix",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.path_prefix.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.path_prefix.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.questions",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.questions.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.questions.items",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.questions.minItems",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.questions.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.reasoning_effort",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.reasoning_effort.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.reasoning_effort.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.target",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.target.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.target.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.task_name",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.task_name.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.task_name.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.terminate",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.terminate.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.terminate.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.timeout_ms",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.timeout_ms.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.timeout_ms.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.yield_time_ms",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.yield_time_ms.description",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.yield_time_ms.type",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.required",
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.type",
+  "file:response_item/additional_tools payload.tools[].tools[].strict",
+  "file:response_item/additional_tools payload.tools[].tools[].type",
+  "file:response_item/additional_tools payload.tools[].type",
+  "file:response_item/additional_tools payload.type",
+  "file:response_item/additional_tools timestamp",
+  "file:response_item/additional_tools type",
+  "file:response_item/message metadata",
+  "file:response_item/message metadata.client_authored",
+  "file:response_item/message metadata.history_sequence",
+  "file:response_item/message metadata.mcp_attribution",
+  "file:response_item/message metadata.mcp_attribution.status",
+  "file:response_item/message metadata.retained_source",
+  "file:response_item/message metadata.retained_source.complete",
+  "file:response_item/message metadata.retained_source.id",
+  "file:response_item/message metadata.retained_source.id.message_id",
+  "file:response_item/message metadata.retained_source.id.role",
+  "file:response_item/message metadata.retained_source.id.turn_id",
+  "file:response_item/message metadata.retained_source.revision",
+  "file:response_item/message metadata.sampled_through_sequence",
+  "file:response_item/message metadata.user_input_order",
   "file:response_item/message ordinal",
   "file:response_item/message payload",
   "file:response_item/message payload.content",
+  "file:response_item/message payload.content[].annotations",
+  "file:response_item/message payload.content[].logprobs",
   "file:response_item/message payload.content[].text",
   "file:response_item/message payload.content[].type",
   "file:response_item/message payload.id",
   "file:response_item/message payload.internal_chat_message_metadata_passthrough",
   "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_kinds",
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_metadata",
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_metadata[].provenance",
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_metadata[].provenance.hook",
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_metadata[].provenance.namespace",
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_metadata[].provenance.type",
   "file:response_item/message payload.internal_chat_message_metadata_passthrough.create_time",
   "file:response_item/message payload.internal_chat_message_metadata_passthrough.turn_id",
   "file:response_item/message payload.phase",
   "file:response_item/message payload.role",
+  "file:response_item/message payload.status",
   "file:response_item/message payload.type",
   "file:response_item/message timestamp",
   "file:response_item/message type",
   "file:session_meta ordinal",
   "file:session_meta payload",
+  "file:session_meta payload.account_scoped",
   "file:session_meta payload.base_instructions",
   "file:session_meta payload.base_instructions.provenance",
   "file:session_meta payload.base_instructions.provenance.model",
@@ -148,6 +294,8 @@
   "file:session_meta payload.cli_version",
   "file:session_meta payload.context_window",
   "file:session_meta payload.context_window.window_id",
+  "file:session_meta payload.creator_account_id",
+  "file:session_meta payload.creator_user_id",
   "file:session_meta payload.cwd",
   "file:session_meta payload.history_mode",
   "file:session_meta payload.id",
@@ -201,8 +349,8 @@
   "file:turn_context payload.collaboration_mode.settings.model",
   "file:turn_context payload.collaboration_mode.settings.reasoning_effort",
   "file:turn_context payload.comp_hash",
-  "file:turn_context payload.current_date",
   "file:turn_context payload.cwd",
+  "file:turn_context payload.cyber_access_program",
   "file:turn_context payload.disabled_plugin_ids",
   "file:turn_context payload.effort",
   "file:turn_context payload.model",
@@ -210,6 +358,11 @@
   "file:turn_context payload.permission_profile",
   "file:turn_context payload.permission_profile.file_system",
   "file:turn_context payload.permission_profile.file_system.entries",
+  "file:turn_context payload.permission_profile.file_system.entries[].access",
+  "file:turn_context payload.permission_profile.file_system.entries[].path",
+  "file:turn_context payload.permission_profile.file_system.entries[].path.type",
+  "file:turn_context payload.permission_profile.file_system.entries[].path.value",
+  "file:turn_context payload.permission_profile.file_system.entries[].path.value.kind",
   "file:turn_context payload.permission_profile.file_system.type",
   "file:turn_context payload.permission_profile.network",
   "file:turn_context payload.permission_profile.type",
@@ -218,9 +371,7 @@
   "file:turn_context payload.sandbox_policy",
   "file:turn_context payload.sandbox_policy.type",
   "file:turn_context payload.summary",
-  "file:turn_context payload.timezone",
   "file:turn_context payload.turn_id",
-  "file:turn_context payload.workspace_roots",
   "file:turn_context timestamp",
   "file:turn_context type",
   "file:world_state ordinal",
@@ -238,6 +389,9 @@
   "file:world_state payload.state.environments.current_date",
   "file:world_state payload.state.environments.environments",
   "file:world_state payload.state.environments.environments.local",
+  "file:world_state payload.state.environments.environments.local.cwd",
+  "file:world_state payload.state.environments.environments.local.shell",
+  "file:world_state payload.state.environments.environments.local.status",
   "file:world_state payload.state.environments.filesystem",
   "file:world_state payload.state.environments.timezone",
   "file:world_state payload.state.environments_instructions",
@@ -247,13 +401,13 @@
   "file:world_state payload.state.host_skills.includeInstructions",
   "file:world_state payload.state.managed_developer_instructions",
   "file:world_state payload.state.model",
+  "file:world_state payload.state.model.instructions",
+  "file:world_state payload.state.model.model",
+  "file:world_state payload.state.model_catalog",
   "file:world_state payload.state.multi_agent_mode",
   "file:world_state payload.state.multi_agent_mode.mode",
   "file:world_state payload.state.multi_agent_mode.usage_hint_hash",
   "file:world_state payload.state.multi_agent_usage_hint",
-  "file:world_state payload.state.orchestrator_skills",
-  "file:world_state payload.state.orchestrator_skills.enabled",
-  "file:world_state payload.state.orchestrator_skills.includeInstructions",
   "file:world_state payload.state.permissions",
   "file:world_state payload.state.permissions.approved_command_prefixes",
   "file:world_state payload.state.permissions.instructions",
@@ -263,7 +417,1353 @@
   "file:world_state payload.state.realtime.active",
   "file:world_state payload.state.skills",
   "file:world_state payload.state.skills.includeInstructions",
+  "file:world_state payload.state.tools",
+  "file:world_state payload.state.tools.*",
+  "file:world_state payload.state.tools.mcp__codex_apps__codex_document_control",
+  "file:world_state payload.state.tools.mcp__codex_apps__hotline",
+  "file:world_state payload.state.tools.mcp__codex_apps__pets",
+  "file:world_state payload.state.tools.mcp__codex_apps__plugin_management",
+  "file:world_state payload.state.tools.mcp__codex_apps__safety_settings",
+  "file:world_state payload.state.tools.mcp__codex_apps__search_service",
+  "file:world_state payload.state.tools.mcp__codex_apps__sites",
+  "file:world_state payload.state.top_level_tools",
+  "file:world_state payload.state.top_level_tools.clock",
+  "file:world_state payload.state.top_level_tools.clock.sleep",
+  "file:world_state payload.state.top_level_tools.collaboration",
+  "file:world_state payload.state.top_level_tools.collaboration.followup_task",
+  "file:world_state payload.state.top_level_tools.collaboration.interrupt_agent",
+  "file:world_state payload.state.top_level_tools.collaboration.list_agents",
+  "file:world_state payload.state.top_level_tools.collaboration.send_message",
+  "file:world_state payload.state.top_level_tools.collaboration.spawn_agent",
+  "file:world_state payload.state.top_level_tools.collaboration.wait_agent",
+  "file:world_state payload.state.top_level_tools.functions",
+  "file:world_state payload.state.top_level_tools.functions.exec",
+  "file:world_state payload.state.top_level_tools.functions.request_user_input",
+  "file:world_state payload.state.top_level_tools.functions.request_user_input_async",
+  "file:world_state payload.state.top_level_tools.functions.wait",
   "file:world_state timestamp",
   "file:world_state type"
- ]
+ ],
+ "types": {
+  "thread.started type": [
+   "string"
+  ],
+  "thread.started thread_id": [
+   "string"
+  ],
+  "turn.started type": [
+   "string"
+  ],
+  "item.completed/agent_message type": [
+   "string"
+  ],
+  "item.completed/agent_message item": [
+   "object"
+  ],
+  "item.completed/agent_message item.id": [
+   "string"
+  ],
+  "item.completed/agent_message item.type": [
+   "string"
+  ],
+  "item.completed/agent_message item.text": [
+   "string"
+  ],
+  "turn.completed type": [
+   "string"
+  ],
+  "turn.completed usage": [
+   "object"
+  ],
+  "turn.completed usage.input_tokens": [
+   "number"
+  ],
+  "turn.completed usage.cached_input_tokens": [
+   "number"
+  ],
+  "turn.completed usage.cache_write_input_tokens": [
+   "number"
+  ],
+  "turn.completed usage.output_tokens": [
+   "number"
+  ],
+  "turn.completed usage.reasoning_output_tokens": [
+   "number"
+  ],
+  "file:session_meta timestamp": [
+   "string"
+  ],
+  "file:session_meta ordinal": [
+   "number"
+  ],
+  "file:session_meta type": [
+   "string"
+  ],
+  "file:session_meta payload": [
+   "object"
+  ],
+  "file:session_meta payload.account_scoped": [
+   "boolean"
+  ],
+  "file:session_meta payload.creator_user_id": [
+   "string"
+  ],
+  "file:session_meta payload.creator_account_id": [
+   "string"
+  ],
+  "file:session_meta payload.session_id": [
+   "string"
+  ],
+  "file:session_meta payload.id": [
+   "string"
+  ],
+  "file:session_meta payload.timestamp": [
+   "string"
+  ],
+  "file:session_meta payload.cwd": [
+   "string"
+  ],
+  "file:session_meta payload.runtime_workspace_roots": [
+   "array"
+  ],
+  "file:session_meta payload.originator": [
+   "string"
+  ],
+  "file:session_meta payload.cli_version": [
+   "string"
+  ],
+  "file:session_meta payload.source": [
+   "string"
+  ],
+  "file:session_meta payload.thread_source": [
+   "string"
+  ],
+  "file:session_meta payload.model_provider": [
+   "string"
+  ],
+  "file:session_meta payload.base_instructions": [
+   "object"
+  ],
+  "file:session_meta payload.base_instructions.text": [
+   "string"
+  ],
+  "file:session_meta payload.base_instructions.provenance": [
+   "object"
+  ],
+  "file:session_meta payload.base_instructions.provenance.type": [
+   "string"
+  ],
+  "file:session_meta payload.base_instructions.provenance.model": [
+   "string"
+  ],
+  "file:session_meta payload.history_mode": [
+   "string"
+  ],
+  "file:session_meta payload.context_window": [
+   "object"
+  ],
+  "file:session_meta payload.context_window.window_id": [
+   "string"
+  ],
+  "file:event_msg/task_started timestamp": [
+   "string"
+  ],
+  "file:event_msg/task_started ordinal": [
+   "number"
+  ],
+  "file:event_msg/task_started type": [
+   "string"
+  ],
+  "file:event_msg/task_started payload": [
+   "object"
+  ],
+  "file:event_msg/task_started payload.type": [
+   "string"
+  ],
+  "file:event_msg/task_started payload.turn_attribution": [
+   "object"
+  ],
+  "file:event_msg/task_started payload.turn_attribution.turn_id": [
+   "string"
+  ],
+  "file:event_msg/task_started payload.turn_attribution.turn_trigger": [
+   "string"
+  ],
+  "file:event_msg/task_started payload.turn_attribution.parent_turn_id": [
+   "null"
+  ],
+  "file:event_msg/task_started payload.turn_attribution.initiating_agent_path": [
+   "null"
+  ],
+  "file:event_msg/task_started payload.turn_attribution.root_turn_id": [
+   "string"
+  ],
+  "file:event_msg/task_started payload.turn_id": [
+   "string"
+  ],
+  "file:event_msg/task_started payload.root_turn_id": [
+   "string"
+  ],
+  "file:event_msg/task_started payload.started_at": [
+   "number"
+  ],
+  "file:event_msg/task_started payload.model_context_window": [
+   "number"
+  ],
+  "file:event_msg/task_started payload.collaboration_mode_kind": [
+   "string"
+  ],
+  "file:response_item/additional_tools timestamp": [
+   "string"
+  ],
+  "file:response_item/additional_tools ordinal": [
+   "number"
+  ],
+  "file:response_item/additional_tools type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.id": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.role": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools": [
+   "array"
+  ],
+  "file:response_item/additional_tools payload.tools[].type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].name": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools": [
+   "array"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].name": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].format": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].format.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].format.syntax": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].format.definition": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].strict": [
+   "boolean"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.cell_id": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.cell_id.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.cell_id.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.max_tokens": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.max_tokens.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.max_tokens.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.terminate": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.terminate.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.terminate.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.yield_time_ms": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.yield_time_ms.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.yield_time_ms.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.required": [
+   "array"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.additionalProperties": [
+   "boolean"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.questions": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.questions.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.questions.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.questions.items": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.questions.minItems": [
+   "number"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.duration_ms": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.duration_ms.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.duration_ms.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.message": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.message.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.message.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.message.encrypted": [
+   "boolean"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.target": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.target.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.target.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.path_prefix": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.path_prefix.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.path_prefix.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.fork_turns": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.fork_turns.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.fork_turns.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.model": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.model.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.model.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.reasoning_effort": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.reasoning_effort.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.reasoning_effort.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.task_name": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.task_name.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.task_name.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.timeout_ms": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.timeout_ms.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.timeout_ms.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools metadata": [
+   "object"
+  ],
+  "file:response_item/additional_tools metadata.history_sequence": [
+   "number"
+  ],
+  "file:response_item/additional_tools metadata.sampled_through_sequence": [
+   "number"
+  ],
+  "file:response_item/additional_tools metadata.client_authored": [
+   "boolean"
+  ],
+  "file:response_item/additional_tools metadata.mcp_attribution": [
+   "object"
+  ],
+  "file:response_item/additional_tools metadata.mcp_attribution.status": [
+   "string"
+  ],
+  "file:response_item/message timestamp": [
+   "string"
+  ],
+  "file:response_item/message ordinal": [
+   "number"
+  ],
+  "file:response_item/message type": [
+   "string"
+  ],
+  "file:response_item/message payload": [
+   "object"
+  ],
+  "file:response_item/message payload.type": [
+   "string"
+  ],
+  "file:response_item/message payload.id": [
+   "string"
+  ],
+  "file:response_item/message payload.role": [
+   "string"
+  ],
+  "file:response_item/message payload.content": [
+   "array"
+  ],
+  "file:response_item/message payload.content[].type": [
+   "string"
+  ],
+  "file:response_item/message payload.content[].text": [
+   "string"
+  ],
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough": [
+   "object"
+  ],
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.turn_id": [
+   "string"
+  ],
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.create_time": [
+   "number"
+  ],
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_kinds": [
+   "array"
+  ],
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_metadata": [
+   "array"
+  ],
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_metadata[].provenance": [
+   "object"
+  ],
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_metadata[].provenance.type": [
+   "string"
+  ],
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_metadata[].provenance.hook": [
+   "boolean"
+  ],
+  "file:response_item/message metadata": [
+   "object"
+  ],
+  "file:response_item/message metadata.history_sequence": [
+   "number"
+  ],
+  "file:response_item/message metadata.sampled_through_sequence": [
+   "number"
+  ],
+  "file:response_item/message metadata.client_authored": [
+   "boolean"
+  ],
+  "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_metadata[].provenance.namespace": [
+   "string"
+  ],
+  "file:world_state timestamp": [
+   "string"
+  ],
+  "file:world_state ordinal": [
+   "number"
+  ],
+  "file:world_state type": [
+   "string"
+  ],
+  "file:world_state payload": [
+   "object"
+  ],
+  "file:world_state payload.full": [
+   "boolean"
+  ],
+  "file:world_state payload.state": [
+   "object"
+  ],
+  "file:world_state payload.state.agents_md": [
+   "object"
+  ],
+  "file:world_state payload.state.apps_instructions": [
+   "boolean"
+  ],
+  "file:world_state payload.state.collaboration_mode": [
+   "object"
+  ],
+  "file:world_state payload.state.collaboration_mode.mode": [
+   "string"
+  ],
+  "file:world_state payload.state.collaboration_mode.model": [
+   "string"
+  ],
+  "file:world_state payload.state.collaboration_mode.instructions": [
+   "string"
+  ],
+  "file:world_state payload.state.context_window_guidance": [
+   "string"
+  ],
+  "file:world_state payload.state.environments": [
+   "object"
+  ],
+  "file:world_state payload.state.environments.environments": [
+   "object"
+  ],
+  "file:world_state payload.state.environments.environments.local": [
+   "object"
+  ],
+  "file:world_state payload.state.environments.environments.local.cwd": [
+   "string"
+  ],
+  "file:world_state payload.state.environments.environments.local.status": [
+   "string"
+  ],
+  "file:world_state payload.state.environments.environments.local.shell": [
+   "string"
+  ],
+  "file:world_state payload.state.environments.current_date": [
+   "string"
+  ],
+  "file:world_state payload.state.environments.timezone": [
+   "string"
+  ],
+  "file:world_state payload.state.environments.filesystem": [
+   "string"
+  ],
+  "file:world_state payload.state.environments_instructions": [
+   "boolean"
+  ],
+  "file:world_state payload.state.git_attribution": [
+   "boolean"
+  ],
+  "file:world_state payload.state.host_skills": [
+   "object"
+  ],
+  "file:world_state payload.state.host_skills.body": [
+   "string"
+  ],
+  "file:world_state payload.state.host_skills.includeInstructions": [
+   "boolean"
+  ],
+  "file:world_state payload.state.managed_developer_instructions": [
+   "object"
+  ],
+  "file:world_state payload.state.model": [
+   "object"
+  ],
+  "file:world_state payload.state.model.model": [
+   "string"
+  ],
+  "file:world_state payload.state.model.instructions": [
+   "string"
+  ],
+  "file:world_state payload.state.model_catalog": [
+   "string"
+  ],
+  "file:world_state payload.state.multi_agent_mode": [
+   "object"
+  ],
+  "file:world_state payload.state.multi_agent_mode.mode": [
+   "string"
+  ],
+  "file:world_state payload.state.multi_agent_mode.usage_hint_hash": [
+   "string"
+  ],
+  "file:world_state payload.state.multi_agent_usage_hint": [
+   "string"
+  ],
+  "file:world_state payload.state.permissions": [
+   "object"
+  ],
+  "file:world_state payload.state.permissions.instructions": [
+   "string"
+  ],
+  "file:world_state payload.state.permissions.approved_command_prefixes": [
+   "array"
+  ],
+  "file:world_state payload.state.persistent_mode": [
+   "object"
+  ],
+  "file:world_state payload.state.plugins_instructions": [
+   "boolean"
+  ],
+  "file:world_state payload.state.realtime": [
+   "object"
+  ],
+  "file:world_state payload.state.realtime.active": [
+   "boolean"
+  ],
+  "file:world_state payload.state.skills": [
+   "object"
+  ],
+  "file:world_state payload.state.skills.includeInstructions": [
+   "boolean"
+  ],
+  "file:world_state payload.state.tools": [
+   "object"
+  ],
+  "file:world_state payload.state.tools.mcp__codex_apps__codex_document_control": [
+   "string"
+  ],
+  "file:world_state payload.state.tools.*": [
+   "string"
+  ],
+  "file:world_state payload.state.tools.mcp__codex_apps__hotline": [
+   "string"
+  ],
+  "file:world_state payload.state.tools.mcp__codex_apps__pets": [
+   "string"
+  ],
+  "file:world_state payload.state.tools.mcp__codex_apps__plugin_management": [
+   "string"
+  ],
+  "file:world_state payload.state.tools.mcp__codex_apps__safety_settings": [
+   "string"
+  ],
+  "file:world_state payload.state.tools.mcp__codex_apps__search_service": [
+   "string"
+  ],
+  "file:world_state payload.state.tools.mcp__codex_apps__sites": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools": [
+   "object"
+  ],
+  "file:world_state payload.state.top_level_tools.clock": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.clock.sleep": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.collaboration": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.collaboration.followup_task": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.collaboration.interrupt_agent": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.collaboration.list_agents": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.collaboration.send_message": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.collaboration.spawn_agent": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.collaboration.wait_agent": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.functions": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.functions.exec": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.functions.request_user_input": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.functions.request_user_input_async": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.functions.wait": [
+   "string"
+  ],
+  "file:turn_context timestamp": [
+   "string"
+  ],
+  "file:turn_context ordinal": [
+   "number"
+  ],
+  "file:turn_context type": [
+   "string"
+  ],
+  "file:turn_context payload": [
+   "object"
+  ],
+  "file:turn_context payload.turn_id": [
+   "string"
+  ],
+  "file:turn_context payload.root_turn_id": [
+   "string"
+  ],
+  "file:turn_context payload.disabled_plugin_ids": [
+   "array"
+  ],
+  "file:turn_context payload.cwd": [
+   "string"
+  ],
+  "file:turn_context payload.approval_policy": [
+   "string"
+  ],
+  "file:turn_context payload.approvals_reviewer": [
+   "string"
+  ],
+  "file:turn_context payload.permission_profile": [
+   "object"
+  ],
+  "file:turn_context payload.permission_profile.type": [
+   "string"
+  ],
+  "file:turn_context payload.permission_profile.file_system": [
+   "object"
+  ],
+  "file:turn_context payload.permission_profile.file_system.type": [
+   "string"
+  ],
+  "file:turn_context payload.permission_profile.file_system.entries": [
+   "array"
+  ],
+  "file:turn_context payload.permission_profile.file_system.entries[].path": [
+   "object"
+  ],
+  "file:turn_context payload.permission_profile.file_system.entries[].path.type": [
+   "string"
+  ],
+  "file:turn_context payload.permission_profile.file_system.entries[].path.value": [
+   "object"
+  ],
+  "file:turn_context payload.permission_profile.file_system.entries[].path.value.kind": [
+   "string"
+  ],
+  "file:turn_context payload.permission_profile.file_system.entries[].access": [
+   "string"
+  ],
+  "file:turn_context payload.permission_profile.network": [
+   "string"
+  ],
+  "file:turn_context payload.model": [
+   "string"
+  ],
+  "file:turn_context payload.comp_hash": [
+   "string"
+  ],
+  "file:turn_context payload.collaboration_mode": [
+   "object"
+  ],
+  "file:turn_context payload.collaboration_mode.mode": [
+   "string"
+  ],
+  "file:turn_context payload.collaboration_mode.settings": [
+   "object"
+  ],
+  "file:turn_context payload.collaboration_mode.settings.model": [
+   "string"
+  ],
+  "file:turn_context payload.collaboration_mode.settings.reasoning_effort": [
+   "string"
+  ],
+  "file:turn_context payload.collaboration_mode.settings.developer_instructions": [
+   "null"
+  ],
+  "file:turn_context payload.multi_agent_version": [
+   "string"
+  ],
+  "file:turn_context payload.realtime_active": [
+   "boolean"
+  ],
+  "file:turn_context payload.cyber_access_program": [
+   "string"
+  ],
+  "file:turn_context payload.effort": [
+   "string"
+  ],
+  "file:turn_context payload.summary": [
+   "string"
+  ],
+  "file:turn_context payload.sandbox_policy": [
+   "object"
+  ],
+  "file:turn_context payload.sandbox_policy.type": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied timestamp": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied ordinal": [
+   "number"
+  ],
+  "file:event_msg/thread_settings_applied type": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload": [
+   "object"
+  ],
+  "file:event_msg/thread_settings_applied payload.type": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_id": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings": [
+   "object"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.model": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.model_provider_id": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.approval_policy": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.approvals_reviewer": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.requested_approvals_reviewer": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile": [
+   "object"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.type": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system": [
+   "object"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.type": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.entries": [
+   "array"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.entries[].path": [
+   "object"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.entries[].path.type": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.entries[].path.value": [
+   "object"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.entries[].path.value.kind": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.file_system.entries[].access": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.permission_profile.network": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.cwd": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.runtime_workspace_roots": [
+   "array"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.reasoning_effort": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.collaboration_mode": [
+   "object"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.collaboration_mode.mode": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.collaboration_mode.settings": [
+   "object"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.collaboration_mode.settings.model": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.collaboration_mode.settings.reasoning_effort": [
+   "string"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.collaboration_mode.settings.developer_instructions": [
+   "null"
+  ],
+  "file:event_msg/thread_settings_applied payload.thread_settings.disabled_plugin_ids": [
+   "array"
+  ],
+  "file:response_item/message metadata.retained_source": [
+   "object"
+  ],
+  "file:response_item/message metadata.retained_source.id": [
+   "object"
+  ],
+  "file:response_item/message metadata.retained_source.id.message_id": [
+   "string"
+  ],
+  "file:response_item/message metadata.retained_source.id.turn_id": [
+   "string"
+  ],
+  "file:response_item/message metadata.retained_source.id.role": [
+   "string"
+  ],
+  "file:response_item/message metadata.retained_source.revision": [
+   "string"
+  ],
+  "file:response_item/message metadata.retained_source.complete": [
+   "boolean"
+  ],
+  "file:response_item/message metadata.user_input_order": [
+   "number"
+  ],
+  "file:response_item/message metadata.mcp_attribution": [
+   "object"
+  ],
+  "file:response_item/message metadata.mcp_attribution.status": [
+   "string"
+  ],
+  "file:event_msg/item_completed timestamp": [
+   "string"
+  ],
+  "file:event_msg/item_completed ordinal": [
+   "number"
+  ],
+  "file:event_msg/item_completed type": [
+   "string"
+  ],
+  "file:event_msg/item_completed payload": [
+   "object"
+  ],
+  "file:event_msg/item_completed payload.type": [
+   "string"
+  ],
+  "file:event_msg/item_completed payload.thread_id": [
+   "string"
+  ],
+  "file:event_msg/item_completed payload.turn_id": [
+   "string"
+  ],
+  "file:event_msg/item_completed payload.item": [
+   "object"
+  ],
+  "file:event_msg/item_completed payload.item.type": [
+   "string"
+  ],
+  "file:event_msg/item_completed payload.item.id": [
+   "string"
+  ],
+  "file:event_msg/item_completed payload.item.content": [
+   "array"
+  ],
+  "file:event_msg/item_completed payload.item.content[].type": [
+   "string"
+  ],
+  "file:event_msg/item_completed payload.item.content[].text": [
+   "string"
+  ],
+  "file:event_msg/item_completed payload.item.content[].text_elements": [
+   "array"
+  ],
+  "file:event_msg/item_completed payload.started_at_ms": [
+   "number"
+  ],
+  "file:event_msg/item_completed payload.completed_at_ms": [
+   "number"
+  ],
+  "file:event_msg/item_completed payload.item.phase": [
+   "string"
+  ],
+  "file:event_msg/item_completed payload.content_token_count": [
+   "number"
+  ],
+  "file:response_item/message payload.status": [
+   "string"
+  ],
+  "file:response_item/message payload.content[].annotations": [
+   "array"
+  ],
+  "file:response_item/message payload.content[].logprobs": [
+   "array"
+  ],
+  "file:response_item/message payload.phase": [
+   "string"
+  ],
+  "file:token_usage_record timestamp": [
+   "string"
+  ],
+  "file:token_usage_record ordinal": [
+   "number"
+  ],
+  "file:token_usage_record type": [
+   "string"
+  ],
+  "file:token_usage_record payload": [
+   "object"
+  ],
+  "file:token_usage_record payload.thread_id": [
+   "string"
+  ],
+  "file:token_usage_record payload.turn_id": [
+   "string"
+  ],
+  "file:token_usage_record payload.session_id": [
+   "string"
+  ],
+  "file:token_usage_record payload.root_turn_id": [
+   "string"
+  ],
+  "file:token_usage_record payload.response_id": [
+   "string"
+  ],
+  "file:token_usage_record payload.usage": [
+   "object"
+  ],
+  "file:token_usage_record payload.usage.input_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.usage.cached_input_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.usage.cache_write_input_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.usage.output_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.usage.reasoning_output_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.usage.total_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.turn_token_usage": [
+   "object"
+  ],
+  "file:token_usage_record payload.turn_token_usage.input_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.turn_token_usage.cached_input_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.turn_token_usage.cache_write_input_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.turn_token_usage.output_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.turn_token_usage.reasoning_output_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.turn_token_usage.total_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.thread_token_usage": [
+   "object"
+  ],
+  "file:token_usage_record payload.thread_token_usage.input_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.thread_token_usage.cached_input_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.thread_token_usage.cache_write_input_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.thread_token_usage.output_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.thread_token_usage.reasoning_output_tokens": [
+   "number"
+  ],
+  "file:token_usage_record payload.thread_token_usage.total_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count timestamp": [
+   "string"
+  ],
+  "file:event_msg/token_count ordinal": [
+   "number"
+  ],
+  "file:event_msg/token_count type": [
+   "string"
+  ],
+  "file:event_msg/token_count payload": [
+   "object"
+  ],
+  "file:event_msg/token_count payload.type": [
+   "string"
+  ],
+  "file:event_msg/token_count payload.info": [
+   "object"
+  ],
+  "file:event_msg/token_count payload.info.total_token_usage": [
+   "object"
+  ],
+  "file:event_msg/token_count payload.info.total_token_usage.input_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.info.total_token_usage.cached_input_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.info.total_token_usage.cache_write_input_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.info.total_token_usage.output_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.info.total_token_usage.reasoning_output_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.info.total_token_usage.total_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.info.last_token_usage": [
+   "object"
+  ],
+  "file:event_msg/token_count payload.info.last_token_usage.input_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.info.last_token_usage.cached_input_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.info.last_token_usage.cache_write_input_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.info.last_token_usage.output_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.info.last_token_usage.reasoning_output_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.info.last_token_usage.total_tokens": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.info.last_usage_includes_reasoning": [
+   "boolean"
+  ],
+  "file:event_msg/token_count payload.info.model_context_window": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.rate_limits": [
+   "object"
+  ],
+  "file:event_msg/token_count payload.rate_limits.limit_id": [
+   "string"
+  ],
+  "file:event_msg/token_count payload.rate_limits.limit_name": [
+   "null"
+  ],
+  "file:event_msg/token_count payload.rate_limits.primary": [
+   "object"
+  ],
+  "file:event_msg/token_count payload.rate_limits.primary.used_percent": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.rate_limits.primary.window_minutes": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.rate_limits.primary.resets_at": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.rate_limits.secondary": [
+   "object"
+  ],
+  "file:event_msg/token_count payload.rate_limits.secondary.used_percent": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.rate_limits.secondary.window_minutes": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.rate_limits.secondary.resets_at": [
+   "number"
+  ],
+  "file:event_msg/token_count payload.rate_limits.credits": [
+   "object"
+  ],
+  "file:event_msg/token_count payload.rate_limits.credits.has_credits": [
+   "boolean"
+  ],
+  "file:event_msg/token_count payload.rate_limits.credits.unlimited": [
+   "boolean"
+  ],
+  "file:event_msg/token_count payload.rate_limits.credits.balance": [
+   "string"
+  ],
+  "file:event_msg/token_count payload.rate_limits.individual_limit": [
+   "null"
+  ],
+  "file:event_msg/token_count payload.rate_limits.spend_control_reached": [
+   "null"
+  ],
+  "file:event_msg/token_count payload.rate_limits.plan_type": [
+   "string"
+  ],
+  "file:event_msg/token_count payload.rate_limits.rate_limit_reached_type": [
+   "null"
+  ],
+  "file:event_msg/task_complete timestamp": [
+   "string"
+  ],
+  "file:event_msg/task_complete ordinal": [
+   "number"
+  ],
+  "file:event_msg/task_complete type": [
+   "string"
+  ],
+  "file:event_msg/task_complete payload": [
+   "object"
+  ],
+  "file:event_msg/task_complete payload.type": [
+   "string"
+  ],
+  "file:event_msg/task_complete payload.root_turn_id": [
+   "string"
+  ],
+  "file:event_msg/task_complete payload.turn_id": [
+   "string"
+  ],
+  "file:event_msg/task_complete payload.last_agent_message": [
+   "string"
+  ],
+  "file:event_msg/task_complete payload.started_at": [
+   "number"
+  ],
+  "file:event_msg/task_complete payload.completed_at": [
+   "number"
+  ],
+  "file:event_msg/task_complete payload.duration_ms": [
+   "number"
+  ],
+  "file:event_msg/task_complete payload.time_to_first_token_ms": [
+   "number"
+  ],
+  "item.started/command_execution type": [
+   "string"
+  ],
+  "item.started/command_execution item": [
+   "object"
+  ],
+  "item.started/command_execution item.id": [
+   "string"
+  ],
+  "item.started/command_execution item.type": [
+   "string"
+  ],
+  "item.started/command_execution item.command": [
+   "string"
+  ],
+  "item.started/command_execution item.aggregated_output": [
+   "string"
+  ],
+  "item.started/command_execution item.exit_code": [
+   "null"
+  ],
+  "item.started/command_execution item.status": [
+   "string"
+  ],
+  "item.completed/command_execution type": [
+   "string"
+  ],
+  "item.completed/command_execution item": [
+   "object"
+  ],
+  "item.completed/command_execution item.id": [
+   "string"
+  ],
+  "item.completed/command_execution item.type": [
+   "string"
+  ],
+  "item.completed/command_execution item.command": [
+   "string"
+  ],
+  "item.completed/command_execution item.aggregated_output": [
+   "string"
+  ],
+  "item.completed/command_execution item.exit_code": [
+   "number"
+  ],
+  "item.completed/command_execution item.status": [
+   "string"
+  ],
+  "item.started/file_change type": [
+   "string"
+  ],
+  "item.started/file_change item": [
+   "object"
+  ],
+  "item.started/file_change item.id": [
+   "string"
+  ],
+  "item.started/file_change item.type": [
+   "string"
+  ],
+  "item.started/file_change item.changes": [
+   "array"
+  ],
+  "item.started/file_change item.changes[].path": [
+   "string"
+  ],
+  "item.started/file_change item.changes[].kind": [
+   "string"
+  ],
+  "item.started/file_change item.status": [
+   "string"
+  ],
+  "item.completed/file_change type": [
+   "string"
+  ],
+  "item.completed/file_change item": [
+   "object"
+  ],
+  "item.completed/file_change item.id": [
+   "string"
+  ],
+  "item.completed/file_change item.type": [
+   "string"
+  ],
+  "item.completed/file_change item.changes": [
+   "array"
+  ],
+  "item.completed/file_change item.changes[].path": [
+   "string"
+  ],
+  "item.completed/file_change item.changes[].kind": [
+   "string"
+  ],
+  "item.completed/file_change item.status": [
+   "string"
+  ]
+ }
 }
