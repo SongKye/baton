@@ -441,6 +441,16 @@ export function stopRun(id) {
   return true;
 }
 
+// Runs live in their own process group (detached), so they no longer receive the terminal's
+// Ctrl+C or launchd's group kill along with Baton. End them whenever Baton exits; process.kill
+// is synchronous, so this works inside an 'exit' handler. Windows children are not detached.
+process.once('exit', () => {
+  if (IS_WIN) return;
+  for (const run of runs.values()) {
+    if (run.status === 'running' && run.child?.pid) { try { process.kill(-run.child.pid, 'SIGTERM'); } catch { /* already exited */ } }
+  }
+});
+
 /** One-shot, non-persisted completion (project briefs, skill drafts). Resolves to the final text. */
 export function oneShot({ tool, model, effort, prompt, cwd, timeoutMs = 180000, signal = null, failLabel = '' }) {
   return new Promise((resolve, reject) => {
