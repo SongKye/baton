@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { unavailableCliPath } from './lib-check-clis.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const child = process.argv[2] === '--child';
@@ -22,9 +23,10 @@ try {
     await fs.symlink(path.join(repo, 'node_modules'), path.join(app, 'node_modules'), 'junction').catch(() => {});
     const home = path.join(tmp, 'home');
     await fs.mkdir(home, { recursive: true });
+    const cliPath = await unavailableCliPath(tmp, ['claude', 'codex', 'agy', 'cursor-agent', 'agent']);
     execFileSync(process.execPath, ['--no-warnings', path.join(app, 'scripts', 'opencode-models-check.mjs'), '--child'], {
       stdio: 'inherit', cwd: app,
-      env: { ...process.env, HOME: home, USERPROFILE: home, XDG_DATA_HOME: path.join(home, 'data'), XDG_CONFIG_HOME: path.join(home, 'config'), APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local'), BATON_NO_SHELL_ENV: '1', PATH: path.dirname(process.execPath) },
+      env: { ...process.env, HOME: home, USERPROFILE: home, XDG_DATA_HOME: path.join(home, 'data'), XDG_CONFIG_HOME: path.join(home, 'config'), APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local'), BATON_NO_SHELL_ENV: '1', PATH: cliPath },
     });
   } else {
     const home = os.homedir();

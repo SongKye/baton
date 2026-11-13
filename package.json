@@ -5,6 +5,9 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "test": "node --no-warnings scripts/check.mjs",
+    "test:browser": "node --no-warnings scripts/runner-check.mjs --browser",
+    "docs:compat": "node scripts/render-compat-doc.mjs",
     "start": "node --no-warnings server/index.js",
     "open": "node --no-warnings server/index.js --open",
     "setup": "bash scripts/setup.sh",

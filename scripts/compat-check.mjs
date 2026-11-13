@@ -11,6 +11,7 @@ import '../server/env.js';
 import { TOOLS, TOOL_IDS, binFor } from '../server/tools.js';
 import { runCli } from '../server/platform.js';
 import { COMPAT, compatState } from '../server/compat.js';
+import { checkVersion } from './lib-compat-contracts.mjs';
 
 const only = process.argv.slice(2).filter((a) => !a.startsWith('-'));
 const ids = only.length ? only : TOOL_IDS;
@@ -20,9 +21,10 @@ for (const id of ids) {
   const t = TOOLS[id], c = COMPAT[id];
   if (!t || !c) { console.log(`? ${id}: unknown tool (one of ${TOOL_IDS.join(', ')})`); failed++; continue; }
   const bin = binFor(id);
-  if (!bin) { console.log(`- ${t.name}: not installed`); continue; }
+  if (!bin) { console.log(`- ${t.name}: not installed`); if (only.length) failed++; continue; }
   const r = await runCli(bin, ['--version'], { timeout: 15000 });
-  const ver = (r.stdout + ' ' + r.stderr).match(/\d+\.\d+(\.\d+)?([-.\w]*)?/)?.[0] || null;
+  let ver;
+  try { ver = checkVersion(r); } catch (e) { failed++; console.log(`  ✗ ${e.message}`); continue; }
   const state = compatState(id, ver);
   const label = {
     verified: 'same as verified', newer: `newer than verified ${c.verified}: not checked yet`,
@@ -34,7 +36,7 @@ for (const id of ids) {
     const text = h.stdout + '\n' + h.stderr;
     const missing = chk.expect.filter((f) => !text.includes(f));
     const cmd = `${id} ${chk.args.join(' ')}`;
-    if (missing.length) { failed++; console.log(`  ✗ ${cmd}: missing ${missing.join(', ')}`); }
+    if (h.code !== 0 || missing.length) { failed++; console.log(`  ✗ ${cmd}: exit ${h.code}; missing ${missing.join(', ')}`); }
     else console.log(`  ✓ ${cmd} (${chk.expect.length} flags)`);
   }
 }

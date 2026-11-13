@@ -637,7 +637,7 @@ function streamRun(req, res, id, from) {
   const write = (ev) => res.write(`data: ${JSON.stringify(ev)}\n\n`);
   // Replay, merging consecutive text deltas so reconnects are cheap.
   let merged = null;
-  for (const ev of run.events.slice(Math.max(0, from))) {
+  for (const ev of run.eventLog.replay(from)) {
     if (ev.t === 'text') { if (merged) merged.text += ev.text; else merged = { ...ev }; merged.i = ev.i; continue; }
     if (merged) { write(merged); merged = null; }
     write(ev);

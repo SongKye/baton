@@ -44,6 +44,13 @@ function parseTime(s) {
 
 let listCache = { mtimeMs: 0, rows: [] };
 
+async function existingConversations(rows) {
+  // The CLI's summary DB can outlive a deleted conversation. Check cached rows too:
+  // trash/restore changes the transcript files without touching the summary timestamp.
+  const present = await Promise.all(rows.map((row) => statSafe(row.file)));
+  return rows.filter((_, i) => present[i]?.isFile());
+}
+
 export async function listAgy() {
   const st = await statSafe(SUMMARY_DB);
   if (!st) return [];
@@ -51,10 +58,10 @@ export async function listAgy() {
   const hist = await statSafe(HISTORY);
   const stamp = st.mtimeMs + (wal?.mtimeMs || 0) + (hist?.mtimeMs || 0);
   const typed = await interactiveIds();
-  if (stamp === listCache.mtimeMs) return listCache.rows;
+  if (stamp === listCache.mtimeMs) return existingConversations(listCache.rows);
   const batonIds = new Set(getKV('baton_agy_ids', []) || []);
   let db;
-  try { db = openRO(SUMMARY_DB); } catch { return listCache.rows; }
+  try { db = openRO(SUMMARY_DB); } catch { return existingConversations(listCache.rows); }
   const rows = [];
   try {
     for (const r of db.prepare(`SELECT conversation_id, title, preview, step_count, last_modified_time, workspace_uris,
@@ -89,12 +96,12 @@ export async function listAgy() {
       });
     }
   } catch {
-    return listCache.rows;
+    return existingConversations(listCache.rows);
   } finally {
     try { db.close(); } catch { /* ignore */ }
   }
   listCache = { mtimeMs: stamp, rows };
-  return rows;
+  return existingConversations(rows);
 }
 
 // ---------- generic protobuf wire decoding ----------
