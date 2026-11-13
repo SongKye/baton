@@ -122,3 +122,14 @@ export async function pool(items, limit, fn) {
   await Promise.all(workers);
   return out;
 }
+
+/** 1 if a > b, -1 if a < b, 0 if equal (x.y.z, a pre-release sorts before its release). */
+export function cmpVersion(a, b) {
+  const p = (v) => { const [core, pre] = String(v).replace(/^v/, '').split('-'); return { n: core.split('.').map((x) => Number(x) || 0), pre: pre || '' }; };
+  const x = p(a), y = p(b);
+  for (let i = 0; i < 3; i++) if ((x.n[i] || 0) !== (y.n[i] || 0)) return (x.n[i] || 0) > (y.n[i] || 0) ? 1 : -1;
+  if (x.pre === y.pre) return 0;
+  if (!x.pre) return 1;
+  if (!y.pre) return -1;
+  return x.pre > y.pre ? 1 : -1;
+}

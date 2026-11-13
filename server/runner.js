@@ -21,6 +21,7 @@ import { getKV, setKV } from './store.js';
 import { codexDefaultFallback } from './providers.js';
 import { clip } from './util.js';
 import { noteMcpStatus } from './mcp.js';
+import { createRunEvents } from './run-events.js';
 
 const runs = new Map();         // runId -> run
 const activeByKey = new Map();  // "<tool>:<sessionId>" -> runId
@@ -28,6 +29,9 @@ export const bus = new EventEmitter(); // 'run_end' (run)
 bus.setMaxListeners(100);
 
 export const childPids = new Set();
+
+/** Test hook (scripts/compat-smoke.mjs): sees every raw JSON event a CLI streams, before parsing. */
+export const rawTap = { fn: null };
 
 /** Environment for child CLIs: drop variables that would make a nested CLI think it's inside another session. */
 export function childEnv(extra = {}) {
@@ -312,16 +316,15 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
   }
   const opts = { sessionId, model, effort, perm, prompt, images, cwd };
   const cmd = BUILDERS[tool](opts);
+  const eventLog = createRunEvents();
 
   const run = {
     id: crypto.randomUUID(), tool, sessionId: sessionId || null, cwd, prompt, model: model || null, reqModel: model || null, effort: effort || null, images: images?.length || 0, perm: perm || 'auto',
-    title: title || null, status: 'running', startedAt: Date.now(), endedAt: null, events: [], result: null, error: null,
+    title: title || null, status: 'running', startedAt: Date.now(), endedAt: null, events: eventLog.events, eventLog, result: null, error: null,
     stderr: '', listeners: new Set(), child: null, lastText: '',
   };
   run.emit = (ev) => {
-    ev.i = run.events.length;
-    run.events.push(ev);
-    if (run.events.length > 20000) run.events.splice(0, 5000); // safety cap
+    eventLog.append(ev);
     for (const l of run.listeners) { try { l(ev); } catch { /* ignore */ } }
   };
   run.setSession = (id) => {
@@ -336,6 +339,7 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
   const parse = PARSERS[tool](run);
   const child = spawnCli(binFor(tool) || cmd.bin, cmd.args, {
     cwd,
+    detached: !IS_WIN, // its shell/tool descendants share a process group for Stop
     env: childEnv({ BATON_RUN: run.id }),
     stdio: [cmd.stdin != null ? 'pipe' : 'ignore', 'pipe', 'pipe'],
   });
@@ -358,15 +362,22 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
   };
 
   let buf = '';
+  const parseLine = (line) => {
+    line = line.trim();
+    if (!line || line[0] !== '{') return;
+    let ev;
+    try { ev = JSON.parse(line); } catch { return; }
+    if (rawTap.fn) try { rawTap.fn(tool, ev); } catch { /* observer only */ }
+    try { parse(ev); } catch { /* malformed event */ }
+  };
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk) => {
     buf += chunk;
     let nl;
     while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl).trim();
+      const line = buf.slice(0, nl);
       buf = buf.slice(nl + 1);
-      if (!line || line[0] !== '{') continue;
-      try { parse(JSON.parse(line)); } catch { /* not json */ }
+      parseLine(line);
     }
   });
   child.stderr.setEncoding('utf8');
@@ -374,14 +385,15 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
 
   const finish = (code, signal, spawnErr) => {
     if (run.status !== 'running') return;
+    if (buf.trim()) { parseLine(buf); buf = ''; }
     if (child.pid) childPids.delete(child.pid);
     run.endedAt = Date.now();
     const res = run.result || {};
-    let ok = res.ok ?? (code === 0);
+    let ok = res.ok === true && code === 0;
     let error = res.error || null;
     if (spawnErr) { ok = false; error = tr('{bin} 실행 실패: {msg}', { bin: cmd.bin, msg: spawnErr.message }); }
     else if (run.stopped) { ok = false; error = tr('사용자가 중지했어요'); }
-    else if (!ok && !error) error = clip(run.stderr.trim().split('\n').slice(-6).join('\n'), 1200) || tr('종료 코드 {code}', { code: code ?? signal });
+    else if (!ok && !error) error = clip(run.stderr.trim().split('\n').slice(-6).join('\n'), 1200) || (code === 0 && res.ok == null ? 'CLI exited without a completion event' : tr('종료 코드 {code}', { code: code ?? signal }));
     run.status = ok ? 'done' : 'error';
     run.error = error;
     // ran into the CLI's usage/rate limit? the UI offers to hand the session to another CLI
@@ -391,7 +403,7 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
     run.emit({ t: 'done', ok, error, denied, limited: run.limited, result: res.result ? clip(res.result, 4000) : null, cost: res.cost ?? null, usage: res.usage ?? null, durationMs: run.endedAt - run.startedAt });
     if (run.sessionId) activeByKey.delete(`${tool}:${run.sessionId}`);
     bus.emit('run_end', run);
-    setTimeout(() => { run.listeners.clear(); runs.delete(run.id); }, 45 * 60 * 1000).unref();
+    setTimeout(() => { run.listeners.clear(); runs.delete(run.id); eventLog.dispose(); }, 45 * 60 * 1000).unref();
   };
   child.on('error', (err) => finish(null, null, err));
   child.on('close', (code, signal) => finish(code, signal));
@@ -422,20 +434,32 @@ export function stopRun(id) {
     spawn('taskkill', ['/pid', String(run.child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
     return true;
   }
-  run.child.kill('SIGINT');
-  setTimeout(() => { if (run.status === 'running') run.child.kill('SIGTERM'); }, 4000).unref();
-  setTimeout(() => { if (run.status === 'running') run.child.kill('SIGKILL'); }, 10000).unref();
+  const killGroup = (signal) => { try { process.kill(-run.child.pid, signal); } catch { /* already exited */ } };
+  killGroup('SIGINT');
+  setTimeout(() => killGroup('SIGTERM'), 4000).unref();
+  setTimeout(() => killGroup('SIGKILL'), 10000).unref();
   return true;
 }
 
-/** One-shot, non-persisted completion used for project briefs. Resolves to the final text. */
-export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
+// Runs live in their own process group (detached), so they no longer receive the terminal's
+// Ctrl+C or launchd's group kill along with Baton. End them whenever Baton exits; process.kill
+// is synchronous, so this works inside an 'exit' handler. Windows children are not detached.
+process.once('exit', () => {
+  if (IS_WIN) return;
+  for (const run of runs.values()) {
+    if (run.status === 'running' && run.child?.pid) { try { process.kill(-run.child.pid, 'SIGTERM'); } catch { /* already exited */ } }
+  }
+});
+
+/** One-shot, non-persisted completion (project briefs, skill drafts). Resolves to the final text. */
+export function oneShot({ tool, model, effort, prompt, cwd, timeoutMs = 180000, signal = null, failLabel = '' }) {
   return new Promise((resolve, reject) => {
     let bin, args, stdin = true;
     if (tool === 'opencode') {
       bin = 'opencode';
       args = ['run', '--format', 'json', '--agent', 'plan'];
       if (model) args.push('--model', model);
+      if (model && effort) args.push('--variant', effort);
     } else if (tool === 'cursor') {
       bin = 'cursor-agent';
       args = ['-p', '--output-format', 'json'];
@@ -447,47 +471,56 @@ export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000 }) {
       args = ['exec', '--json', '--skip-git-repo-check', '--ephemeral', '-c', 'sandbox_mode="read-only"'];
       model ||= codexDefaultFallback();
       if (model) args.push('-m', model);
+      if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
       args.push('-');
     } else if (tool === 'agy') {
       bin = 'agy';
       args = ['-p', prompt, '--output-format', 'json', '--mode', 'plan'];
       if (model) args.push('--model', model);
+      if (effort) args.push('--effort', effort);
       stdin = false;
     } else {
       bin = 'claude';
       args = ['-p', '--output-format', 'json', '--no-session-persistence', '--permission-mode', 'plan', '--tools', ''];
       if (model) args.push('--model', model);
+      if (effort) args.push('--effort', effort);
     }
     const child = spawnCli(binFor(tool) || bin, args, { cwd, env: childEnv(), stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     if (child.pid) childPids.add(child.pid);
     let out = '', err = '';
     const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+    signal?.addEventListener('abort', () => child.kill('SIGTERM'), { once: true });
     child.stdout.on('data', (c) => { out += c; });
     child.stderr.on('data', (c) => { err = (err + c).slice(-4000); });
     child.on('error', (e) => { clearTimeout(timer); reject(e); });
     child.on('close', (code) => {
       clearTimeout(timer);
       if (child.pid) childPids.delete(child.pid);
+      if (signal?.aborted) return reject(new Error(tr('취소했어요')));
+      if (code !== 0) return reject(new Error(`${failLabel || tr('요약 생성 실패')} (code ${code}): ${clip(err || out, 400)}`));
       try {
         if (tool === 'opencode') {
           const texts = [];
+          let failed = false;
           for (const line of out.split('\n')) {
-            try { const e = JSON.parse(line); if (e.type === 'text' && e.part?.text) texts.push(e.part.text); } catch { /* skip */ }
+            try { const e = JSON.parse(line); if (e.type === 'error') failed = true; if (e.type === 'text' && e.part?.text) texts.push(e.part.text); } catch { /* skip */ }
           }
-          if (texts.length) return resolve(texts.join('\n'));
+          if (texts.length && !failed) return resolve(texts.join('\n'));
         } else if (tool === 'codex') {
           let text = '';
+          let completed = false, failed = false;
           for (const line of out.split('\n')) {
-            try { const e = JSON.parse(line); if (e.type === 'item.completed' && e.item?.type === 'agent_message') text = e.item.text; } catch { /* skip */ }
+            try { const e = JSON.parse(line); if (e.type === 'turn.completed') completed = true; if (e.type === 'turn.failed' || e.type === 'error') failed = true; if (e.type === 'item.completed' && e.item?.type === 'agent_message') text = e.item.text; } catch { /* skip */ }
           }
-          if (text) return resolve(text);
+          if (text && completed && !failed) return resolve(text);
         } else {
           const j = JSON.parse(out.trim().split('\n').filter(Boolean).pop());
           const text = j.result?.response ?? j.result ?? j.response;
-          if (typeof text === 'string' && text) return resolve(text);
+          if (!j.is_error && !j.error && (!j.result?.status || j.result.status === 'SUCCESS') && typeof text === 'string' && text) return resolve(text);
         }
       } catch { /* fallthrough */ }
-      reject(new Error(tr('요약 생성 실패 (code {code}): {msg}', { code, msg: clip(err || out, 400) })));
+      if (signal?.aborted) return reject(new Error(tr('취소했어요')));
+      reject(new Error(`${failLabel || tr('요약 생성 실패')} (code ${code}): ${clip(err || out, 400)}`));
     });
     if (stdin) { child.stdin.on('error', () => {}); child.stdin.end(prompt); }
   });

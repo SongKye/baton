@@ -1,6 +1,8 @@
 // Read-only deployment preflight. Never creates commits/tags or publishes.
 import { lookup } from 'node:dns/promises';
 import { readFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -24,6 +26,18 @@ if (status.error) {
   report(false, `Cannot run git status: ${status.error.code || status.error.message}. Working-tree cleanliness is unknown.`);
 } else {
   report(status.status === 0 && !status.stdout.trim(), 'working tree must be committed and clean before release');
+}
+
+// compat.json ships in the release as "verified": it must have been re-checked with exactly this server code
+{
+  const tree = run('git', ['rev-parse', 'HEAD:server']).stdout?.trim();
+  const table = JSON.parse(readFileSync(new URL('../server/compat.json', import.meta.url), 'utf8'));
+  let stamp = null;
+  try { stamp = JSON.parse(readFileSync(path.join(os.homedir(), '.baton-compat', 'release-verified.json'), 'utf8')); } catch { /* none */ }
+  const expected = Object.entries(table).filter(([, e]) => e.level === 'supported' && e.verified);
+  const same = stamp && stamp.serverTree === tree && expected.every(([id, e]) => stamp.results?.some((r) => r.tool === id && r.ok && r.version === e.verified));
+  report(Boolean(same), same ? `CLI compatibility re-verified with this release's code (${expected.map(([id, e]) => `${id} ${e.verified}`).join(', ')})`
+    : 'CLI compatibility must be re-verified with this release\'s code: run `npm run compat:release`');
 }
 
 let network = true;

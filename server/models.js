@@ -108,7 +108,8 @@ function refreshCodexModels() {
   codexList.at = Date.now();
   const bin = binFor('codex');
   if (!bin) return;
-  runCli(bin, ['debug', 'models'], { timeout: 60000, cwd: HOME }).then(({ stdout }) => {
+  runCli(bin, ['debug', 'models'], { timeout: 60000, cwd: HOME }).then(({ stdout, code }) => {
+    if (code !== 0) { codexList.ok = false; return; }
     let models = null;
     try { models = JSON.parse(stdout).models; } catch { /* not json */ }
     codexList.ok = Boolean(models?.length);
@@ -168,16 +169,17 @@ function codexCatalog() {
 }
 
 // ---------------------------------------------------------------- agy
-let agyCache = { at: 0, models: [] };
+let agyCache = { at: 0, models: [], ok: false };
 function refreshAgy() {
   execFile('agy', ['models'], { timeout: 30000, env: childEnv() }, (err, stdout) => {
-    if (err) return;
+    if (err) { agyCache.ok = false; return; }
     const models = [];
     for (const line of stdout.split('\n')) {
       const m = line.match(/^(\S+)\t(.+)$/);
       if (m) models.push({ id: m[1], label: m[2].trim() });
     }
-    if (models.length) agyCache = { at: Date.now(), models };
+    agyCache.ok = models.length > 0;
+    if (models.length) agyCache = { at: Date.now(), models, ok: true };
   });
 }
 const agyEffortOf = (id) => String(id || '').match(/-(minimal|low|medium|high|xhigh|max)$/)?.[1] || null;
@@ -300,7 +302,8 @@ function refreshOpencodeModels() {
   const sig = opencodeSig(bin);
   if (sig === ocList.sig && Date.now() - ocList.at < (ocList.ok ? 6 * 3600 * 1000 : 30 * 1000)) return;
   ocList.at = Date.now(); ocList.sig = sig; ocBusy = true;
-  runCli(bin, ['models', '--verbose'], { timeout: 60000 }).then(({ stdout }) => {
+  runCli(bin, ['models', '--verbose'], { timeout: 60000 }).then(({ stdout, code }) => {
+    if (code !== 0) { ocList.ok = false; return; }
     const models = parseOpencodeVerbose(stdout);
     ocList.ok = models.length > 0;
     if (ocList.ok) ocList.models = models;
@@ -339,4 +342,11 @@ export function catalogs() {
     opencode: opencodeCatalog(),
     cursor: simpleCatalog('cursor', tr('Cursor 계정의 기본 모델 (auto)')),
   };
+}
+
+/** Evidence for compatibility checks: built-in defaults must not masquerade as a live model list. */
+export function modelCatalogStatus(tool) {
+  if (tool === 'claude') return { source: 'built-in', ok: true };
+  const state = { codex: codexList, agy: agyCache, opencode: ocList }[tool];
+  return { source: 'cli', ok: Boolean(state?.ok), at: state?.at || null };
 }

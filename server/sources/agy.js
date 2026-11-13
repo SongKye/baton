@@ -6,6 +6,7 @@
 //   step_type 15 (agent response):  field 20.1  -> reply text, 20.3 -> thinking, 20.7.{2,3} -> tool call name/args
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { HOME, clip, oneLine, statSafe, cleanPrompt, eachJsonl } from '../util.js';
 import { summarizeTool } from './common.js';
 import { getKV } from '../store.js';
@@ -44,6 +45,13 @@ function parseTime(s) {
 
 let listCache = { mtimeMs: 0, rows: [] };
 
+async function existingConversations(rows) {
+  // The CLI's summary DB can outlive a deleted conversation. Check cached rows too:
+  // trash/restore changes the transcript files without touching the summary timestamp.
+  const present = await Promise.all(rows.map((row) => statSafe(row.file)));
+  return rows.filter((_, i) => present[i]?.isFile());
+}
+
 export async function listAgy() {
   const st = await statSafe(SUMMARY_DB);
   if (!st) return [];
@@ -51,10 +59,10 @@ export async function listAgy() {
   const hist = await statSafe(HISTORY);
   const stamp = st.mtimeMs + (wal?.mtimeMs || 0) + (hist?.mtimeMs || 0);
   const typed = await interactiveIds();
-  if (stamp === listCache.mtimeMs) return listCache.rows;
+  if (stamp === listCache.mtimeMs) return existingConversations(listCache.rows);
   const batonIds = new Set(getKV('baton_agy_ids', []) || []);
   let db;
-  try { db = openRO(SUMMARY_DB); } catch { return listCache.rows; }
+  try { db = openRO(SUMMARY_DB); } catch { return existingConversations(listCache.rows); }
   const rows = [];
   try {
     for (const r of db.prepare(`SELECT conversation_id, title, preview, step_count, last_modified_time, workspace_uris,
@@ -62,7 +70,7 @@ export async function listAgy() {
         FROM conversation_summaries`).all()) {
       let ws = [];
       try { ws = JSON.parse(r.workspace_uris || '[]'); } catch { /* ignore */ }
-      const cwd = ws[0] ? decodeURIComponent(String(ws[0]).replace(/^file:\/\//, '')) : null;
+      const cwd = ws[0] ? (String(ws[0]).startsWith('file:') ? fileURLToPath(ws[0]) : String(ws[0])) : null;
       const isSub = (r.nesting_depth || 0) > 0 || Boolean(r.parent_conversation_id);
       const automated = !batonIds.has(r.conversation_id) && (isSub || Boolean(cwd?.startsWith('/tmp')) || !typed.has(r.conversation_id));
       const preview = cleanPrompt(r.preview || '');
@@ -89,12 +97,12 @@ export async function listAgy() {
       });
     }
   } catch {
-    return listCache.rows;
+    return existingConversations(listCache.rows);
   } finally {
     try { db.close(); } catch { /* ignore */ }
   }
   listCache = { mtimeMs: stamp, rows };
-  return rows;
+  return existingConversations(rows);
 }
 
 // ---------- generic protobuf wire decoding ----------

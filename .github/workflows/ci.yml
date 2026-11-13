@@ -39,27 +39,23 @@ jobs:
             $null = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$parseErrors)
             if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
           }
-      - name: Syntax check
-        shell: bash
-        run: for f in server/*.js server/sources/*.js public/*.js scripts/*.mjs; do node --check "$f"; done
-      - name: Translations complete
-        run: npm run i18n:check
-      - name: Disabled update alerts and manual release checks
-        run: node scripts/update-alerts-check.mjs
-      - name: Windows installation regression checks
-        run: node scripts/windows-install-check.mjs
-      - name: Chat image regression checks
-        run: node scripts/chat-images-check.mjs
-      - name: OpenCode db / legacy storage checks
-        run: node scripts/opencode-storage-check.mjs
-      - name: OpenCode model list checks (CRLF, refresh after install / sign-in)
-        run: node scripts/opencode-models-check.mjs
-      - name: Codex default-model fallback checks
-        run: node scripts/codex-fallback-check.mjs
-      - name: Composer @ picker checks
-        if: runner.os != 'Windows' # creates symlinks, which need admin rights there
-        run: node scripts/mention-check.mjs
-      - name: Independent installation and port checks
-        run: node scripts/listener-check.mjs
-      - name: Boot the server and hit every endpoint
-        run: node scripts/ci-boot.mjs
+      - name: Offline regression suite (isolated installation)
+        run: npm test
+  browser:
+    name: Chromium reconnect and questions
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /tmp/baton-playwright-browsers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --omit=dev
+      - name: Install isolated browser test tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/baton-browser" --no-save playwright@1.64.1
+          "$RUNNER_TEMP/baton-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Production renderer and SSE in desktop/mobile viewports
+        run: BATON_PLAYWRIGHT="$RUNNER_TEMP/baton-browser/node_modules/playwright" npm run test:browser

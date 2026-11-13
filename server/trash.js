@@ -84,17 +84,29 @@ export async function trashSession(s) {
 export async function restoreSession(key) {
   const r = db.prepare('SELECT * FROM trash WHERE key = ?').get(key);
   if (!r) throw new Error(tr('휴지통에 없어요'));
-  for (const entry of JSON.parse(r.files)) {
-    if (entry.kind === 'opencode-db') {
-      changeOpencodeArchive(entry.id, entry.previous);
-      continue;
-    }
-    const { from, to } = entry;
-    if (fs.existsSync(from) || !fs.existsSync(to)) continue;
-    await move(to, from);
+  const entries = JSON.parse(r.files);
+  // Never discard the backup when the CLI recreated a file at its old location.
+  // Check the entire restore before moving anything, including companion folders.
+  for (const { kind, from, to } of entries) {
+    if (kind === 'opencode-db') continue;
+    if (fs.existsSync(from)) throw Object.assign(new Error(tr('복원할 위치에 파일이 이미 있어요. 휴지통 원본은 보관했어요: {path}', { path: from })), { code: 'RESTORE_CONFLICT' });
+    if (!fs.existsSync(to)) throw Object.assign(new Error(tr('복원할 백업 파일이 없어요. 휴지통 기록은 보관했어요: {path}', { path: to })), { code: 'RESTORE_MISSING' });
   }
-  await fsp.rm(r.dir, { recursive: true, force: true });
-  db.prepare('DELETE FROM trash WHERE key = ?').run(key);
+  const moved = [], archives = [];
+  try {
+    for (const entry of entries) {
+      if (entry.kind === 'opencode-db') {
+        archives.push({ id: entry.id, previous: changeOpencodeArchive(entry.id, entry.previous) });
+      } else { await move(entry.to, entry.from); moved.push(entry); }
+    }
+    db.prepare('DELETE FROM trash WHERE key = ?').run(key);
+  } catch (e) {
+    for (const { from, to } of moved.reverse()) await move(from, to);
+    for (const archive of archives.reverse()) changeOpencodeArchive(archive.id, archive.previous);
+    throw e;
+  }
+  // Only empty container directories remain. A cleanup failure must not hide a restored session.
+  await fsp.rm(r.dir, { recursive: true, force: true }).catch(() => {});
 }
 
 export function listTrash() {

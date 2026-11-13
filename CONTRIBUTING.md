@@ -42,11 +42,13 @@ Don't name a local variable `t` in `public/app.js` — it shadows the translatio
 ## Before opening a PR
 
 ```bash
-npm run i18n:check
-node scripts/ci-boot.mjs       # boots the server and checks every endpoint (what CI runs)
+npm test                     # isolated regression suite, including translations and server endpoints
 ```
 
 If you have Playwright and Chrome, `node scripts/smoke.cjs http://127.0.0.1:7420 <path-to-playwright-core>` opens every screen and reports page errors.
+For isolated reconnect/question regressions, run `npm run test:browser` with `BATON_PLAYWRIGHT` pointing to
+your installed Playwright package directory (`BATON_BROWSER` optionally specifies the Chromium executable).
+CI runs this separately from the offline suite; no account or live AI service is needed.
 
 Please also add a line under **Unreleased** in `CHANGELOG.md`.
 

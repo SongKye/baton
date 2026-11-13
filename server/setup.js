@@ -14,7 +14,8 @@ import { invalidateModels } from './models.js';
 import { tr, lang } from './i18n.js';
 import { claudeProvider, codexProvider } from './providers.js';
 import { envInfo } from './env.js';
-import { updateCommand } from './update.js';
+import { updateCommand, updateCached } from './update.js';
+import { compatInfo, refreshRemote, cliUpdatePlan } from './compat.js';
 
 import { PORT } from './runtime.js';
 
@@ -68,6 +69,8 @@ export async function setupStatus({ fresh = false } = {}) {
   if (!fresh && statusCache.v && Date.now() - statusCache.at < 20_000) return statusCache.v;
   clearWhichCache();
   const nodeVer = process.versions.node.split('.').map(Number);
+  const latestBaton = updateCached().latest;
+  await refreshRemote({ latestBaton }).catch(() => null); // newest release's compatibility table (advice only, cached 6 h)
   const tools = await Promise.all(TOOL_IDS.map(async (id) => {
     const t = TOOLS[id];
     const bin = binFor(id);
@@ -79,6 +82,7 @@ export async function setupStatus({ fresh = false } = {}) {
     if (bin && id === 'codex') { const p = codexProvider(); if (!p.subscription) { provider = p.label; logged = p.configured; } }
     return {
       id, name: t.name, vendor: t.vendor, docs: t.docs, installed: Boolean(bin), path: bin, version: ver, loggedIn: Boolean(logged) && logged !== 'expired', loginExpired: logged === 'expired', provider,
+      compat: compatInfo(id, ver, { latestBaton }),
       optionalLogin: Boolean(t.optionalLogin), installCmd: plan?.cmd || null, canInstall: Boolean(plan),
       loginKind: t.login?.kind || null, loginCmd: bin ? [path.basename(bin).replace(/\.(cmd|exe)$/i, ''), ...t.login.args].join(' ') : null,
       note: t.note?.[lang()] || t.note?.en,
@@ -210,7 +214,7 @@ function finish(job, code) {
   job.exit = code;
   clearWhichCache();
   statusCache.at = 0;
-  if (code === 0 && (job.action === 'install' || job.action === 'login')) invalidateModels(); // new CLI / account -> new model list
+  if (code === 0 && (job.action === 'install' || job.action === 'login' || job.action === 'cli-update')) invalidateModels(); // new CLI / account -> new model list
   job.emit({ t: 'end', ok: code === 0, code });
 }
 
@@ -286,6 +290,17 @@ async function createJob(action, tool, t) {
     const afterSuccess = (j) => ensureOnShellPath(tool, j);
     if (plan.kind === 'npm') attach(job, spawnCli('npm', ['install', '-g', TOOLS[tool].install.npm], { env: childEnv(), stdio: ['ignore', 'pipe', 'pipe'] }), { afterSuccess });
     else attach(job, shellSpawn(plan.cmd), { afterSuccess });
+    return job;
+  }
+  if (action === 'cli-update') {
+    const bin = binFor(tool);
+    if (!bin) throw new Error(tr('먼저 설치해주세요'));
+    const info = compatInfo(tool, await version(bin), { latestBaton: updateCached().latest });
+    const plan = info.action === 'cli-update' && cliUpdatePlan(tool, bin, info.target);
+    if (!plan) throw new Error(tr('지금 버전에서 올릴 검증된 버전이 없어요'));
+    const job = newJob(`${t.name} ${tr('업데이트')} → v${info.target}`);
+    job.emit({ t: 'line', stream: 'cmd', text: `$ ${path.basename(plan.bin)} ${plan.args.join(' ')}` });
+    attach(job, spawnCli(plan.bin, plan.args, { env: childEnv(), stdio: ['ignore', 'pipe', 'pipe'], cwd: HOME }));
     return job;
   }
   if (action === 'login') {
