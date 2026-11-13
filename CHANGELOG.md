@@ -36,6 +36,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Skill descriptions written as YAML block scalars (`description: >-`) no longer show a stray `>-`.
 
 ### Changed
+- Verified with Codex 0.169.0, Antigravity 1.5.8 on Linux (weekly automatic check).
 - Automatic compatibility fixes explicitly use medium reasoning effort with the configured Claude model (Opus 5.5 by default).
 - Manual compatibility reports must match the recording checkout's revision, OS and architecture and come from a clean worktree before they can update verified versions.
 - Weekly compatibility checks also exercise unchanged CLI versions. Authentication/quota/environment failures do not trigger code fixes; network failures are retried once. Ready fix PRs require both exact old/new binaries and the full offline regression suite. Modified verifier files are restored before re-testing. Schema drift and missing/untyped baselines block auto-merge on all OS report paths.

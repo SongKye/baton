@@ -1,5 +1,5 @@
 {
- "version": "1.5.6",
+ "version": "1.5.8",
  "stream": [
   "init conversation_id",
   "init event",
@@ -53,7 +53,9 @@
   "step_update/tool step_update.step_type",
   "step_update/tool step_update.tool_info",
   "step_update/tool step_update.tool_info.name",
+  "step_update/tool step_update.tool_info.output",
   "step_update/tool step_update.tool_info.parameters",
+  "step_update/tool step_update.tool_info.parameters.CommandLine",
   "step_update/tool step_update.tool_info.parameters.Path",
   "step_update/tool step_update.tool_name",
   "step_update/user_input event",
@@ -63,5 +65,196 @@
   "step_update/user_input step_update.step_index",
   "step_update/user_input step_update.step_type"
  ],
- "file": []
+ "file": [],
+ "types": {
+  "init event": [
+   "string"
+  ],
+  "init conversation_id": [
+   "string"
+  ],
+  "init init": [
+   "object"
+  ],
+  "init init.cwd": [
+   "string"
+  ],
+  "init init.tools": [
+   "array"
+  ],
+  "init init.permission_mode": [
+   "string"
+  ],
+  "init init.expanded_commands": [
+   "array"
+  ],
+  "init init.expanded_commands[].name": [
+   "string"
+  ],
+  "init init.expanded_commands[].type": [
+   "string"
+  ],
+  "step_update/user_input event": [
+   "string"
+  ],
+  "step_update/user_input step_update": [
+   "object"
+  ],
+  "step_update/user_input step_update.conversation_id": [
+   "string"
+  ],
+  "step_update/user_input step_update.step_index": [
+   "number"
+  ],
+  "step_update/user_input step_update.state": [
+   "string"
+  ],
+  "step_update/user_input step_update.step_type": [
+   "string"
+  ],
+  "step_update/agent_response event": [
+   "string"
+  ],
+  "step_update/agent_response step_update": [
+   "object"
+  ],
+  "step_update/agent_response step_update.conversation_id": [
+   "string"
+  ],
+  "step_update/agent_response step_update.step_index": [
+   "number"
+  ],
+  "step_update/agent_response step_update.state": [
+   "string"
+  ],
+  "step_update/agent_response step_update.step_type": [
+   "string"
+  ],
+  "step_update/agent_response step_update.text_delta": [
+   "string"
+  ],
+  "step_update/agent_response step_update.duration_seconds": [
+   "number"
+  ],
+  "step_update/agent_response step_update.usage": [
+   "object"
+  ],
+  "step_update/agent_response step_update.usage.input_tokens": [
+   "number"
+  ],
+  "step_update/agent_response step_update.usage.output_tokens": [
+   "number"
+  ],
+  "step_update/agent_response step_update.usage.thinking_tokens": [
+   "number"
+  ],
+  "step_update/agent_response step_update.usage.cache_read_tokens": [
+   "number"
+  ],
+  "step_update/agent_response step_update.usage.total_tokens": [
+   "number"
+  ],
+  "result event": [
+   "string"
+  ],
+  "result result": [
+   "object"
+  ],
+  "result result.conversation_id": [
+   "string"
+  ],
+  "result result.status": [
+   "string"
+  ],
+  "result result.response": [
+   "string"
+  ],
+  "result result.duration_seconds": [
+   "number"
+  ],
+  "result result.num_turns": [
+   "number"
+  ],
+  "result result.usage": [
+   "object"
+  ],
+  "result result.usage.input_tokens": [
+   "number"
+  ],
+  "result result.usage.output_tokens": [
+   "number"
+  ],
+  "result result.usage.thinking_tokens": [
+   "number"
+  ],
+  "result result.usage.cache_read_tokens": [
+   "number"
+  ],
+  "result result.usage.total_tokens": [
+   "number"
+  ],
+  "step_update/system_message event": [
+   "string"
+  ],
+  "step_update/system_message step_update": [
+   "object"
+  ],
+  "step_update/system_message step_update.conversation_id": [
+   "string"
+  ],
+  "step_update/system_message step_update.step_index": [
+   "number"
+  ],
+  "step_update/system_message step_update.state": [
+   "string"
+  ],
+  "step_update/system_message step_update.step_type": [
+   "string"
+  ],
+  "step_update/system_message step_update.duration_seconds": [
+   "number"
+  ],
+  "step_update/tool event": [
+   "string"
+  ],
+  "step_update/tool step_update": [
+   "object"
+  ],
+  "step_update/tool step_update.conversation_id": [
+   "string"
+  ],
+  "step_update/tool step_update.step_index": [
+   "number"
+  ],
+  "step_update/tool step_update.state": [
+   "string"
+  ],
+  "step_update/tool step_update.step_type": [
+   "string"
+  ],
+  "step_update/tool step_update.tool_name": [
+   "string"
+  ],
+  "step_update/tool step_update.tool_info": [
+   "object"
+  ],
+  "step_update/tool step_update.tool_info.name": [
+   "string"
+  ],
+  "step_update/tool step_update.tool_info.parameters": [
+   "object"
+  ],
+  "step_update/tool step_update.tool_info.parameters.Path": [
+   "string"
+  ],
+  "step_update/tool step_update.duration_seconds": [
+   "number"
+  ],
+  "step_update/tool step_update.tool_info.output": [
+   "string"
+  ],
+  "step_update/tool step_update.tool_info.parameters.CommandLine": [
+   "string"
+  ]
+ }
 }

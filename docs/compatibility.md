@@ -10,8 +10,8 @@ was verified with** for each CLI. The source of truth is `server/compat.json`. T
 | CLI | Support | Linux | Windows | macOS |
 |---|---|---|---|---|
 | Claude Code | Supported | **2.1.318** (2026-11-12) | — | — |
-| Codex | Supported | **0.156.0** (2026-11-12) | — | — |
-| Antigravity | Supported | **1.5.6** (2026-11-12) | — | — |
+| Codex | Supported | **0.169.0** (2026-11-14) | — | — |
+| Antigravity | Supported | **1.5.8** (2026-11-14) | — | — |
 | OpenCode | Supported | **1.19.5** (2026-11-12) | — | — |
 | Cursor | Unverified | — | — | — |
 <!-- /compat-table -->
