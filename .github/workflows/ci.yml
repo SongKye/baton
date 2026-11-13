@@ -43,6 +43,8 @@ jobs:
         run: npm test
   browser:
     name: Chromium reconnect and questions
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/baton-playwright-browsers
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

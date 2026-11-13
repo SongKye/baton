@@ -23,7 +23,9 @@ try {
   for (const name of ['claude', 'codex', 'agy', 'opencode', 'cursor-agent', 'agent']) {
     await fs.writeFile(path.join(bin, name + (process.platform === 'win32' ? '.cmd' : '')), process.platform === 'win32' ? '@exit /b 1\r\n' : '#!/bin/sh\nexit 1\n', { mode: 0o755 });
   }
-  env.PATH = bin + path.delimiter + (env.PATH || '');
+  const inheritedPath = Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1] || '';
+  for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
+  env.PATH = bin + path.delimiter + inheritedPath;
   for (const key of Object.keys(env)) if (/^(ANTHROPIC_|OPENAI_|AZURE_OPENAI_|CLAUDE_CODE_USE_|AWS_|GOOGLE_API_KEY$|GEMINI_API_KEY$|GH_TOKEN$|GITHUB_TOKEN$)/.test(key)) delete env[key];
   const run = (args) => {
     const result = spawnSync(process.execPath, args, { cwd: app, env, stdio: 'inherit', timeout: 180000 });

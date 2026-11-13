@@ -606,7 +606,8 @@ route('POST', '/api/settings', async (req) => {
     try {
       if (typeof patch.defaultCwd !== 'string') throw new Error();
       const dir = resolveCwd(patch.defaultCwd);
-      resolveCwd(await fsp.realpath(dir));
+      const relative = path.relative(await fsp.realpath(HOME), await fsp.realpath(dir));
+      if (relative.split(path.sep)[0] === '..' || path.isAbsolute(relative)) throw new Error();
       if (!(await fsp.stat(dir)).isDirectory()) throw new Error();
       patch.defaultCwd = shortHome(dir);
     } catch { return [400, { error: tr('폴더를 열 수 없어요. 경로와 접근 권한을 확인해주세요') }]; }
