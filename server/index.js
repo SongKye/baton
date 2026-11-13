@@ -4,6 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { ROOT, HOME, DAY, clip, shortHome } from './util.js';
 import * as store from './store.js';
 import { decoratedSessions, projectsList, findSession, readMessages, getSnapshot, forceRefresh } from './indexer.js';
@@ -18,7 +19,8 @@ import { startWatcher } from './watch.js';
 import { listPorts, listPortsCached, invalidatePorts, shareToPhone, unshare, stopPort } from './ports.js';
 import { listServers, startServer, stopServer, removeServer, addServer, serverLogs, observe as observeServers, startServerWatch } from './servers.js';
 import { projectServices, reposReport, addLink, removeLink } from './links.js';
-import { skillsReport, skillDetail, pickableSkills } from './skills.js';
+import { skillsReport, skillDetail, pickableSkills, projectSkills } from './skills.js';
+import { targetsPreview, startDraft, draftStatus, cancelDraft, saveSkill, skillSource, copySkill, deleteSkill } from './skill-create.js';
 import { mentionFiles } from './mention.js';
 import { mcpReport, mcpDetail, mcpEffective, checkMcp, invalidateMcp, mcpForPicker } from './mcp.js';
 import { setupStatus, startJob, getJob, jobInput, stopJob, publicJob, runningJobs } from './setup.js';
@@ -30,12 +32,14 @@ import { OS_NAME, openBrowser } from './platform.js';
 import { tr, lang } from './i18n.js';
 import { providersSummary, resetProviderCache } from './providers.js';
 import { connect, testConnection, probeModels, findLocalLlms } from './connect.js';
-import { presets as mcpPresets, addMcp, copyMcp, removeMcp } from './mcp-install.js';
+import { presets as mcpPresets, addMcp, copyMcp, removeMcp, planInstall, previewInstall } from './mcp-install.js';
+import { startMcpDraft, startInstall, mcpJob, cancelMcpJob, testExisting } from './mcp-create.js';
 import { qrSvg } from './qr.js';
 import { checkUpdate, updateCached, restartSelf } from './update.js';
 import crypto from 'node:crypto';
 import { ensureBrief, briefPending } from './brief.js';
 import { dozingProjects, sendNudge, startNudgeScheduler } from './nudge.js';
+import { startCompatWatch } from './compat-watch.js';
 import { pageMessages, slimMessage } from './sources/common.js';
 import { usageReport, startUsageScheduler } from './usage.js';
 import { observeRun, seedDefaults } from './observe.js';
@@ -332,6 +336,12 @@ route('POST', '/api/projects/:pid/meta', async (req, url, { pid }) => {
   return store.patchProjectMeta(id, patch);
 });
 
+route('GET', '/api/projects/:pid/skills', async (req, url, { pid }) => {
+  const id = decodeURIComponent(pid);
+  if (!(await projectsList()).some((x) => x.id === id)) return [404, { error: tr('프로젝트를 찾을 수 없어요') }];
+  return projectSkills(id);
+});
+
 route('POST', '/api/projects/:pid/brief', async (req, url, { pid }) => {
   const id = decodeURIComponent(pid);
   const p = (await projectsList()).find((x) => x.id === id);
@@ -543,6 +553,16 @@ route('POST', '/api/ports/:port/share', async (req, url, { port }) => shareToPho
 route('POST', '/api/ports/:port/unshare', async (req, url, { port }) => { await unshare(port); return { ok: true }; });
 route('POST', '/api/pids/:pid/stop', async (req, url, { pid }) => stopPort(pid));
 route('GET', '/api/skills', async () => skillsReport());
+// new skill: preview where it goes -> AI draft (background job, polled) -> save. Plus edit/copy/delete your own.
+const skillErr = (e) => [e.code === 'EXISTS' ? 409 : 400, { error: e.message, code: e.code || null }];
+route('GET', '/api/skills/targets', async (req, url) => { try { return targetsPreview(Object.fromEntries(url.searchParams)); } catch (e) { return skillErr(e); } });
+route('POST', '/api/skills/drafts', async (req) => { try { return await startDraft(await body(req)); } catch (e) { return skillErr(e); } });
+route('GET', '/api/skills/drafts/:id', async (req, url, { id }) => draftStatus(id) || [404, { error: tr('초안을 찾을 수 없어요') }]);
+route('POST', '/api/skills/drafts/:id/cancel', async (req, url, { id }) => ({ ok: cancelDraft(id) }));
+route('POST', '/api/skills/save', async (req) => { try { return await saveSkill(await body(req)); } catch (e) { return skillErr(e); } });
+route('POST', '/api/skills/copy', async (req) => { const b = await body(req); try { return await copySkill(b.id, b.tools); } catch (e) { return skillErr(e); } });
+route('POST', '/api/skills/delete', async (req) => { const b = await body(req); try { return await deleteSkill(b.id); } catch (e) { return skillErr(e); } });
+route('GET', '/api/skills/:id/source', async (req, url, { id }) => (await skillSource(id)) || [404, { error: tr('이 스킬은 여기서 고칠 수 없어요') }]);
 route('GET', '/api/skills/:id', async (req, url, { id }) => (await skillDetail(id)) || [404, { error: tr('스킬을 찾을 수 없어요') }]);
 route('GET', '/api/mcp', async (req, url) => { if (url.searchParams.get('fresh') === '1') invalidateMcp(); return mcpReport(); });
 route('GET', '/api/mcp/effective', async (req, url) => {
@@ -562,9 +582,17 @@ route('GET', '/api/mcp/presets', async () => ({ presets: mcpPresets() }));
 route('POST', '/api/mcp/add', async (req) => {
   try { return await addMcp(await body(req)); } catch (e) { return [400, { error: e.message }]; }
 });
+// new server: where it goes -> (AI draft, background job) -> install + test (background job). Both polled.
+route('GET', '/api/mcp/targets', async (req, url) => { try { return await planInstall(Object.fromEntries(url.searchParams)); } catch (e) { return [400, { error: e.message }]; } });
+route('POST', '/api/mcp/preview', async (req) => { try { return previewInstall(await body(req)); } catch (e) { return [400, { error: e.message }]; } });
+route('POST', '/api/mcp/drafts', async (req) => { try { return await startMcpDraft(await body(req)); } catch (e) { return [400, { error: e.message }]; } });
+route('POST', '/api/mcp/install', async (req) => { try { return await startInstall(await body(req)); } catch (e) { return [400, { error: e.message }]; } });
+route('GET', '/api/mcp/jobs/:id', async (req, url, { id }) => mcpJob(id) || [404, { error: tr('작업을 찾을 수 없어요') }]);
+route('POST', '/api/mcp/jobs/:id/cancel', async (req, url, { id }) => ({ ok: cancelMcpJob(id) }));
+route('POST', '/api/mcp/test', async (req) => { const b = await body(req); try { return await testExisting(b.id); } catch (e) { return [400, { error: e.message }]; } });
 route('POST', '/api/mcp/copy', async (req) => {
   const b = await body(req);
-  try { return await copyMcp(String(b.id || ''), b.tools); } catch (e) { return [400, { error: e.message }]; }
+  try { return await copyMcp(String(b.id || ''), b.tools, b.scope === 'global' ? 'global' : ''); } catch (e) { return [400, { error: e.message }]; }
 });
 route('POST', '/api/mcp/remove', async (req) => {
   const b = await body(req);
@@ -579,7 +607,8 @@ route('POST', '/api/settings', async (req) => {
     try {
       if (typeof patch.defaultCwd !== 'string') throw new Error();
       const dir = resolveCwd(patch.defaultCwd);
-      resolveCwd(await fsp.realpath(dir));
+      const relative = path.relative(await fsp.realpath(HOME), await fsp.realpath(dir));
+      if (relative.split(path.sep)[0] === '..' || path.isAbsolute(relative)) throw new Error();
       if (!(await fsp.stat(dir)).isDirectory()) throw new Error();
       patch.defaultCwd = shortHome(dir);
     } catch { return [400, { error: tr('폴더를 열 수 없어요. 경로와 접근 권한을 확인해주세요') }]; }
@@ -610,7 +639,7 @@ function streamRun(req, res, id, from) {
   const write = (ev) => res.write(`data: ${JSON.stringify(ev)}\n\n`);
   // Replay, merging consecutive text deltas so reconnects are cheap.
   let merged = null;
-  for (const ev of run.events.slice(Math.max(0, from))) {
+  for (const ev of run.eventLog.replay(from)) {
     if (ev.t === 'text') { if (merged) merged.text += ev.text; else merged = { ...ev }; merged.i = ev.i; continue; }
     if (merged) { write(merged); merged = null; }
     write(ev);
@@ -744,6 +773,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// Without handlers Node dies on these signals without running 'exit' hooks, which would leave
+// detached CLI runs and archived run events behind. Exit normally so those hooks clean up.
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.once(sig, () => process.exit(128 + os.constants.signals[sig]));
+
 let listening;
 try {
   listening = await listen(server, listener, HOST);
@@ -768,6 +801,7 @@ await (async () => {
   if (process.platform === 'win32') setTimeout(() => listPorts().catch(() => {}), 3000).unref(); // first PowerShell start is slow (~7 s)
   if (envInfo.imported.length || envInfo.extra.length) console.log(`[baton] env: ${envInfo.imported.length} vars from ${envInfo.shell || 'shell'}, ${envInfo.extra.length} from settings`);
   startNudgeScheduler();
+  startCompatWatch();
   startScheduler();
   startWatcher();
   startTrashPurge();

@@ -1,0 +1,52 @@
+{
+  "claude": {
+    "level": "supported",
+    "verified": "2.1.318",
+    "verifiedAt": "2026-11-12",
+    "os": {
+      "linux": {
+        "verified": "2.1.318",
+        "verifiedAt": "2026-11-12"
+      }
+    }
+  },
+  "codex": {
+    "level": "supported",
+    "verified": "0.169.0",
+    "verifiedAt": "2026-11-14",
+    "os": {
+      "linux": {
+        "verified": "0.169.0",
+        "verifiedAt": "2026-11-14"
+      }
+    }
+  },
+  "agy": {
+    "level": "supported",
+    "verified": "1.5.8",
+    "verifiedAt": "2026-11-14",
+    "os": {
+      "linux": {
+        "verified": "1.5.8",
+        "verifiedAt": "2026-11-14"
+      }
+    }
+  },
+  "opencode": {
+    "level": "supported",
+    "verified": "1.19.5",
+    "verifiedAt": "2026-11-12",
+    "os": {
+      "linux": {
+        "verified": "1.19.5",
+        "verifiedAt": "2026-11-12"
+      }
+    }
+  },
+  "cursor": {
+    "level": "unverified",
+    "verified": null,
+    "verifiedAt": null,
+    "os": {}
+  }
+}

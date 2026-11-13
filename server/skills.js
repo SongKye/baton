@@ -9,17 +9,24 @@ import { skillUses } from './usage.js';
 import { tr } from './i18n.js';
 import { CLAUDE_HOME, CODEX_HOME } from './env.js';
 
+const XDG_CONFIG = process.env.XDG_CONFIG_HOME || path.join(HOME, '.config');
 const exists = (p) => { try { return fs.statSync(p); } catch { return null; } };
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
 
-function frontmatter(text) {
+// "double-quoted" YAML is JSON-compatible (Baton writes descriptions that way); 'single' just drops the quotes
+function unquote(v) {
+  if (/^".*"$/.test(v)) { try { return JSON.parse(v); } catch { /* fall through */ } }
+  return v.replace(/^["']|["']$/g, '').trim();
+}
+
+export function frontmatter(text) {
   const m = text.match(/^---\s*\n([\s\S]*?)\n---/);
   const out = {};
   if (!m) return out;
   let key = null;
   for (const line of m[1].split('\n')) {
     const kv = line.match(/^([A-Za-z_-]+):\s*(.*)$/);
-    if (kv) { key = kv[1]; out[key] = kv[2].replace(/^["']|["']$/g, '').trim(); }
+    if (kv) { key = kv[1]; const v = kv[2].trim(); out[key] = /^[>|][-+]?$/.test(v) ? '' : unquote(v); } // `>-` block: text follows
     else if (key && /^\s+\S/.test(line)) out[key] = `${out[key]} ${line.trim()}`.trim();
   }
   if (out.description === '>' || out.description === '|') out.description = '';
@@ -95,8 +102,12 @@ async function discover() {
   }
   // ---- Antigravity
   all.push(...await skillsIn(path.join(G, 'builtin', 'skills'), { tool: 'agy', scope: 'builtin', scopeLabel: tr('Antigravity 기본 내장') }));
+  all.push(...await skillsIn(path.join(HOME, '.gemini', 'config', 'skills'), { tool: 'agy', scope: 'global', scopeLabel: tr('내 전역 스킬') }));
   all.push(...await skillsIn(path.join(G, 'skills'), { tool: 'agy', scope: 'global', scopeLabel: tr('내 전역 스킬') }));
   all.push(...await skillsIn(path.join(HOME, '.gemini', 'skills'), { tool: 'agy', scope: 'global', scopeLabel: tr('내 전역 스킬 (~/.gemini)') }));
+  // ---- OpenCode / Cursor (their own folders; the shared ~/.claude and ~/.agents ones are listed above)
+  all.push(...await skillsIn(path.join(XDG_CONFIG, 'opencode', 'skills'), { tool: 'opencode', scope: 'global', scopeLabel: tr('내 전역 스킬') }));
+  all.push(...await skillsIn(path.join(HOME, '.cursor', 'skills'), { tool: 'cursor', scope: 'global', scopeLabel: tr('내 전역 스킬') }));
   // ---- per project (every project Baton knows about)
   const projects = await projectsList();
   const roots = [...new Set(projects.map((p) => p.id).filter((r) => r && r !== HOME))];
@@ -109,6 +120,8 @@ async function discover() {
     all.push(...await skillsIn(path.join(root, '.codex', 'skills'), { ...base, tool: 'codex' }));
     all.push(...await skillsIn(path.join(root, '.agent', 'skills'), { ...base, tool: 'agy' }));
     all.push(...await skillsIn(path.join(root, '.gemini', 'skills'), { ...base, tool: 'agy' }));
+    all.push(...await skillsIn(path.join(root, '.opencode', 'skills'), { ...base, tool: 'opencode' }));
+    all.push(...await skillsIn(path.join(root, '.cursor', 'skills'), { ...base, tool: 'cursor' }));
   }
   // de-dupe by path
   const seen = new Set();
@@ -117,12 +130,13 @@ async function discover() {
 
 // ---------------------------------------------------------------- @ picker
 // Only what the chosen CLI can load from this folder: its global skills + the project's own, no usage scan.
-const XDG_CONFIG = process.env.XDG_CONFIG_HOME || path.join(HOME, '.config');
 // mine = folders people put their own skills in (shareable); builtin = ships with that CLI, only works there.
-const PICK_DIRS = {
+// Also where Baton writes new skills (skill-create.js): the first folder of each list is that CLI's own.
+export const PICK_DIRS = {
   claude: { mine: () => [path.join(CLAUDE_HOME, 'skills')], builtin: () => [], project: ['.claude/skills'] },
   codex: { mine: () => [path.join(CODEX_HOME, 'skills'), path.join(HOME, '.agents', 'skills')], builtin: () => [path.join(CODEX_HOME, 'skills', '.system')], project: ['.agents/skills', '.codex/skills'] },
-  agy: { mine: () => [path.join(HOME, '.gemini', 'antigravity-cli', 'skills'), path.join(HOME, '.gemini', 'skills')], builtin: () => [path.join(HOME, '.gemini', 'antigravity-cli', 'builtin', 'skills')], project: ['.agent/skills', '.gemini/skills'] },
+  // Antigravity: global ~/.gemini/config/skills, workspace .agents/ (or .agent/) — see its agy-customizations skill
+  agy: { mine: () => [path.join(HOME, '.gemini', 'config', 'skills'), path.join(HOME, '.gemini', 'antigravity-cli', 'skills'), path.join(HOME, '.gemini', 'skills')], builtin: () => [path.join(HOME, '.gemini', 'antigravity-cli', 'builtin', 'skills')], project: ['.agents/skills', '.agent/skills', '.gemini/skills'] },
   // OpenCode also reads the Claude- and agents-style folders
   opencode: { mine: () => [path.join(XDG_CONFIG, 'opencode', 'skills'), path.join(CLAUDE_HOME, 'skills'), path.join(HOME, '.agents', 'skills')], builtin: () => [], project: ['.opencode/skills', '.claude/skills', '.agents/skills'] },
   cursor: { mine: () => [path.join(HOME, '.cursor', 'skills')], builtin: () => [], project: ['.cursor/skills', '.claude/skills'] },
@@ -199,9 +213,27 @@ export async function pickableSkills(tool, cwd, root) {
 
 let cache = { at: 0, list: [] };
 
-export async function skillsReport() {
+/** Forget cached lists after Baton itself adds, changes or removes a skill. */
+export function invalidateSkills() {
+  cache = { at: 0, list: [] };
+  pickCache.clear();
+}
+
+/** Which CLIs load skills from the folder that holds `skillDir` (global folders, or `project`'s own). */
+export function skillReaders(skillDir, project) {
+  const parent = path.dirname(skillDir);
+  return Object.keys(PICK_DIRS).filter((tool) => {
+    const conf = PICK_DIRS[tool];
+    if (conf.mine().includes(parent)) return true;
+    return Boolean(project) && conf.project.some((rel) => path.join(project, rel) === parent);
+  });
+}
+
+/** `project` (optional): also count uses in sessions inside that folder -> hereUses / hereLast. */
+export async function skillsReport({ project = null } = {}) {
   if (Date.now() - cache.at > 60_000) cache = { at: Date.now(), list: await discover() };
-  const skills = cache.list.map((s) => ({ ...s, id: Buffer.from(s.path).toString('base64url'), uses: 0, lastUsed: null, sessions: [] }));
+  const inProject = (cwd) => Boolean(project && cwd && (cwd === project || cwd.startsWith(project + path.sep)));
+  const skills = cache.list.map((s) => ({ ...s, id: Buffer.from(s.path).toString('base64url'), uses: 0, lastUsed: null, sessions: [], hereUses: 0, hereLast: null }));
   const byPath = new Map(skills.map((s) => [s.path, s]));
   const unknown = new Map();
   for (const u of await skillUses()) {
@@ -218,11 +250,12 @@ export async function skillsReport() {
     if (!s && u.cmd) continue; // built-in slash commands (/model, /clear …) are not skills
     if (!s) {
       const k = `${u.tool}:${u.name}`;
-      s = unknown.get(k) || { tool: u.tool, name: u.name, description: '', path: u.path || null, scope: 'unlisted', scopeLabel: u.tool === 'claude' ? tr('Claude Code 내장') : tr('목록에 없는 스킬'), kind: 'skill', id: Buffer.from(`unlisted:${k}`).toString('base64url'), uses: 0, lastUsed: null, sessions: [] };
+      s = unknown.get(k) || { tool: u.tool, name: u.name, description: '', path: u.path || null, scope: 'unlisted', scopeLabel: u.tool === 'claude' ? tr('Claude Code 내장') : tr('목록에 없는 스킬'), kind: 'skill', id: Buffer.from(`unlisted:${k}`).toString('base64url'), uses: 0, lastUsed: null, sessions: [], hereUses: 0, hereLast: null };
       unknown.set(k, s);
     }
     s.uses++;
     if (!s.lastUsed || u.ts > s.lastUsed) s.lastUsed = u.ts;
+    if (inProject(u.cwd)) { s.hereUses++; if (!s.hereLast || u.ts > s.hereLast) s.hereLast = u.ts; }
     const ex = s.sessions.find((x) => x.key === u.session);
     if (ex) { ex.n++; ex.ts = Math.max(ex.ts, u.ts); } else s.sessions.push({ key: u.session, ts: u.ts, n: 1, cwd: u.cwd });
   }
@@ -233,6 +266,31 @@ export async function skillsReport() {
   return { skills: list, scannedAt: cache.at };
 }
 
+/**
+ * Skills as seen from one project: `local` = the project's own skill folders (one entry per name, with every
+ * CLI that reads it), `global` = what agents also load everywhere. Usage counts are for this project only.
+ */
+export async function projectSkills(root) {
+  const { skills } = await skillsReport({ project: root });
+  const local = new Map();
+  for (const s of skills.filter((x) => x.scope === 'project' && x.project === root)) {
+    const k = `${s.kind}:${s.name}`;
+    const readers = s.kind === 'command' ? ['claude'] : skillReaders(path.dirname(s.path), root);
+    const cur = local.get(k);
+    if (!cur) { local.set(k, { id: s.id, name: s.name, kind: s.kind, description: s.description, readers, paths: [s.pathShort], uses: s.hereUses, lastUsed: s.hereLast }); continue; }
+    // the same skill saved in two folders (e.g. .claude/skills + .agents/skills for different CLIs) -> one row
+    for (const r of readers) if (!cur.readers.includes(r)) cur.readers.push(r);
+    cur.paths.push(s.pathShort);
+    cur.uses += s.hereUses;
+    if (s.hereLast > (cur.lastUsed || 0)) cur.lastUsed = s.hereLast;
+  }
+  const global = skills
+    .filter((s) => ['global', 'synced', 'plugin', 'builtin'].includes(s.scope) || (s.scope === 'unlisted' && s.hereUses))
+    .map((s) => ({ id: s.id, name: s.alias || s.name, kind: s.kind, tool: s.tool, scope: s.scope, scopeLabel: s.scopeLabel, description: String(s.description || '').slice(0, 200), uses: s.hereUses, lastUsed: s.hereLast }));
+  const byUse = (a, b) => (b.lastUsed || 0) - (a.lastUsed || 0) || a.name.localeCompare(b.name);
+  return { local: [...local.values()].sort(byUse), global: global.sort((a, b) => b.uses - a.uses || byUse(a, b)) };
+}
+
 export async function skillDetail(id) {
   const r = await skillsReport();
   const s = r.skills.find((x) => x.id === id);
@@ -241,5 +299,6 @@ export async function skillDetail(id) {
   if (s.path) { try { content = (await fsp.readFile(s.path, 'utf8')).slice(0, 60000); } catch { /* gone */ } }
   let files = [];
   if (s.path && s.kind === 'skill') { try { files = (await fsp.readdir(path.dirname(s.path))).filter((f) => f !== 'SKILL.md').slice(0, 40); } catch { /* ignore */ } }
-  return { ...s, content, files };
+  const readers = s.path && s.kind === 'skill' ? skillReaders(path.dirname(s.path), s.project) : [];
+  return { ...s, content, files, readers };
 }

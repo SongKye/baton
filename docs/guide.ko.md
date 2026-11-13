@@ -43,7 +43,7 @@ irm https://raw.githubusercontent.com/SongKye/baton/main/scripts/install.ps1 | i
    - *API 키* — 붙여넣으면 Anthropic·OpenAI·OpenRouter·Groq 키를 알아보고 맞는 CLI에 연결해요
    - *회사 계정* — Bedrock, Vertex, Azure OpenAI, 사내 게이트웨이
    - *내 컴퓨터·서버의 모델* — Ollama·LM Studio·vLLM·LiteLLM·llama.cpp·Jan을 자동으로 찾아요
-3. **도구 붙이기 (MCP)** (선택) — 눌러서 모든 CLI에 한 번에 추가
+3. **도구 붙이기 (MCP)** (선택) — 고르면 연결 테스트까지 해서 CLI마다 맞게 추가
 4. **폰 연결** (선택) — Tailscale을 단계별로 따라 하고 QR 코드를 찍으면 끝
 5. **자동 시작** (선택) — systemd / launchd / Windows 시작프로그램
 
@@ -88,9 +88,9 @@ Baton 코드를 직접 고치려면 `main`을 `git clone`해서 쓰세요. [CONT
 | **Claude Code** | ✅ | ✅ | ✅ | ✅ | ✅ | 구독 · API 키 · Bedrock · Vertex · 게이트웨이/내 서버 |
 | **Codex** | ✅ | ✅ | ✅ | ✅ | ✅ | ChatGPT · API 키 · Azure OpenAI · 게이트웨이/내 서버 |
 | **Antigravity** | ✅ | ✅ | ✅ | ✅ | ✅ | Google 계정 |
-| **OpenCode** | 베타 | 베타 | ✅ | — | ✅ | 무료 모델 · OpenAI 호환 서버 |
+| **OpenCode** | ✅ | ✅ | ✅ | — | ✅ | 무료 모델 · OpenAI 호환 서버 |
 
-*베타* — 공개된 형식대로 구현했고, 실제 설치 환경에서는 아직 검증 전이에요.
+**검증된 버전**은 CLI와 OS별로 [CLI 호환성](compatibility.md#supported-versions)(영문)에 정리돼 있어요. Baton은 각 CLI의 실행 옵션·출력 형식·세션 파일에 맞춰 동작하기 때문에, CLI가 새로 나오면서 일부 기능이 멈출 수 있어요. **설정 → AI 도구 지원 버전**에서 설치된 버전과 비교해 볼 수 있어요. 연동마다 무엇에 기대고 있는지는 [CLI 호환성](compatibility.md)(영문)에 정리돼 있어요.
 
 **Cursor — 미검증 · 공식 지원 대상 아님.** 연동 코드는 있지만 직접 테스트·검증하지 않았으며, 현재 정식 지원 계획도 없어요. 아래 Cursor 설정 경로는 기존 구현을 설명하는 참고 정보이며 동작을 보장하지 않아요.
 
@@ -120,12 +120,25 @@ Baton 코드를 직접 고치려면 `main`을 `git clone`해서 쓰세요. [CONT
 
 ## MCP 서버
 
-### 눌러서 추가하기
+### 추가하고 테스트까지 하기
 
-**시작하기 → 도구 붙이기** 또는 **도구 → MCP 서버**의 **＋**에서 서버와 추가할 CLI를 고르세요.
-Context7, Playwright, Chrome DevTools, GitHub, Filesystem, Memory, Sequential Thinking, Fetch, Notion, Linear, Sentry, Supabase, Figma — 또는 직접 실행 명령·URL을 넣어도 돼요.
-각 CLI의 전역 설정(`claude mcp add-json -s user`, `~/.codex/config.toml`, `mcp_config.json`, `opencode.json`, `~/.cursor/mcp.json`)에 쓰고, 바꾸기 전 파일은 `.baton-backup`으로 남겨요.
-서버 화면의 **다른 CLI에도 추가**는 설정을 그대로 복사하고(키 포함 — 내 컴퓨터 밖으로 나가지 않아요), **삭제**는 지워요.
+**도구 → MCP 서버**의 **＋**, **시작하기 → 도구 붙이기**, 또는 프로젝트 화면의 **이 프로젝트용 MCP 추가**에서 시작해요.
+
+1. **받은 정보 붙여넣기** — MCP 개발자가 준 걸 그대로 붙여넣으세요: 서버 URL·토큰, 설치 명령(`claude mcp add …`, `codex mcp add …`), README 일부, 다른 도구용 설정 JSON(Claude·Cursor·VS Code·OpenCode)이나 Codex TOML. 설정 JSON·TOML·설치 명령은 AI 없이 바로 읽고, 그 밖의 글은 AI CLI가 읽어요. 토큰처럼 보이는 값은 AI에게 보내기 전에 가리고 입력칸에만 채워 둬요. 잘 알려진 MCP(Context7, Playwright, GitHub, Notion …)는 **잘 알려진 MCP에서 고르기**에 따로 있어요.
+2. **어디에** — **모든 폴더(전역)** 또는 **이 프로젝트에서만**. 그리고 넣을 CLI들.
+3. **값 확인 · CLI별 설정 미리보기** — 토큰·키는 이 화면에만 있다가 설정 파일에 바로 저장돼요. 아래에 CLI마다 실제로 들어갈 설정(파일 위치, Claude Code는 실행할 명령까지)이 그 CLI의 형식으로 나오고, 형식에 맞는지 Baton이 다시 읽어서 확인해요.
+4. **등록하고 테스트** — Baton이 서버를 직접 실행(또는 URL 호출)해서 연결과 도구 목록을 확인하고, 통과하면 CLI마다 맞는 방식으로 넣은 뒤 각 CLI에게 잘 보이는지 물어봐요(`claude mcp get`, `codex mcp get`, `agy mcp list`, 그 밖엔 설정 파일 확인). 테스트에 실패하면 아무 데도 넣지 않고, **AI에게 고쳐 달라고 하기**로 로그를 보여주면(비밀값은 가려서) 고친 설정을 제안해요.
+
+| CLI | 전역 | 이 프로젝트에서만 |
+|---|---|---|
+| Claude Code | `claude mcp add-json -s user` | `-s local` (나만, git에 안 올라감) · 팀 공유를 고르면 `.mcp.json` (처음 열 때 승인) |
+| Codex | `~/.codex/config.toml` | `<프로젝트>/.codex/config.toml` — Codex가 **신뢰한 폴더**에서만 읽어요 (Baton에서 신뢰 표시를 고를 수 있어요) |
+| Antigravity | `~/.gemini/config/mcp_config.json` | `<프로젝트>/.agents/plugins/baton-mcp/` 작업 공간 플러그인 |
+| OpenCode | `~/.config/opencode/opencode.json` | `<프로젝트>/opencode.json` (파일이 새 형식 `mcp.servers`를 쓰면 그 형식대로) |
+| Cursor | `~/.cursor/mcp.json` | `<프로젝트>/.cursor/mcp.json` |
+
+바꾸기 전 파일은 `.baton-backup`으로 남겨요. 프로젝트 파일에 토큰이 들어가는데 git이 무시하지 않는 파일이면 경고해요.
+서버 화면의 **연결 테스트**는 이미 있는 서버를 같은 방식으로 확인하고, **다른 CLI에도 추가**는 설정을 그대로(같은 프로젝트 또는 전역으로) 복사하며(키 포함 — 내 컴퓨터 밖으로 나가지 않아요), **삭제**는 지워요.
 
 ### 뭘 불러오고 실제로 썼는지 보기
 

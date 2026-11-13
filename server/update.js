@@ -6,24 +6,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { ROOT } from './util.js';
+import { ROOT, cmpVersion } from './util.js';
 import { getKV, setKV } from './store.js';
 import { sh, IS_WIN, IS_MAC } from './platform.js';
+
+export { cmpVersion };
 
 const REPO = process.env.BATON_UPDATE_REPO || 'SongKye/baton';
 const EVERY = 6 * 3600_000;
 export const CURRENT = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return '0.0.0'; } })();
-
-/** 1 if a > b, -1 if a < b, 0 if equal (x.y.z, a pre-release sorts before its release). */
-export function cmpVersion(a, b) {
-  const p = (v) => { const [core, pre] = String(v).replace(/^v/, '').split('-'); return { n: core.split('.').map((x) => Number(x) || 0), pre: pre || '' }; };
-  const x = p(a), y = p(b);
-  for (let i = 0; i < 3; i++) if ((x.n[i] || 0) !== (y.n[i] || 0)) return (x.n[i] || 0) > (y.n[i] || 0) ? 1 : -1;
-  if (x.pre === y.pre) return 0;
-  if (!x.pre) return 1;
-  if (!y.pre) return -1;
-  return x.pre > y.pre ? 1 : -1;
-}
 
 async function fetchLatest() {
   const ctl = new AbortController();
