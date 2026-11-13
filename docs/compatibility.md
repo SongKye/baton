@@ -169,7 +169,7 @@ off then, it runs at the next start. Turn it on with `npm run compat:schedule` (
 
 **Maintainers only.** The job opens PRs, merges and files issues on `SongKye/baton`. It refuses to install or run
 unless the checkout's `origin` is that repository and the signed-in GitHub account can push to it. Other
-installs ship the scripts but never run them, and Settings shows the weekly row only where the timer is installed.
+installs ship the scripts but never run them, and nothing about the weekly job appears in their Settings.
 
 **Models.** The live test talks to Claude Code with Sonnet 5.5 (`BATON_SMOKE_CLAUDE_MODEL` to change). Codex,
 Antigravity and OpenCode can only use their own vendor's models, so they use the account default. Fix PRs are
@@ -193,8 +193,8 @@ written by Claude Code with Opus 5.5 (`BATON_COMPAT_FIX_MODEL`). Version-bump PR
    draft otherwise, or an issue when nothing could be changed.
 
 The result goes to `~/.baton-compat/last-run.json` and the log to `~/.baton-compat/logs/<date>.log`. Detailed test reports are retained beside the log. Baton
-shows it under **Settings → Supported AI tool versions → Weekly auto-check**. It sends a push notification when
-something needs a look, and otherwise records a quiet inbox entry.
+reports it through Baton's notifications (a push when something needs a look, a quiet inbox entry
+otherwise) and the PRs it opens. It is not shown in Settings: users don't need it.
 
 Try it without pushing anything: `npm run compat:weekly -- --dry-run` (`--only codex` limits it to one CLI;
 `--ref <branch>` runs a pushed branch instead of main).

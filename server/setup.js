@@ -16,7 +16,6 @@ import { claudeProvider, codexProvider } from './providers.js';
 import { envInfo } from './env.js';
 import { updateCommand, updateCached } from './update.js';
 import { compatInfo, refreshRemote, cliUpdatePlan } from './compat.js';
-import { compatRunInfo } from './compat-watch.js';
 
 import { PORT } from './runtime.js';
 
@@ -94,7 +93,7 @@ export async function setupStatus({ fresh = false } = {}) {
     os: OS_NAME, arch: process.arch, home: HOME, port: PORT,
     node: { version: process.versions.node, ok: nodeVer[0] > NODE_MIN[0] || (nodeVer[0] === NODE_MIN[0] && nodeVer[1] >= NODE_MIN[1]) },
     git: { installed: Boolean(git), version: git ? await version(git) : null, canInstall: IS_WIN || IS_MAC, hint: !git && !IS_WIN && !IS_MAC ? 'sudo apt install -y git' : null },
-    tools, compatRun: compatRunInfo(),
+    tools,
     tailscale: await tailscaleStatus(),
     autostart: { supported: IS_WIN || IS_MAC || (await hasSystemd()), enabled: fs.existsSync(autostartPath()), kind: IS_WIN ? 'startup' : IS_MAC ? 'launchd' : 'systemd' },
     wslHint: IS_WIN, // on Windows, suggest WSL for the best experience (agy, sandboxing)
