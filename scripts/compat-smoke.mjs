@@ -234,16 +234,25 @@ async function child(tool) {
     const cwd = await fsp.mkdtemp(path.join(home, 'project-'));
     R.project = cwd;
     R.profile = 'isolated-default-account';
-    // Claude Code: Sonnet 5.5 (maintainer's choice). The other CLIs can only use their own vendor's models: account default.
-    const model = tool === 'claude' ? (process.env.BATON_SMOKE_CLAUDE_MODEL || 'claude-sonnet-5-5') : undefined;
-    const effort = tool === 'codex' ? 'low' : undefined;
+    // Use the light model verified against every required scenario; other vendors retain account defaults.
+    const model = process.env[`BATON_SMOKE_${tool.toUpperCase()}_MODEL`] || (tool === 'claude' ? 'claude-haiku-5-5' : undefined);
+    const effort = ['claude', 'codex', 'agy'].includes(tool) ? 'low' : undefined;
+    R.generation = { model: model || 'account-default', effort: effort || 'account-default' };
+    let blocked = null;
+    const allowGeneration = () => { if (blocked) throw Object.assign(new Error(`generation stopped after ${blocked.name}: ${blocked.detail}`), { category: blocked.category }); };
 
     const step = async (name, fn) => {
       const t0 = Date.now();
       try { const detail = await fn(); R.steps.push({ name, ok: true, ms: Date.now() - t0, detail: detail || '' }); return true; }
-      catch (e) { R.steps.push({ name, ok: false, category: failureCategory(e), ms: Date.now() - t0, detail: String(e?.message || e).slice(0, 1500) }); return false; }
+      catch (e) {
+        const failure = { name, ok: false, category: failureCategory(e), ms: Date.now() - t0, detail: String(e?.message || e).slice(0, 1500) };
+        R.steps.push(failure);
+        if (!blocked && (name === 'CLI flags' || ['auth', 'quota', 'network', 'environment'].includes(failure.category))) blocked = failure;
+        return false;
+      }
     };
     const chat = (prompt, sessionId, options = {}) => new Promise((resolve, reject) => {
+      allowGeneration();
       const run = runner.startRun({ tool, sessionId, cwd, prompt, model, effort, perm: options.perm || 'plan' });
       let text = '', tools = 0, completed = 0, questions = 0;
       const toolNames = [];
@@ -369,7 +378,8 @@ async function child(tool) {
     runner.rawTap.fn = null;
 
     await step('one-shot', async () => {
-      const text = await runner.oneShot({ tool, model, cwd, prompt: 'Reply with exactly the word BATONSMOKETHREE and nothing else.', timeoutMs: 240_000 });
+      allowGeneration();
+      const text = await runner.oneShot({ tool, model, effort, cwd, prompt: 'Reply with exactly the word BATONSMOKETHREE and nothing else.', timeoutMs: 240_000 });
       expect(text, 'BATONSMOKETHREE');
     });
     if (HAS_LIMITS.has(tool)) await step('limits', async () => {

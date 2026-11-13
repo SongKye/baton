@@ -87,6 +87,6 @@ if (tool === 'claude' && args.includes('--input-format')) {
 } else {
   let input = '';
   for await (const chunk of process.stdin) input += chunk;
-  if (tool === 'claude') { const s = JSON.parse(input); emit({ result: 'OK', is_error: s.name === 'error' }); }
+  if (tool === 'claude') { const s = JSON.parse(input); if (s.argsFile) fs.writeFileSync(s.argsFile, JSON.stringify(args)); emit({ result: 'OK', is_error: s.name === 'error' }); }
   else run(input);
 }

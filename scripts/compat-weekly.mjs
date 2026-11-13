@@ -387,6 +387,16 @@ async function main() {
   log(`weekly compat run${DRY ? ' (dry run)' : ''} at ${(await sh('git', ['rev-parse', '--short', 'HEAD'], { quiet: true })).out.trim()} for ${tools.join(', ')}`);
   const state = { runAt: new Date().toISOString(), dryRun: DRY, results: [], prs: [], needsAttention: false, log: logFile };
 
+  const preflight = await repoChecks();
+  if (preflight) {
+    state.needsAttention = true;
+    state.results.push({ tool: 'preflight', status: 'error', note: preflight });
+    state.finishedAt = new Date().toISOString();
+    await fsp.writeFile(STATE, JSON.stringify(state, null, 2));
+    log(`offline checks failed; no live AI verification started: ${preflight}`);
+    return;
+  }
+
   for (const tool of tools) {
     const r = { tool, from: compat[tool].verified, to: null, status: 'error', note: '' };
     state.results.push(r);
@@ -473,7 +483,7 @@ Updates \`server/compat.json\`, the shape baselines, docs and CHANGELOG. ${drift
   }
 
   for (const r of state.results) {
-    if (r.test?.report) r.verification = { version: r.test.report.version, revision: r.test.report.revision, dirty: r.test.report.dirty, platform: r.test.report.platform, checkedAt: r.test.report.checkedAt, steps: r.test.report.steps, drift: r.test.report.drift };
+    if (r.test?.report) r.verification = { version: r.test.report.version, revision: r.test.report.revision, dirty: r.test.report.dirty, platform: r.test.report.platform, checkedAt: r.test.report.checkedAt, generation: r.test.report.generation, steps: r.test.report.steps, drift: r.test.report.drift };
     delete r.test; delete r.binDir; delete r.oldBin;
   }
   state.finishedAt = new Date().toISOString();

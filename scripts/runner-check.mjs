@@ -105,7 +105,12 @@ if (!process.argv.includes('--child')) {
   assert((await finished(start('codex', 'tools', {}, { sessionId: 'busy' }))).ok);
 
   for (const tool of ['claude', 'codex', 'opencode']) {
-    await assert.rejects(runner.oneShot({ tool, cwd: os.homedir(), prompt: JSON.stringify({ name: 'error' }) }));
+    const oneShotArgs = path.join(os.homedir(), `oneshot-${tool}.json`);
+    await assert.rejects(runner.oneShot({ tool, cwd: os.homedir(), model: 'fixture-model', effort: 'low', prompt: JSON.stringify({ name: 'error', argsFile: oneShotArgs }) }));
+    const args = JSON.parse(await fs.readFile(oneShotArgs, 'utf8'));
+    assert(args.includes('fixture-model'));
+    assert(args.includes(tool === 'codex' ? 'model_reasoning_effort="low"' : 'low'));
+
   }
   // Run the actual SSE route function with the real run object, over HTTP.
   const source = await fs.readFile(path.join(root, 'server', 'index.js'), 'utf8');

@@ -442,13 +442,14 @@ export function stopRun(id) {
 }
 
 /** One-shot, non-persisted completion (project briefs, skill drafts). Resolves to the final text. */
-export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000, signal = null, failLabel = '' }) {
+export function oneShot({ tool, model, effort, prompt, cwd, timeoutMs = 180000, signal = null, failLabel = '' }) {
   return new Promise((resolve, reject) => {
     let bin, args, stdin = true;
     if (tool === 'opencode') {
       bin = 'opencode';
       args = ['run', '--format', 'json', '--agent', 'plan'];
       if (model) args.push('--model', model);
+      if (model && effort) args.push('--variant', effort);
     } else if (tool === 'cursor') {
       bin = 'cursor-agent';
       args = ['-p', '--output-format', 'json'];
@@ -460,16 +461,19 @@ export function oneShot({ tool, model, prompt, cwd, timeoutMs = 180000, signal =
       args = ['exec', '--json', '--skip-git-repo-check', '--ephemeral', '-c', 'sandbox_mode="read-only"'];
       model ||= codexDefaultFallback();
       if (model) args.push('-m', model);
+      if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
       args.push('-');
     } else if (tool === 'agy') {
       bin = 'agy';
       args = ['-p', prompt, '--output-format', 'json', '--mode', 'plan'];
       if (model) args.push('--model', model);
+      if (effort) args.push('--effort', effort);
       stdin = false;
     } else {
       bin = 'claude';
       args = ['-p', '--output-format', 'json', '--no-session-persistence', '--permission-mode', 'plan', '--tools', ''];
       if (model) args.push('--model', model);
+      if (effort) args.push('--effort', effort);
     }
     const child = spawnCli(binFor(tool) || bin, args, { cwd, env: childEnv(), stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     if (child.pid) childPids.add(child.pid);

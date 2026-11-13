@@ -30,7 +30,7 @@ try {
     else { await ctx.recordOs(file); assert.equal(edits, 1); }
   }
   // Same version is tested too; environment failures must never request an automatic fix.
-  for (const mode of ['current', 'auth', 'new-pass', 'new-contract', 'drift']) {
+  for (const mode of ['current', 'auth', 'new-pass', 'new-contract', 'drift', 'preflight-fails']) {
     let tested = 0, fixes = 0, merges = 0;
     const t = result(!['auth', 'new-contract'].includes(mode));
     t.expectedVersion = mode === 'current' ? '1.0.0' : '1.1.0';
@@ -42,14 +42,15 @@ try {
       WORK: tmp, LOGS: path.join(tmp, 'logs'), STATE: stateFile, logFile: null, argv: [], ONLY: [], DRY: true, REF: 'origin/main', NAMES: { codex: 'Codex' },
       today: () => '2026-01-01', log() {}, bootstrap: async () => {}, sh: async () => ({ code: 0, out: 'commit' }),
       cmp: (a, b) => a.localeCompare(b), latestRelease: async () => ({ version: t.expectedVersion }), install: async () => '/fake/bin',
-      test: async () => { tested++; return t; }, saveShapes: async () => {}, bumpFiles: async () => {}, repoChecks: async () => null,
+      test: async () => { tested++; return t; }, saveShapes: async () => {}, bumpFiles: async () => {}, repoChecks: async () => mode === 'preflight-fails' ? 'fixture regression' : null,
       commitAndPr: async () => 'https://example.invalid/pr', mergeWhenGreen: async () => { merges++; return 'merged'; },
       tryFix: async () => { fixes++; return { outcome: 'partial' }; },
     });
     vm.runInContext(source.slice(source.indexOf('async function main()'), source.indexOf("if (argv.includes('--maintainer-check'))")), ctx);
     await ctx.main();
     const state = JSON.parse(await fs.readFile(stateFile, 'utf8'));
-    assert.equal(tested, 1, mode);
+    assert.equal(tested, mode === 'preflight-fails' ? 0 : 1, mode);
+    if (mode === 'preflight-fails') assert.equal(state.needsAttention, true);
     assert.equal(fixes, mode === 'new-contract' ? 1 : 0, mode);
     assert.equal(merges, mode === 'new-pass' ? 1 : 0, mode);
     if (mode === 'current') assert.equal(state.prs.length, 0);

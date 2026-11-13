@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import { checkVersion, checkResume, checkTranscript, failureCategory, collectShape, compareShapes, needsReview, shouldAttemptFix, reportPassed, reportMatchesCheckout } from './lib-compat-contracts.mjs';
 import { createRunEvents } from '../server/run-events.js';
 
@@ -30,6 +31,24 @@ const provenance = { ...checkout, dirty: false };
 assert.equal(reportMatchesCheckout(provenance, checkout), true);
 for (const change of [{ dirty: true }, { dirty: undefined }, { revision: 'old-commit' }, { platform: 'darwin' }, { arch: 'arm64' }]) {
   assert.equal(reportMatchesCheckout({ ...provenance, ...change }, checkout), false);
+}
+
+// A failed preflight or account request must not spend more tokens on later scenarios.
+const smokeSource = fs.readFileSync(new URL('./compat-smoke.mjs', import.meta.url), 'utf8');
+const generationSource = smokeSource.slice(smokeSource.indexOf('    const model ='), smokeSource.indexOf('    const expect ='));
+for (const reason of ['CLI flags', 'HTTP 401', 'HTTP 429', 'fetch failed']) {
+  let calls = 0;
+  const R = { steps: [] };
+  const ctx = vm.createContext({ R, process: { env: {} }, tool: 'claude', cwd: '/fixture', failureCategory,
+    runner: { startRun() { calls++; throw new Error(reason); } }, Date, setTimeout, clearTimeout });
+  await vm.runInContext(`(async () => { ${generationSource}
+    if (${JSON.stringify(reason)} === 'CLI flags') await step('CLI flags', () => { throw new Error('missing flag'); });
+    await step('new session', () => chat('first'));
+    await step('file edit', () => chat('second'));
+    await step('one-shot', () => { allowGeneration(); runner.startRun(); });
+  })()`, ctx);
+  assert.equal(calls, reason === 'CLI flags' ? 0 : 1, reason);
+  assert(R.steps.every(s => !s.ok));
 }
 
 const shape = (events) => {
