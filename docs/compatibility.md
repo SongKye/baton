@@ -184,14 +184,19 @@ Try it without pushing anything: `npm run compat:weekly -- --dry-run` (`--only c
 
 ## Manual check on Windows or macOS
 
+Step-by-step for Windows, copy-paste only (Korean): [windows-compat-check.ko.md](windows-compat-check.ko.md).
+
 The weekly job verifies Linux. To record another OS, on a computer with that OS, in a Baton checkout whose
 `origin` is `SongKye/baton`, with the GitHub CLI (`gh`) signed in to an account that can push:
 
 1. Once: `npm run compat:smoke -- --login` (in a terminal: signs Claude Code and Codex in to the test home).
 2. Whenever you like: `npm run compat:smoke -- --report`
 
-It runs the same live test with the CLIs installed on that computer. It then opens a PR that writes every
-passing version into that OS's column of `server/compat.json` and this page, and merges the PR once CI is green.
+It installs **each CLI's verified version** into `~/.baton-compat/versions` (off PATH, so the CLIs you use
+are untouched and a CLI you don't have installed is still tested) and runs the same live test. It then opens a
+PR that writes every passing version into that OS's column of `server/compat.json` and this page, and merges
+the PR once CI is green. Add `--installed` to test the CLIs installed on that computer instead, or use
+`--install` to test without recording. Antigravity has no versioned installer, so the installed one is used.
 Failures are listed in the output and the PR but never recorded. Without push access, it only prints the
 results.
 
