@@ -766,12 +766,16 @@ function compatView(x) {
   if (!c.verified) return { installed, supported: c.builtFor ? t('{v} 기준 · 베타', { v: esc(c.builtFor) }) : t('베타'), note: t('문서를 보고 만들었고 실제 설치로는 아직 검증하지 않았어요'), pill: t('베타'), cls: '' };
   const supported = `v${esc(c.verified)}`;
   if (!x.installed) return { installed, supported, note: '', pill: t('설치 안 됨'), cls: '' };
-  if (c.state === 'verified') return { installed, supported, note: '', pill: t('검증됨'), cls: 'ok' };
+  if (c.state === 'verified' && c.hereVerified && c.hereVerified === x.version) return { installed, supported, note: '', pill: t('검증됨'), cls: 'ok' };
+  if (c.state === 'verified') return { installed, supported, note: t('다른 OS에서 검증된 버전이에요. 이 OS({os})에서는 아직 확인 전이에요.', { os: COMPAT_OS[c.here] || c.here }), pill: t('다른 OS에서 검증됨'), cls: '' };
   if (c.state === 'newer') return { installed, supported, note: t('지원 버전보다 새 버전이라 아직 확인 전이에요. 대부분 그대로 동작하지만, 문제가 생기면 이 버전을 같이 알려주세요.'), pill: t('확인 전 새 버전'), cls: '' };
   if (c.state === 'older') return { installed, supported, note: t('지원 버전보다 오래됐어요. 동작이 이상하면 CLI를 업데이트해보세요.'), pill: t('지원 버전보다 오래됨'), cls: 'warn' };
   return { installed, supported, note: t('설치된 버전을 읽지 못했어요'), pill: t('버전 확인 불가'), cls: 'warn' };
 }
-const compatLines = (cv) => `${t('설치된 버전')}: <strong class="cv">${cv.installed}</strong><br>${t('Baton 지원 버전')}: <strong class="cv">${cv.supported}</strong>${cv.note ? `<br>${cv.note}` : ''}`;
+const COMPAT_OS = { linux: 'Linux', windows: 'Windows', macos: 'macOS' };
+/** "Linux v2.1.318 · Windows — · macOS —": where each CLI was actually verified. */
+const compatOsLine = (c) => (c?.platforms && c.level === 'supported' ? `${t('OS별 검증')}: ${Object.entries(COMPAT_OS).map(([k, n]) => `${n} ${c.platforms[k] ? `v${esc(c.platforms[k])}` : '—'}`).join(' · ')}` : '');
+const compatLines = (cv) => `${t('설치된 버전')}: <strong class="cv">${cv.installed}</strong><br>${t('Baton 지원 버전')}: <strong class="cv">${cv.supported}</strong>${cv.os ? `<br>${cv.os}` : ''}${cv.note ? `<br>${cv.note}` : ''}`;
 /** What the user can do about a version mismatch (server/compat.js compatInfo action) -> { note, button } */
 function compatAction(x) {
   const c = x.compat || {};
@@ -802,6 +806,7 @@ function compatCard(box) {
     box.innerHTML = st.tools.map((x) => {
       const cv = compatView(x), act = compatAction(x);
       if (act.note) cv.note = act.note;
+      cv.os = compatOsLine(x.compat);
       return `<div class="setting"><div class="l"><b>${esc(x.name)}</b><span>${compatLines(cv)}</span>${act.button ? `<div class="pact" style="margin-top:8px">${act.button}</div>` : ''}</div>${cv.pill ? `<span class="pill ${cv.cls}">${cv.pill}</span>` : ''}</div>${act.button ? `<div class="jobbox" hidden data-compatjob="${x.id}" style="margin:0 14px 10px"></div>` : ''}`;
     }).join('') + compatRunRow(st.compatRun) + `<p class="small muted" style="padding:10px 14px 4px">${t('Baton은 각 CLI의 실행 옵션·출력 형식·세션 파일에 맞춰 동작해요. CLI가 업데이트되면서 이게 바뀌면 일부 기능이 멈출 수 있어요.')} <a href="https://github.com/SongKye/baton/blob/main/docs/compatibility.md" target="_blank" rel="noopener">${t('자세히')} ↗</a></p>`;
     $$('[data-batonupdate]', box).forEach((b) => (b.onclick = () => updateSheet()));

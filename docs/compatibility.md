@@ -6,13 +6,18 @@ was verified with** for each CLI. The source of truth is `server/compat.json`. T
 
 ## Supported versions
 
-| CLI | Support | Verified version | Verified on | Latest seen when verified |
+<!-- compat-table -->
+| CLI | Support | Linux | Windows | macOS |
 |---|---|---|---|---|
-| Claude Code | Supported | **2.1.318** | 2026-11-12 | 2.1.322 (npm) |
-| Codex | Supported | **0.156.0** | 2026-11-12 | 0.167.2 (npm) |
-| Antigravity | Supported | **1.5.6** | 2026-11-12 | — (not on npm) |
-| OpenCode | Supported | **1.19.5** | 2026-11-12 | 1.19.5 (npm) |
+| Claude Code | Supported | **2.1.318** (2026-11-12) | — | — |
+| Codex | Supported | **0.156.0** (2026-11-12) | — | — |
+| Antigravity | Supported | **1.5.6** (2026-11-12) | — | — |
+| OpenCode | Supported | **1.19.5** (2026-11-12) | — | — |
 | Cursor | Unverified | — | — | — |
+<!-- /compat-table -->
+
+Each cell is the newest version verified **on that OS** (and when). Linux is verified every week
+automatically; Windows and macOS when the maintainer runs `npm run compat:smoke -- --report` there.
 
 Baton shows the same information in **Settings → Supported AI tool versions** and on each tool's card in
 **Get started → Connect AI**, compared with the version you have installed:
@@ -176,6 +181,26 @@ something needs a look, and otherwise records a quiet inbox entry.
 
 Try it without pushing anything: `npm run compat:weekly -- --dry-run` (`--only codex` limits it to one CLI;
 `--ref <branch>` runs a pushed branch instead of main).
+
+## Manual check on Windows or macOS
+
+The weekly job verifies Linux. To record another OS, on a computer with that OS, in a Baton checkout whose
+`origin` is `SongKye/baton`, with the GitHub CLI (`gh`) signed in to an account that can push:
+
+1. Once: `npm run compat:smoke -- --login` (in a terminal: signs Claude Code and Codex in to the test home).
+2. Whenever you like: `npm run compat:smoke -- --report`
+
+It runs the same live test with the CLIs installed on that computer. It then opens a PR that writes every
+passing version into that OS's column of `server/compat.json` and this page, and merges the PR once CI is green.
+Failures are listed in the output and the PR but never recorded. Without push access, it only prints the
+results.
+
+Users see this per OS. **Verified** means the installed version was verified on their OS. **Verified on
+another OS** means it was verified elsewhere but not on theirs yet. Settings also lists the verified version on
+each OS.
+
+On Windows the test home is isolated through `USERPROFILE`. Antigravity is recommended in WSL there, which
+counts as Linux.
 
 ## Re-verifying after a CLI update
 
