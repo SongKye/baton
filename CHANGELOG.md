@@ -6,6 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Added
+- **Fold long project memos**: a memo longer than about seven lines folds to a short preview with a fade; **Expand / Collapse** next to the Memo heading opens it, and Baton remembers your choice per project.
 - Live compatibility checks now include trash/restore of the generated test session. Offline fixtures cover old/current Claude, Codex and Antigravity histories alongside existing OpenCode DB/JSON tests; Chromium tests cover reconnect, question recovery and two-tab answers in desktop/mobile viewports.
 - Stronger live CLI compatibility checks: random-context resume, ordered transcripts, file reads/edits, command execution, Claude question/answer and concrete model catalogs, with exact binary/version evidence and typed output-shape reports.
 - An isolated `npm test` suite shared by CI and automatic fixes, including four CLI protocol doubles, stop/concurrency and HTTP stream replay, compatibility policy checks and previously unconnected access/folder/Codex-index regressions.
