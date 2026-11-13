@@ -9,6 +9,8 @@
 //   npm run compat:smoke -- --json out.json      also write the full report
 //   npm run compat:smoke -- --update-fixtures    store the current event shapes as the new baseline
 //   npm run compat:smoke -- --login              one-time sign-in for the test home (run in a terminal)
+//   npm run compat:smoke -- --report             maintainers on Windows / macOS: record what passed on this OS in
+//                                                server/compat.json (a PR merged once CI is green)
 //
 // Per CLI: new session -> resume it -> it shows up in the session list with a readable transcript ->
 // one-shot (briefs/drafts) -> live limits -> model list. Plus a shape diff (L3): every key path of the
@@ -62,7 +64,7 @@ async function parent() {
         for (const p of d.added.slice(0, 15)) console.log(`      + ${p}`);
       }
     }
-    if (flag('--update-fixtures') && r.ok && r.shapes) {
+    if (flag('--update-fixtures') && !flag('--report') && r.ok && r.shapes) {
       await fsp.mkdir(FIXTURES, { recursive: true });
       await fsp.writeFile(path.join(FIXTURES, `${tool}.json`), JSON.stringify({ version: r.version, ...r.shapes }, null, 1) + '\n');
       console.log(`  · stored shapes for v${r.version}`);
@@ -70,6 +72,15 @@ async function parent() {
   }
   const out = opt('--json');
   if (out) await fsp.writeFile(out, JSON.stringify(reports, null, 2));
+  if (flag('--report')) {
+    // hand the results to compat-weekly: it checks maintainer access, edits a separate worktree and opens the PR
+    const file = path.join(os.tmpdir(), `baton-smoke-report-${process.pid}.json`);
+    await fsp.writeFile(file, JSON.stringify(reports));
+    console.log('\nRecording the results for this OS…');
+    const code = await new Promise((resolve) => spawn(process.execPath, ['--no-warnings', path.join(REPO, 'scripts', 'compat-weekly.mjs'), '--record-os', file], { stdio: 'inherit' }).on('close', resolve));
+    await fsp.rm(file, { force: true });
+    if (code) console.log('Recording failed (see above). The test results themselves are listed above.');
+  }
   const failed = reports.filter((r) => !r.skipped && !r.ok);
   const skipped = reports.filter((r) => r.skipped);
   const passed = reports.filter((r) => !r.skipped && r.ok);
@@ -88,7 +99,7 @@ async function runChild(tool, binDir) {
     await fsp.symlink(path.join(REPO, 'node_modules'), path.join(app, 'node_modules'), 'junction').catch(() => {});
     await fsp.mkdir(TEST_HOME, { recursive: true });
     const env = {
-      ...process.env, HOME: TEST_HOME, BATON_NO_SHELL_ENV: '1',
+      ...process.env, HOME: TEST_HOME, USERPROFILE: TEST_HOME, BATON_NO_SHELL_ENV: '1', // Windows: USERPROFILE is the home folder
       PATH: [binDir, path.dirname(process.execPath), process.env.PATH].filter(Boolean).join(path.delimiter),
     };
     for (const k of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME']) delete env[k];
@@ -113,7 +124,8 @@ async function login() {
   await fsp.mkdir(TEST_HOME, { recursive: true });
   const run = (cmd, args) => new Promise((resolve) => {
     console.log(`\n$ HOME=${TEST_HOME} ${cmd} ${args.join(' ')}`);
-    spawn(cmd, args, { cwd: TEST_HOME, stdio: 'inherit', env: { ...process.env, HOME: TEST_HOME } }).on('close', resolve).on('error', (e) => { console.log(e.message); resolve(1); });
+    // shell on Windows: npm-installed CLIs are .cmd shims that Node only starts through one
+    spawn(cmd, args, { cwd: TEST_HOME, stdio: 'inherit', shell: process.platform === 'win32', env: { ...process.env, HOME: TEST_HOME, USERPROFILE: TEST_HOME } }).on('close', resolve).on('error', (e) => { console.log(e.message); resolve(1); });
   });
   console.log(`Signing in the test copies of Claude Code and Codex (test home: ${TEST_HOME}).\nUse the same accounts as usual; your everyday sign-ins are not touched. Antigravity needs nothing.`);
   await run('claude', ['auth', 'login']);

@@ -100,6 +100,9 @@ export async function refreshRemote({ force = false } = {}) {
   return remote;
 }
 
+const OS_KEY = process.env.BATON_COMPAT_OS || (process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux'); // WSL = linux; env: tests
+const OSES = ['linux', 'windows', 'macos'];
+
 /** This Baton has the code a table entry needs. */
 const batonOk = (e) => !e?.needsBatonAfter || cmpVersion(BATON_VERSION, e.needsBatonAfter) > 0;
 
@@ -122,7 +125,13 @@ export function compatInfo(id, installed, { latestBaton = null } = {}) {
     needsBatonAfter = r.needsBatonAfter;
     action = latestBaton && cmpVersion(latestBaton, r.needsBatonAfter) > 0 ? 'baton-update' : 'baton-next';
   }
-  return { level, verified, verifiedAt, source, builtFor: c.builtFor || null, state, action, target, needsBatonAfter };
+  // where each version was actually run: the newer of this Baton's table and GitHub's (when this Baton can use it)
+  const platforms = {};
+  for (const os of OSES) {
+    const a = c.os?.[os]?.verified || null, b = r && batonOk(r) ? r.os?.[os]?.verified || null : null;
+    platforms[os] = a && b ? (cmpVersion(a, b) >= 0 ? a : b) : a || b;
+  }
+  return { level, verified, verifiedAt, source, builtFor: c.builtFor || null, state, action, target, needsBatonAfter, platforms, here: OS_KEY, hereVerified: platforms[OS_KEY] };
 }
 
 // ---------------------------------------------------------------- updating a CLI to the supported version

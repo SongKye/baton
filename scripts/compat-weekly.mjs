@@ -24,6 +24,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { osKey, OS_NAMES, recordVersion, writeDocsTable } from './lib-compat-table.mjs';
 
 const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BASE = path.join(os.homedir(), '.baton-compat');
@@ -53,7 +54,8 @@ const log = (...a) => {
 /** Run a command; resolves { code, out } (stdout+stderr), never rejects. */
 function sh(cmd, args, { cwd = WORK, env, input, timeout = 20 * 60_000, quiet = false } = {}) {
   return new Promise((resolve) => {
-    const c = spawn(cmd, args, { cwd, env: env || process.env, stdio: [input != null ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+    const shell = process.platform === 'win32' && /^(npm|npx|claude)$/.test(cmd); // .cmd shims; their args here are simple
+    const c = spawn(cmd, args, { cwd, env: env || process.env, shell, stdio: [input != null ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     let out = '';
     const add = (b) => { out += b; if (out.length > 400_000) out = out.slice(-200_000); };
     c.stdout.on('data', add); c.stderr.on('data', add);
@@ -188,31 +190,21 @@ async function test(tool, binDir) {
 }
 
 // ------------------------------------------------------------------ editing the repo for a bump
-async function bumpFiles(bumps) {
+async function bumpFiles(bumps, { os = osKey(), changelog = 'weekly automatic check' } = {}) {
   const date = today();
   const tableFile = path.join(WORK, 'server', 'compat.json');
   const table = JSON.parse(await fsp.readFile(tableFile, 'utf8'));
-  // needsBatonAfter: set by a code fix (only Baton releases after that version have it); a later data-only bump keeps it
-  for (const b of bumps) Object.assign(table[b.tool], { level: 'supported', verified: b.to, verifiedAt: date }, b.needsBatonAfter ? { needsBatonAfter: b.needsBatonAfter } : {});
+  for (const b of bumps) {
+    recordVersion(table, b.tool, os, b.to, date);
+    // needsBatonAfter: set by a code fix (only Baton releases after that version have it); a later data-only bump keeps it
+    if (b.needsBatonAfter) table[b.tool].needsBatonAfter = b.needsBatonAfter;
+  }
   await fsp.writeFile(tableFile, JSON.stringify(table, null, 2) + '\n');
+  writeDocsTable(path.join(WORK, 'docs', 'compatibility.md'), table);
 
   const edit = async (rel, fn) => { const f = path.join(WORK, rel); await fsp.writeFile(f, fn(await fsp.readFile(f, 'utf8'))); };
-  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  await edit('docs/compatibility.md', (s) => {
-    for (const b of bumps) {
-      const latest = b.tool === 'agy' ? '— (not on npm)' : `${b.to} (npm${b.tool === 'claude' ? ' stable' : ''})`;
-      s = s.replace(new RegExp(`^\\| ${esc(NAMES[b.tool])} \\|.*$`, 'm'), `| ${NAMES[b.tool]} | Supported | **${b.to}** | ${date} | ${latest} |`);
-    }
-    return s;
-  });
-  for (const guide of ['docs/guide.md', 'docs/guide.ko.md']) {
-    await edit(guide, (s) => s.replace(/^(\*\*(?:Verified versions|검증된 버전):\*\* )(.*?)( \(\d{4}-\d{2}-\d{2}\))/m, (m, head, list, _d) => {
-      for (const b of bumps) list = list.replace(new RegExp(`${esc(NAMES[b.tool])} [\\w.-]+`), `${NAMES[b.tool]} ${b.to}`);
-      return `${head}${list} (${date})`;
-    }));
-  }
   await edit('CHANGELOG.md', (s) => {
-    const line = `- Verified with ${bumps.map((b) => `${NAMES[b.tool]} ${b.to}`).join(', ')} (weekly automatic check).`;
+    const line = `- Verified with ${bumps.map((b) => `${NAMES[b.tool]} ${b.to}`).join(', ')} on ${OS_NAMES[os]} (${changelog}).`;
     const start = s.indexOf('## [Unreleased]');
     if (start < 0) return s;
     const next = s.indexOf('\n## [', start + 1);
@@ -321,9 +313,39 @@ ${fixed ? `This PR also marks ${NAMES[r.tool]} ${r.to} as verified, for Baton re
 }
 
 // ------------------------------------------------------------------ main
+/** Record a compat:smoke --report run (this OS) in compat.json via a PR, merged once CI is green. */
+async function recordOs(file) {
+  const reports = JSON.parse(await fsp.readFile(file, 'utf8'));
+  const os = osKey();
+  const table = JSON.parse(await fsp.readFile(path.join(WORK, 'server', 'compat.json'), 'utf8'));
+  const cmpVer = (a, b) => cmp(a, b);
+  const passed = reports.filter((r) => r.ok && r.version && table[r.tool]);
+  const fresh = passed.filter((r) => !table[r.tool].os?.[os]?.verified || cmpVer(r.version, table[r.tool].os[os].verified) > 0);
+  for (const r of reports.filter((x) => !x.skipped && !x.ok)) log(`${NAMES[r.tool] || r.tool} ${r.version || ''} FAILED on ${OS_NAMES[os]}: not recorded`);
+  if (!fresh.length) { log(`nothing new to record for ${OS_NAMES[os]} (${passed.map((r) => `${NAMES[r.tool]} ${r.version}`).join(', ') || 'no passes'})`); return; }
+  await bumpFiles(fresh.map((r) => ({ tool: r.tool, to: r.version })), { os, changelog: 'manual check' });
+  const problem = await repoChecks();
+  if (problem) throw new Error(`repo checks failed: ${problem}`);
+  const names = fresh.map((r) => `${NAMES[r.tool]} ${r.version}`).join(', ');
+  const failed = reports.filter((x) => !x.skipped && !x.ok);
+  const body = `Manual compatibility run on **${OS_NAMES[os]}** (\`npm run compat:smoke -- --report\`).
+
+| CLI | Version | Result |
+|---|---|---|
+${reports.map((r) => `| ${NAMES[r.tool] || r.tool} | ${r.version || '—'} | ${r.skipped ? `skipped (${r.skipped})` : r.ok ? `✅ ${r.steps.length}/${r.steps.length} steps${fresh.includes(r) ? ' — **recorded**' : ' — already recorded'}` : `❌ ${r.steps.filter((x) => !x.ok).map((x) => x.name).join(', ')}`} |`).join('\n')}
+${failed.length ? `\n### Failures (not recorded)\n${failed.map((r) => `**${NAMES[r.tool]} ${r.version}**\n${r.steps.filter((x) => !x.ok).map((x) => `- ${x.name}: ${x.detail.replace(/\n/g, ' ').slice(0, 300)}`).join('\n')}`).join('\n\n')}\n` : ''}
+Updates the ${OS_NAMES[os]} column of \`server/compat.json\` and docs/compatibility.md. Merged automatically once CI is green.
+
+🤖 Generated by \`npm run compat:smoke -- --report\``;
+  const url = await commitAndPr({ branch: `compat/${os}-${today()}`, title: `Verified on ${OS_NAMES[os]}: ${names}`, body, message: `chore: verified on ${OS_NAMES[os]}: ${names}\n\nManual compat:smoke --report run.` });
+  if (url) log(`PR ${url}: ${await mergeWhenGreen(url)}`);
+}
+
 async function main() {
   await bootstrap();
   logFile = path.join(LOGS, `${today()}.log`);
+  const recordFile = argv.includes('--record-os') ? argv[argv.indexOf('--record-os') + 1] : null;
+  if (recordFile) { await recordOs(recordFile); await sh('git', ['checkout', '--quiet', '--detach', '--force', REF], { quiet: true }); return; }
   const compat = JSON.parse(await fsp.readFile(path.join(WORK, 'server', 'compat.json'), 'utf8'));
   const tools = Object.keys(NAMES).filter((t) => compat[t]?.level === 'supported' && (!ONLY.length || ONLY.includes(t)));
   log(`weekly compat run${DRY ? ' (dry run)' : ''} at ${(await sh('git', ['rev-parse', '--short', 'HEAD'], { quiet: true })).out.trim()} for ${tools.join(', ')}`);
@@ -422,6 +444,7 @@ if (argv.includes('--maintainer-check')) { // used by compat-schedule.mjs
 
 main().catch(async (e) => {
   log(`fatal: ${e.stack || e.message}`);
+  if (argv.includes('--record-os')) process.exit(1);
   await fsp.writeFile(STATE, JSON.stringify({ runAt: new Date().toISOString(), finishedAt: new Date().toISOString(), dryRun: DRY, results: [], prs: [], needsAttention: true, fatal: e.message, log: logFile }, null, 2)).catch(() => {});
   process.exit(1);
 });

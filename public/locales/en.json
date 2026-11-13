@@ -1289,5 +1289,8 @@
  "v{v}로 업데이트": "Update to v{v}",
  "Baton을 업데이트하면 이 버전이 지원돼요": "Update Baton to support this version",
  "이 버전은 다음 Baton 업데이트부터 지원돼요. 그때까지 일부 기능이 안 될 수 있어요.": "This version is supported from the next Baton update. Until then, some features may not work.",
- "지금 버전에서 올릴 검증된 버전이 없어요": "There's no verified version to update to"
+ "지금 버전에서 올릴 검증된 버전이 없어요": "There's no verified version to update to",
+ "다른 OS에서 검증된 버전이에요. 이 OS({os})에서는 아직 확인 전이에요.": "Verified on another OS. Not checked on this one ({os}) yet.",
+ "다른 OS에서 검증됨": "Verified on another OS",
+ "OS별 검증": "Verified on"
 }
