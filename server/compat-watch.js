@@ -1,5 +1,5 @@
 // Reads the result of the weekly CLI auto-verification (scripts/compat-weekly.mjs writes
-// ~/.baton-compat/last-run.json), shows it in Settings and sends one notification per run:
+// ~/.baton-compat/last-run.json) and sends one notification per run:
 // a push when something needs a look (a fix PR to review, a failure), an inbox entry otherwise.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,7 +10,6 @@ import { tr } from './i18n.js';
 
 const BASE = path.join(os.homedir(), '.baton-compat');
 const LAST_RUN = path.join(BASE, 'last-run.json');
-const TIMER = path.join(os.homedir(), '.config', 'systemd', 'user', 'baton-compat.timer');
 const NAMES = { claude: 'Claude Code', codex: 'Codex', agy: 'Antigravity', opencode: 'OpenCode' };
 
 /** One translated line per CLI, e.g. "Codex 0.167.2: passed". */
@@ -24,20 +23,6 @@ function lines(run) {
     if (r.status === 'skipped') return tr('{name}: 건너뜀 ({why})', { name: n, why: r.note || '?' });
     return tr('{name}: 오류 ({why})', { name: n, why: r.note || '?' });
   });
-}
-
-/** Summary for Settings (null if the auto-check never ran). */
-export function compatRunInfo() {
-  let run = null;
-  try { run = JSON.parse(fs.readFileSync(LAST_RUN, 'utf8')); } catch { /* never ran */ }
-  return {
-    scheduled: fs.existsSync(TIMER),
-    last: run ? {
-      at: run.finishedAt || run.runAt, dryRun: Boolean(run.dryRun), needsAttention: Boolean(run.needsAttention),
-      lines: run.fatal ? [tr('실행 중 오류: {why}', { why: run.fatal })] : lines(run),
-      prs: (run.prs || []).filter((p) => p.url).map((p) => ({ url: p.url, kind: p.kind, merged: Boolean(p.merged) })),
-    } : null,
-  };
 }
 
 /** Notify once per finished run. */
