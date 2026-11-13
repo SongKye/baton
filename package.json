@@ -16,6 +16,7 @@
     "compat:smoke": "node --no-warnings scripts/compat-smoke.mjs",
     "compat:weekly": "node --no-warnings scripts/compat-weekly.mjs",
     "compat:schedule": "node --no-warnings scripts/compat-schedule.mjs",
+    "compat:release": "node --no-warnings scripts/compat-release.mjs",
     "release:check": "node scripts/release-check.mjs"
   },
   "engines": {

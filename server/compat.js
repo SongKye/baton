@@ -72,12 +72,12 @@ export function compatState(id, installed, verified = COMPAT[id]?.verified) {
   return d === 0 ? 'verified' : d > 0 ? 'newer' : 'older';
 }
 
-// ---------------------------------------------------------------- latest table from GitHub
-// The weekly auto-check keeps compat.json on main current. Reading it here lets an older Baton know about
-// CLI versions verified after it was released. An entry may say { needsBatonAfter: "0.10.0" }: that CLI
-// version only works with code newer than that Baton release (a compatibility fix), so this install needs
-// a Baton update first.
-const REMOTE_URL = process.env.BATON_COMPAT_URL || 'https://raw.githubusercontent.com/SongKye/baton/main/server/compat.json';
+// ---------------------------------------------------------------- what the newest Baton release supports
+// "Supported" on this install always means THIS release's own compat.json: versions tested with this release's
+// code. The newest release's table (read from GitHub at that release's tag, never main) is advice only: when
+// the installed CLI is newer than this release supports but the newest release supports it, the user is told to
+// update Baton. Verifications on main that no release ships yet are never shown: users can't get that code.
+const REMOTE_BASE = 'https://raw.githubusercontent.com/SongKye/baton';
 const REMOTE_CACHE = path.join(DATA_DIR, 'compat-remote.json');
 const REMOTE_EVERY = 6 * 3600_000;
 export const BATON_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return '0.0.0'; } })();
@@ -86,14 +86,16 @@ let remote = (() => { try { return JSON.parse(fs.readFileSync(REMOTE_CACHE, 'utf
 const validTable = (t) => t && typeof t === 'object' && !Array.isArray(t)
   && Object.values(t).every((e) => e && typeof e === 'object' && (e.verified === null || /^\d+\.\d+\.\d+/.test(String(e.verified))));
 
-/** Fetch the latest table at most every 6 hours; keeps the last good copy when offline. */
-export async function refreshRemote({ force = false } = {}) {
-  if (!force && remote?.at && Date.now() - remote.at < REMOTE_EVERY) return remote;
+/** Fetch the newest release's table (only if that release is newer than this one), at most every 6 hours. */
+export async function refreshRemote({ latestBaton = null, force = false } = {}) {
+  if (!latestBaton || cmpVersion(latestBaton, BATON_VERSION) <= 0) return null; // this is the newest release
+  if (!force && remote?.tag === latestBaton && Date.now() - remote.at < REMOTE_EVERY) return remote;
+  const url = process.env.BATON_COMPAT_URL || `${REMOTE_BASE}/v${latestBaton}/server/compat.json`; // env: tests
   try {
-    const r = await fetch(REMOTE_URL, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'baton' } });
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'baton' } });
     const table = r.ok ? await r.json() : null;
     if (validTable(table)) {
-      remote = { at: Date.now(), table };
+      remote = { at: Date.now(), tag: latestBaton, table };
       fs.writeFileSync(REMOTE_CACHE, JSON.stringify(remote));
     } else if (remote) remote.at = Date.now() - REMOTE_EVERY + 30 * 60_000; // bad answer: retry in 30 min
   } catch { if (remote) remote.at = Date.now() - REMOTE_EVERY + 30 * 60_000; }
@@ -103,35 +105,28 @@ export async function refreshRemote({ force = false } = {}) {
 const OS_KEY = process.env.BATON_COMPAT_OS || (process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux'); // WSL = linux; env: tests
 const OSES = ['linux', 'windows', 'macos'];
 
-/** This Baton has the code a table entry needs. */
-const batonOk = (e) => !e?.needsBatonAfter || cmpVersion(BATON_VERSION, e.needsBatonAfter) > 0;
-
 /**
- * What the UI shows for one CLI: the version this Baton supports (its own table, or a newer one from GitHub
- * when this Baton has the code for it), how the installed version compares, and what the user can do:
- *   action 'cli-update'   installed CLI is older than supported -> install `target`
- *          'baton-update' a newer Baton release supports the installed CLI version -> update Baton
- *          'baton-next'   only Baton code that isn't released yet supports it -> wait for the next release
+ * What the UI shows for one CLI, all from this release's own table:
+ *   hereVerified  the version verified on this OS (null: not checked on this OS yet)
+ *   state         installed vs hereVerified (or, if this OS was never checked, vs the newest version verified elsewhere)
+ *   action        'cli-update'   installed is older -> install `target` (the verified version)
+ *                 'baton-update' installed is newer, and the newest Baton release (`target`) supports it
  */
 export function compatInfo(id, installed, { latestBaton = null } = {}) {
   const c = COMPAT[id] || {};
-  const r = remote?.table?.[id];
-  let verified = c.verified || null, verifiedAt = c.verifiedAt || null, level = c.level || 'unverified', source = 'local';
-  if (r?.verified && batonOk(r) && (!verified || cmpVersion(r.verified, verified) > 0)) ({ verified, verifiedAt, level } = { verified: r.verified, verifiedAt: r.verifiedAt || null, level: r.level || level }), source = 'github';
-  const state = compatState(id, installed, verified);
-  let action = null, target = null, needsBatonAfter = null;
-  if (state === 'older' && CLI_UPDATABLE.has(id)) { action = 'cli-update'; target = verified; }
-  else if (state === 'newer' && r?.verified && !batonOk(r) && cmpVersion(r.verified, installed) >= 0) {
-    needsBatonAfter = r.needsBatonAfter;
-    action = latestBaton && cmpVersion(latestBaton, r.needsBatonAfter) > 0 ? 'baton-update' : 'baton-next';
+  const platforms = Object.fromEntries(OSES.map((os) => [os, c.os?.[os]?.verified || null]));
+  const hereVerified = platforms[OS_KEY];
+  const ref = hereVerified || c.verified || null;
+  const state = compatState(id, installed, ref);
+  let action = null, target = null;
+  if (state === 'older' && CLI_UPDATABLE.has(id)) { action = 'cli-update'; target = ref; }
+  else if (state === 'newer' && latestBaton && remote?.tag === latestBaton && cmpVersion(latestBaton, BATON_VERSION) > 0) {
+    const r = remote.table?.[id];
+    const rv = r?.os?.[OS_KEY]?.verified || r?.verified;
+    if (rv && cmpVersion(rv, installed) >= 0) { action = 'baton-update'; target = latestBaton; }
   }
-  // where each version was actually run: the newer of this Baton's table and GitHub's (when this Baton can use it)
-  const platforms = {};
-  for (const os of OSES) {
-    const a = c.os?.[os]?.verified || null, b = r && batonOk(r) ? r.os?.[os]?.verified || null : null;
-    platforms[os] = a && b ? (cmpVersion(a, b) >= 0 ? a : b) : a || b;
-  }
-  return { level, verified, verifiedAt, source, builtFor: c.builtFor || null, state, action, target, needsBatonAfter, platforms, here: OS_KEY, hereVerified: platforms[OS_KEY] };
+  return { level: c.level || 'unverified', verified: c.verified || null, verifiedAt: c.verifiedAt || null, builtFor: c.builtFor || null,
+    state, action, target, platforms, here: OS_KEY, hereVerified };
 }
 
 // ---------------------------------------------------------------- updating a CLI to the supported version

@@ -69,8 +69,8 @@ export async function setupStatus({ fresh = false } = {}) {
   if (!fresh && statusCache.v && Date.now() - statusCache.at < 20_000) return statusCache.v;
   clearWhichCache();
   const nodeVer = process.versions.node.split('.').map(Number);
-  await refreshRemote().catch(() => null); // latest compatibility table from GitHub (cached 6 h)
   const latestBaton = updateCached().latest;
+  await refreshRemote({ latestBaton }).catch(() => null); // newest release's compatibility table (advice only, cached 6 h)
   const tools = await Promise.all(TOOL_IDS.map(async (id) => {
     const t = TOOLS[id];
     const bin = binFor(id);

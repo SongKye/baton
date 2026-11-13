@@ -1,7 +1,8 @@
 // Shared by the compat scripts: which OS this is, recording a verified version per OS in server/compat.json,
 // and rendering the table in docs/compatibility.md (between the compat-table markers) from it.
 //
-// compat.json entry: { level, verified, verifiedAt, needsBatonAfter?, os: { linux|windows|macos: { verified, verifiedAt } } }
+// compat.json entry: { level, verified, verifiedAt, os: { linux|windows|macos: { verified, verifiedAt } } }
+// compat.json ships inside each Baton release: that release's code is what was verified with these versions.
 // The top-level `verified` is the newest version verified on any OS (what "Baton supports" means); `os` says
 // where it was actually run.
 import fs from 'node:fs';

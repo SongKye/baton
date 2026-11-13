@@ -24,9 +24,10 @@ Baton shows the same information in **Settings → Supported AI tool versions** 
 
 | Shown | Meaning | What to do |
 |---|---|---|
-| Verified | Installed version = verified version | Nothing |
-| Newer, not checked yet | Installed version is newer than the verified one | Usually fine. If something breaks, include the CLI version when you report it |
-| Older than verified | Installed version is older | Update the CLI if something misbehaves |
+| Verified | Installed version = the version **this Baton release** verified **on your OS** | Nothing |
+| Newer, not checked yet | Installed version is newer than that | Usually fine. If something breaks, include the CLI version when you report it. If a newer Baton release verified it, **Update Baton** appears |
+| Older than verified | Installed version is older | **Update to vX** installs the verified version |
+| Not checked on this OS | Verified on another OS only | Usually fine; the other OSes are listed underneath |
 | Beta / Unverified | Baton has no verified version for this CLI | Expect rough edges |
 
 "Supported" covers versions from the verified one onward until a release breaks something. Baton doesn't
@@ -106,22 +107,25 @@ Verified with the free models (no sign-in). OpenCode has no subscription limits,
 `cursor-agent -p --output-format stream-json --resume --model --force`, `~/.cursor/chats/*/store.db`,
 `~/.cursor/mcp.json`. Not verified against a live install.
 
-## Latest table and update buttons
+## Verified per release, and update buttons
 
-Baton reads the latest `server/compat.json` from GitHub (`main`, at most every 6 hours, last good copy kept
-offline). An install released before a CLI version was verified still knows about it:
+**`server/compat.json` ships inside each Baton release, and that copy is what the release calls verified.** The
+versions in it were tested with that release's code: the weekly job tests `main`, and `npm run compat:release`
+re-tests the exact code right before a release (`npm run release:check` blocks until it has passed for the
+current `server/` tree). An install keeps showing its own release's versions until Baton is updated. Then it
+shows the new release's.
+
+Baton also reads the table of the **newest Baton release** from GitHub (at that release's tag, never `main`, at
+most every 6 hours). It is advice only, never "verified":
 
 | Your CLI | Shown | Button |
 |---|---|---|
-| Older than the supported version | "You can update to the verified version" | **Update to vX** installs exactly that version, the way the CLI was installed (npm `-g`, `claude install X`, `opencode upgrade X`). Antigravity and Homebrew Codex can only go to their latest release |
-| Newer, verified without code changes | Verified (the newer table applies to this Baton too) | none |
-| Newer, verified only with a code fix | "Update Baton to support this version" | **Update Baton**, once a release with the fix exists; otherwise "supported from the next Baton update" |
-| Newer than anything verified | "Newer, not checked yet" | none (the weekly check catches up) |
+| Older than this release verified | "You can update to the verified version" | **Update to vX** installs exactly that version, the way the CLI was installed (npm `-g`, `claude install X`, `opencode upgrade X`). Antigravity and Homebrew Codex can only go to their latest release |
+| Newer, and the newest Baton release verified it | "Baton vY verified this version" | **Update Baton** |
+| Newer than any release verified | "Newer, not checked yet" | none (the weekly check and the next release catch up) |
 
-A code fix records `needsBatonAfter: "<version>"` on the CLI's entry: only Baton releases after that version
-have the fix. The weekly fix PR sets it to the Baton version on `main` at the time, so **cut a release after
-merging a fix PR**: until then, users see "supported from the next Baton update". A later data-only bump keeps
-the field.
+Versions verified on `main` but not released yet are never shown to users: they can't get that code yet. So
+**cut a release after the weekly job (or a fix PR) moves a verified version**.
 
 There is deliberately no downgrade button: Claude Code's auto-updater would undo it within hours, new models need
 new CLI versions, a newer CLI may have migrated its data, and the same CLI is used in the terminal too.
@@ -221,9 +225,8 @@ Reports can be recorded only when their Baton revision matches the recording wor
 and OS/architecture match. Run from a clean checkout of the target revision; results from local edits cannot
 certify the unmodified release.
 
-Users see this per OS. **Verified** means the installed version was verified on their OS. **Verified on
-another OS** means it was verified elsewhere but not on theirs yet. Settings also lists the verified version on
-each OS.
+Users see this per OS: "Verified (Windows): vX" is the version verified on their OS. If their OS wasn't
+checked yet, it says so, and the versions verified on other OSes are listed underneath.
 
 On Windows the test home is isolated through `USERPROFILE`. Antigravity is recommended in WSL there, which
 counts as Linux.
