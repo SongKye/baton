@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Fixed
+- **OpenCode sessions run from a temporary folder (`/tmp`) now get the "Auto" label**, like Claude, Codex and Antigravity already did. Before, OpenCode only tagged sub-sessions, so throwaway runs from scripts and tests looked like your own sessions. Sessions started from Baton are never tagged.
+
+### Fixed
 - **No more brief "working on the PC" flash when a reply you started in Baton finishes.** For a second or so after a run ended, Baton still remembered the finished process as busy and labelled the session as open in a PC terminal. It now drops a process the moment it has exited.
 
 ### Fixed
