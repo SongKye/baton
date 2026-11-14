@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-14
+
 ### Changed
 - **"Auto" permission means the same on every CLI**: everyday work inside the project (edit files, run the project's tools, commit with git, install packages, use the network) runs without "Full"; work outside the project and destructive actions stay blocked. Before, each CLI read "Auto" differently. **Codex** now runs with network access, and the repository's git folder and package caches are writable, inside its sandbox, so commits, pushes and installs work. Before, all three failed. **Antigravity** now runs common development tools (git, npm, node, python, …) through allow rules added on top of your own. Before, it couldn't run any shell command and the reply ended empty. The permission picker shows what "Auto" covers for the selected CLI.
 - Version checks now verify the permission levels too: `compat:check` requires the flags and values Baton passes and runs a model-free Codex sandbox probe, and `compat:smoke` adds a required "everyday work (auto)" step (git commit + network from a command) for every CLI. See docs/compatibility.md → Permission levels.
