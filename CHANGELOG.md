@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Fixed
+- **Chat warnings stay in view**: the usage-limit warning, the "hit the limit" card, the "blocked by permissions" card, errors and the "also open in a PC terminal" warning now sit just above the message box instead of at the top or in the middle of the conversation, so you see them without scrolling.
+- **"Hit the limit" no longer disappears**: how a session's last run ended (limit, blocked tools, error) is remembered until you send again or close the card with ✕. Switching apps, leaving and coming back no longer wipes it.
+- The near-limit warning shows when the limit resets and appears even when only one CLI is installed (then without the hand-off buttons). Its button now says **Other CLI** instead of the vague "Hand off", and the two buttons sit together.
+- Loading older messages no longer pushes the "continued from…" banner into the middle of the conversation.
 - **Baton's own background calls no longer show up as your sessions**: project summaries, skill / MCP drafts and connection checks used to run inside Baton's own folder, and OpenCode and Antigravity keep every such call as a real session, so stray sessions appeared under the "baton" project. These calls now run in one dedicated temporary folder outside every project, their sessions are hidden, and anything recorded in that folder (or left over in `~/baton/data` by earlier versions) is never listed.
 
 ## [0.10.0] - 2026-11-14

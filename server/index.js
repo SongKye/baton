@@ -238,7 +238,13 @@ route('GET', '/api/sessions/:tool/:id', async (req, url, { tool, id }) => {
   return { session: sessionView(view), ...page, messages: page.messages.map((message) => {
     const { imageRefs, ...m } = slimMessage(message);
     return { ...m, ...(imageRefs?.length ? { imageUrls: imageRefs.map((ref) => `/api/sessions/claude/${encodeURIComponent(s.id)}/images/${ref}`) } : {}) };
-  }), run: run ? publicRun(run) : null, links };
+  }), run: run ? publicRun(run) : null, outcome: run ? null : store.getRunOutcome(s.key), links };
+});
+
+// dismiss the "last run hit the limit / was blocked / failed" card in a chat
+route('DELETE', '/api/sessions/:tool/:id/outcome', async (req, url, { tool, id }) => {
+  store.clearRunOutcome(`${tool}:${decodeURIComponent(id)}`);
+  return { ok: true };
 });
 
 route('POST', '/api/sessions/:tool/:id/meta', async (req, url, { tool, id }) => {
@@ -663,6 +669,15 @@ bus.on('run_ask', (run) => {
   const q = run.pendingAsk?.input?.questions?.[0]?.question || '';
   const url = run.sessionId ? `/#/s/${run.tool}/${encodeURIComponent(run.sessionId)}` : '/#/';
   notify({ kind: 'ask', title: fromLine(run.tool, run.model), body: `❓ ${clip(run.title || run.prompt, 40)}\n${clip(q, 140)}`, url, tag: `ask-${run.sessionId || run.id}` }).catch(() => {});
+});
+
+// ---------- remember how a session's last run ended (limit / blocked / error) until the next run ----------
+bus.on('run_end', (run) => {
+  if (!run.sessionId) return;
+  const key = `${run.tool}:${run.sessionId}`;
+  const kind = run.stopped ? null : run.limited ? 'limited' : run.denied?.length ? 'denied' : run.status === 'error' ? 'error' : null;
+  if (kind) store.setRunOutcome(key, { kind, error: run.error, denied: run.denied });
+  else store.clearRunOutcome(key);
 });
 
 // ---------- notifications on run completion ----------

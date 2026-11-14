@@ -311,6 +311,9 @@ main.view { flex: 1; padding: 4px 16px calc(var(--tabbar-h) + var(--safe-b) + 84
 .banner { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; font-size: 13.5px; background: var(--surface-2); color: var(--text-2); }
 .banner.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--text); }
 .banner .btn { margin-left: auto; flex: none; }
+.banner .bt { flex: 1; min-width: 0; line-height: 1.4; }
+.banner .bb { display: flex; gap: 6px; flex: none; margin-left: auto; }
+.banner .bb .btn { margin-left: 0; }
 .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--surface-2); padding: 3px; border-radius: 12px; gap: 2px; }
 .seg button { height: 34px; border-radius: 9px; font-size: 13px; font-weight: 650; color: var(--text-2); }
 .seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
@@ -389,6 +392,15 @@ body.chat-mode .tabbar, body.chat-mode .fab, body.chat-mode .runpill { display: 
 .done-card.err { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .done-card.denied { background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .done-card .row { display: flex; gap: 8px; flex-wrap: wrap; }
+/* warnings pinned above the composer: visible however far the chat is scrolled */
+.chat-alerts { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 0; max-height: 40vh; overflow-y: auto; background: var(--bg); }
+.chat-alerts:empty { display: none; }
+.chat-alerts > * { width: 100%; max-width: 760px; margin: 0 auto; box-sizing: border-box; }
+.chat-alerts .banner { flex-wrap: wrap; }
+.done-card.oc { position: relative; padding-right: 36px; }
+.done-card .oc-x { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border: 0; border-radius: 8px; background: none; color: var(--text-2); font-size: 13px; cursor: pointer; }
+.done-card .oc-x:hover { background: var(--surface-2); }
+.done-card .oc-err { white-space: pre-wrap; word-break: break-word; max-height: 7.5em; overflow-y: auto; }
 
 .composer { flex: none; border-top: 1px solid var(--border); background: var(--bg); padding: 8px 12px calc(8px + var(--safe-b)); }
 body.kb-open .composer { padding-bottom: 8px; }

@@ -1651,6 +1651,7 @@ function chatLayout({ backHref, title, subHtml, tool, extraHead = '', banner = '
     </div>
     ${banner}
     <div class="chat-scroll" id="scroll"><div class="msgs" id="msgs"></div></div>
+    <div class="chat-alerts" id="calerts"></div>
     ${composerHtml(tool, isNew)}
   </div>`;
   $('#back').onclick = (e) => { e.preventDefault(); if (G.navCount > 1) history.back(); else location.hash = $('#back').getAttribute('href'); };
@@ -1890,7 +1891,30 @@ async function viewChat([tool, id]) {
   const navCount = G.navCount;
   chatLayout({ backHref: '#/', title: t('불러오는 중…'), subHtml: `<span class="tool-badge ${tool}">${TOOL[tool].name}</span>`, tool, extraHead: `<button class="icon-btn" id="cmore">${ICON.more}</button>` });
   let live = null, session = null, start = 0, busy = false, links = { from: [], to: [] };
-  const msgsEl = $('#msgs'), scroll = $('#scroll');
+  let outcome = null, lim = null; // how the last run ended (kept by the server) / CLI usage
+  const msgsEl = $('#msgs'), scroll = $('#scroll'), alertsEl = $('#calerts');
+
+  /** Warnings that must stay visible however far the chat is scrolled: pinned just above the composer. */
+  const renderAlerts = () => {
+    if (!session || !alertsEl.isConnected) return;
+    const stick = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
+    const parts = [];
+    if (session.terminal) parts.push(session.background
+      ? `<div class="banner warn">${t('⏳ 다른 도구가 백그라운드에서 이 세션을 실행 중이에요. 진행 상황은 여기서 볼 수 있고, 끝난 뒤에 보내면 이어서 작업할 수 있어요.')}</div>`
+      : `<div class="banner warn">${t('⚠️ 이 세션은 PC 터미널에서도 열려 있어요. 여기서 보내면 기록이 갈라질 수 있으니 PC 쪽이 쉬고 있을 때 보내세요.')}</div>`);
+    if (!busy && outcome) parts.push(outcomeCard(session, outcome, lim));
+    if (!busy && outcome?.kind !== 'limited') parts.push(limitWarn(session, lim));
+    alertsEl.innerHTML = parts.join('');
+    $$('[data-handoff]', alertsEl).forEach((b) => (b.onclick = () => handoffSheet(session, links, outcome?.kind === 'limited' ? { reason: t('한도에 걸렸어요. 어디서 이어갈까요?') } : {})));
+    $$('[data-newhere]', alertsEl).forEach((b) => (b.onclick = () => newSessionHere(session)));
+    $$('[data-sched-now]', alertsEl).forEach((b) => (b.onclick = async () => { if (await scheduleSheet(session)) load({ keepScroll: true }); }));
+    $$('[data-retryfull]', alertsEl).forEach((b) => (b.onclick = () => send(t('계속해. 방금 권한 때문에 막힌 작업을 이어서 진행해줘.'), { ...composerPrefs(tool), perm: 'full' })));
+    $$('[data-oc-close]', alertsEl).forEach((b) => (b.onclick = () => {
+      outcome = null; renderAlerts();
+      api(`/api/sessions/${tool}/${encodeURIComponent(id)}/outcome`, { method: 'DELETE' }).catch(() => {});
+    }));
+    if (stick) scroll.scrollTop = scroll.scrollHeight;
+  };
   G.cleanup = () => { live?.close(); cleanVV(); };
 
   const load = async ({ keepScroll = false } = {}) => {
@@ -1901,21 +1925,15 @@ async function viewChat([tool, id]) {
     $('#csub').innerHTML = `<span class="tool-badge ${tool}">${TOOL[tool].name}</span><span>${esc(projectName(session.project || session.cwd))}</span>${session.model ? `<span>· ${esc(session.model)}</span>` : ''}${session.notify < 0 ? `<span class="flag bell">${t('🔕 알림 꺼짐')}</span>` : ''}<span id="cmcp"></span>`;
     mcpChip(session);
     $('#back').setAttribute('href', session.project ? `#/p/${encodeURIComponent(session.project)}` : '#/sessions');
-    const banner = !session.terminal ? ''
-      : session.background ? `<div class="banner warn" style="margin-bottom:4px">${t('⏳ 다른 도구가 백그라운드에서 이 세션을 실행 중이에요. 진행 상황은 여기서 볼 수 있고, 끝난 뒤에 보내면 이어서 작업할 수 있어요.')}</div>`
-      : `<div class="banner warn" style="margin-bottom:4px">${t('⚠️ 이 세션은 PC 터미널에서도 열려 있어요. 여기서 보내면 기록이 갈라질 수 있으니 PC 쪽이 쉬고 있을 때 보내세요.')}</div>`;
-    msgsEl.innerHTML = `${start > 0 ? `<button class="btn sm ghost load-older" id="older">${t('이전 대화 더 보기')}</button>` : ''}${banner}<div id="hobanners"></div>${msgsHtml(d.messages)}<div id="schedbanners"></div>`;
-    api('/api/limits').catch(() => ({})).then((lim) => {
-      const hb = $('#hobanners'); if (!hb) return;
-      api(`/api/scheduled?key=${encodeURIComponent(`${tool}:${id}`)}`).then((sd) => {
-        const box = $('#schedbanners'); if (!box) return;
-        box.innerHTML = scheduledBanner(sd.items || []);
-        $$('[data-sched-cancel]', box).forEach((b) => (b.onclick = async () => { await api(`/api/scheduled/${b.dataset.schedCancel}/cancel`, { method: 'POST' }); toast(t('예약을 취소했어요')); load({ keepScroll: true }); }));
-      }).catch(() => {});
-      hb.innerHTML = (session.moved ? `<div class="banner">📁 ${t('작업 폴더: {p} (원래 {o})', { p: esc(session.cwd), o: esc(session.origCwd || '') })}</div>` : '') + handoffBanners(session, links, lim);
-      $$('[data-handoff]', hb).forEach((b) => (b.onclick = () => handoffSheet(session, links)));
-      $$('[data-newhere]', hb).forEach((b) => (b.onclick = () => newSessionHere(session)));
-    });
+    outcome = d.outcome || null;
+    msgsEl.innerHTML = `${start > 0 ? `<button class="btn sm ghost load-older" id="older">${t('이전 대화 더 보기')}</button>` : ''}<div id="hobanners">${(session.moved ? `<div class="banner">📁 ${t('작업 폴더: {p} (원래 {o})', { p: esc(session.cwd), o: esc(session.origCwd || '') })}</div>` : '') + handoffBanners(links)}</div>${msgsHtml(d.messages)}<div id="schedbanners"></div>`;
+    renderAlerts();
+    api(`/api/scheduled?key=${encodeURIComponent(`${tool}:${id}`)}`).then((sd) => {
+      const box = $('#schedbanners'); if (!box) return;
+      box.innerHTML = scheduledBanner(sd.items || []);
+      $$('[data-sched-cancel]', box).forEach((b) => (b.onclick = async () => { await api(`/api/scheduled/${b.dataset.schedCancel}/cancel`, { method: 'POST' }); toast(t('예약을 취소했어요')); load({ keepScroll: true }); }));
+    }).catch(() => {});
+    api('/api/limits').catch(() => ({})).then((l) => { lim = l; renderAlerts(); });
     if (!d.messages.length) msgsEl.insertAdjacentHTML('beforeend', `<div class="empty">${t('표시할 대화가 없어요')}</div>`);
     // the reply ended with a question and choices -> tap to answer
     const lastMsg = d.messages[d.messages.length - 1];
@@ -1938,7 +1956,9 @@ async function viewChat([tool, id]) {
       const h0 = scroll.scrollHeight;
       const o = await api(`/api/sessions/${tool}/${encodeURIComponent(id)}?before=${start}&seen=0`);
       start = o.start; older.remove();
-      msgsEl.insertAdjacentHTML('afterbegin', `${start > 0 ? `<button class="btn sm ghost load-older" id="older">${t('이전 대화 더 보기')}</button>` : ''}${msgsHtml(o.messages)}`);
+      const hb = $('#hobanners', msgsEl);
+      hb.insertAdjacentHTML('afterend', msgsHtml(o.messages));
+      if (start > 0) msgsEl.insertAdjacentHTML('afterbegin', `<button class="btn sm ghost load-older" id="older">${t('이전 대화 더 보기')}</button>`);
       scroll.scrollTop = scroll.scrollHeight - h0;
       $('#older') && ($('#older').onclick = older.onclick);
     };
@@ -1947,31 +1967,20 @@ async function viewChat([tool, id]) {
   };
 
   const attachRun = (runId, promptText, imgs) => {
-    busy = true; comp.setBusy(true);
+    busy = true; comp.setBusy(true); outcome = null; renderAlerts();
     if (promptText) msgsEl.insertAdjacentHTML('beforeend', userBubble(promptText, imgs));
     live = liveRun(msgsEl, runId, {
       onDone: async (ev, el) => {
         live = null; busy = false; comp.setBusy(false);
         await load({ keepScroll: true });
+        // the server keeps limit / blocked / error outcomes; a stop (or a run without a session yet) is shown just this once
+        const kind = ev.limited ? 'limited' : ev.denied?.length ? 'denied' : ev.ok === false && ev.error ? 'error' : null;
+        if (!outcome && kind) { outcome = { kind, error: ev.error || null, denied: ev.denied || [], at: Date.now() }; renderAlerts(); }
         scroll.scrollTop = scroll.scrollHeight;
-        if (ev.limited) {
-          msgsEl.insertAdjacentHTML('beforeend', `<div class="done-card denied"><div>⏳ ${t('{name} 사용 한도에 걸린 것 같아요. 다른 CLI가 이 세션을 이어받아 계속할 수 있어요.', { name: TOOL[tool].name })}</div>
-            <div class="row"><button class="btn sm primary" data-sched-now>${t('⏰ 한도 풀리면 보내기')}</button><button class="btn sm" data-handoff-now>${t('다른 CLI로 이어가기')}</button></div></div>`);
-          $$('[data-handoff-now]', msgsEl).forEach((b) => (b.onclick = () => handoffSheet(session, links, { reason: t('한도에 걸렸어요. 어디서 이어갈까요?') })));
-          $$('[data-sched-now]', msgsEl).forEach((b) => (b.onclick = async () => { if (await scheduleSheet(session)) load({ keepScroll: true }); }));
-        } else if (ev.denied?.length) showDenied(ev.denied);
-        else if (ev.ok === false && ev.error) msgsEl.insertAdjacentHTML('beforeend', `<div class="done-card err">⚠️ ${esc(ev.error)}</div>`);
         loadState();
       },
     });
     requestAnimationFrame(() => { scroll.scrollTop = scroll.scrollHeight; });
-  };
-
-  const showDenied = (denied) => {
-    msgsEl.insertAdjacentHTML('beforeend', `<div class="done-card denied"><div>${t('🔒 권한이 없어 실행하지 못한 작업이 있어요:')} <b>${esc(denied.join(', '))}</b></div>
-      <div class="row"><button class="btn sm primary" id="retryfull">${t('전체 허용으로 「계속해」 보내기')}</button></div></div>`);
-    $('#retryfull').onclick = () => send(t('계속해. 방금 권한 때문에 막힌 작업을 이어서 진행해줘.'), { ...composerPrefs(tool), perm: 'full' });
-    scroll.scrollTop = scroll.scrollHeight;
   };
 
   const send = async (text, prefs, imgs) => {
@@ -4287,17 +4296,40 @@ async function newSessionHere(session) {
   location.hash = `#/new?cwd=${encodeURIComponent(cwd)}&tool=${tool}`;
 }
 
-/** Banners in a chat: where this session came from / continued to, and a nudge when its CLI is near the limit. */
-function handoffBanners(session, links, lim) {
+/** Banners at the top of a chat: where this session came from / continued to. */
+function handoffBanners(links) {
   const out = [];
   for (const l of links.from || []) out.push(`<a class="banner link" href="#/s/${l.tool}/${encodeURIComponent(l.id)}">↩ ${t('{name} 세션에서 이어받았어요', { name: TOOL[l.tool]?.name || l.tool })}${l.title ? ` · ${esc(l.title)}` : ''}</a>`);
   for (const l of (links.to || []).slice(0, 2)) out.push(`<a class="banner link" href="#/s/${l.tool}/${encodeURIComponent(l.id)}">→ ${t('{name}에서 이어서 진행 중', { name: TOOL[l.tool]?.name || l.tool })}${l.title ? ` · ${esc(l.title)}` : ''}</a>`);
-  const u = toolUsage(lim, session.tool);
-  if (u && u.usedPercent >= 80 && INSTALLED().some((id) => id !== session.tool)) {
-    out.push(`<div class="banner warn">⚡ ${t('{name} {label} 한도 {p}% 사용', { name: TOOL[session.tool].name, label: u.weekly ? t('주간') : t('5시간'), p: u.usedPercent })}
-      <button class="btn sm" data-newhere>${t('새 세션')}</button><button class="btn sm" data-handoff>${t('이어가기')}</button></div>`);
-  }
   return out.join('');
+}
+
+/** Nudge above the composer when this session's CLI is near its limit (with when it resets). */
+function limitWarn(session, lim) {
+  const u = toolUsage(lim, session.tool);
+  if (!u || u.usedPercent < 80) return '';
+  const others = INSTALLED().some((id) => id !== session.tool);
+  const reset = u.resetsAt ? ` · ${resetText(u.resetsAt)}` : '';
+  return `<div class="banner warn"><span class="bt">⚡ ${t('{name} {label} 한도 {p}% 사용', { name: TOOL[session.tool].name, label: u.weekly ? t('주간') : t('5시간'), p: u.usedPercent })}${reset}</span>
+    ${others ? `<span class="bb"><button class="btn sm" data-newhere>${t('새 세션')}</button><button class="btn sm" data-handoff>${t('다른 CLI로')}</button></span>` : ''}</div>`;
+}
+
+/** How the session's last run ended (limit hit / tools blocked / error): stays until the next run or ✕. */
+function outcomeCard(session, o, lim) {
+  const name = TOOL[session.tool].name;
+  const when = `<span class="muted"> · ${ago(o.at)}</span>`;
+  const close = `<button class="oc-x" data-oc-close aria-label="${t('닫기')}" title="${t('닫기')}">✕</button>`;
+  if (o.kind === 'limited') {
+    const u = toolUsage(lim, session.tool);
+    const others = INSTALLED().some((id) => id !== session.tool);
+    return `<div class="done-card denied oc">${close}<div>⏳ ${t('{name} 사용 한도에 걸린 것 같아요.', { name })}${u?.resetsAt ? ` ${esc(resetText(u.resetsAt))}` : ''}${when}</div>
+      <div class="row"><button class="btn sm primary" data-sched-now>${t('⏰ 한도 풀리면 보내기')}</button>${others ? `<button class="btn sm" data-handoff>${t('다른 CLI로 이어가기')}</button>` : ''}</div></div>`;
+  }
+  if (o.kind === 'denied') {
+    return `<div class="done-card denied oc">${close}<div>${t('🔒 권한이 없어 실행하지 못한 작업이 있어요:')} <b>${esc((o.denied || []).join(', '))}</b>${when}</div>
+      <div class="row"><button class="btn sm primary" data-retryfull>${t('전체 허용으로 「계속해」 보내기')}</button></div></div>`;
+  }
+  return `<div class="done-card err oc">${close}<div class="oc-err">⚠️ ${esc(o.error || t('실패했어요'))}</div>${when}</div>`;
 }
 
 // ---------------------------------------------------------------- CONNECT (API keys, Bedrock, Vertex, gateways, own servers)
