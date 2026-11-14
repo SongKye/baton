@@ -53,10 +53,16 @@ try {
       db.prepare('INSERT INTO session VALUES (?, ?, NULL, ?, ?, ?, ?, ?)').run(id, 'p', dir, id, now - 100_000, now - ago, archived ? now : null);
       db.prepare('INSERT INTO message VALUES (?, ?, ?, ?, ?)').run(`${id}_m`, id, now - 100_000, now - ago, JSON.stringify(asst));
     }
+    // a normal project folder, finished: a person's session
+    db.prepare('INSERT INTO session VALUES (?, ?, NULL, ?, ?, ?, ?, NULL)').run('human', 'p', '/home/dev/project', 'human', now - 100_000, now - 3_000);
+    db.prepare('INSERT INTO message VALUES (?, ?, ?, ?, ?)').run('human_m', 'human', now - 100_000, now - 3_000, JSON.stringify({ role: 'assistant', time: { created: now - 9_000, completed: now - 3_000 }, finish: 'stop' }));
     db.close();
 
-    const { opencodeInflight } = await import('../server/sources/opencode.js');
+    const { opencodeInflight, listOpencode } = await import('../server/sources/opencode.js');
     const inflight = opencodeInflight();
+    const rows = new Map((await listOpencode()).map((r) => [r.id, r]));
+    assert.equal(rows.get('human').automated, false, 'a session in a project folder is not automated');
+    assert.equal(rows.get('finished').automated, true, 'a session run from /tmp is tagged automated, like Claude / Codex / Antigravity');
     assert.deepEqual([...inflight.keys()].sort(), ['abandoned', 'run_working', 'server_style', 'tui_working'], 'only unfinished assistant replies count');
 
     if (process.platform !== 'linux') { console.log('PASS: OpenCode in-flight reply detection (process matching is Linux-only)'); process.exit(0); }

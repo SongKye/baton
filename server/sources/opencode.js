@@ -105,7 +105,7 @@ function rowFor({ s, msgs, file, updated, size, batonIds }) {
     created: s.time?.created || updated,
     updated,
     firstPrompt: clip(oneLine(cleanPrompt(first)), 240), lastPrompt: clip(oneLine(cleanPrompt(last)), 240), lastReply: clip(oneLine(reply), 400),
-    model, automated: Boolean(s.parentID) && !batonIds.has(s.id), file, size,
+    model, automated: !batonIds.has(s.id) && (Boolean(s.parentID) || Boolean(s.directory?.startsWith('/tmp'))), file, size, // same rule as Codex / Antigravity: a sub-session, or a throwaway /tmp run
   };
 }
 
