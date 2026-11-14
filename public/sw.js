@@ -1,5 +1,5 @@
 // Baton service worker: app-shell cache + web push.
-const CACHE = 'baton-v28';
+const CACHE = 'baton-v29';
 const SHELL = ['/', '/style.css?v=19', '/app.js?v=25', '/theme.js?v=5', '/palettes.css?v=3', '/studio.css?v=5', '/studio.js?v=5', '/vendor/marked.js', '/vendor/purify.js', '/icon.svg?v=2', '/baton-mark.svg', '/icon-handoff-180-v1.png', '/icon-handoff-192-v1.png', '/icon-handoff-512-v1.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
