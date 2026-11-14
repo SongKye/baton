@@ -7,6 +7,7 @@ import { liveClaude } from './sources/claude.js';
 import { CODEX_HOME } from './env.js';
 import { opencodeInflight } from './sources/opencode.js';
 import { childPids } from './runner.js';
+import { pidAlive } from './util.js';
 
 let cached = { at: 0, value: null };
 const OPENCODE_FRESH_MS = 60_000; // no process to match (e.g. `opencode serve`): trust a db touched this recently
@@ -66,7 +67,12 @@ async function procScan() {
 
 /** Map "<tool>:<id>" -> { pid, status } for sessions open in a terminal. Cached for 4s. */
 export async function liveSessions(sessionsByFile) {
-  if (cached.value && Date.now() - cached.at < 4000) return cached.value;
+  if (cached.value && Date.now() - cached.at < 4000) {
+    // A process that has exited since the scan (a Baton run that just ended is no longer in childPids) must not
+    // linger as "open in a terminal" until the cache expires.
+    for (const [k, v] of cached.value) if (v.pid && !pidAlive(v.pid)) cached.value.delete(k);
+    return cached.value;
+  }
   const out = new Map();
   const [cl, scan, oc] = await Promise.all([liveClaude(), procScan(), liveOpencode()]);
   for (const [id, v] of cl) out.set(`claude:${id}`, { pid: v.pid, status: v.status === 'busy' ? 'busy' : 'idle' });
