@@ -1036,7 +1036,15 @@ async function viewProject([id]) {
           <div class="memo-act"><span class="small muted">${t('Ctrl+Enter로 저장')}</span><button class="btn sm ghost" data-nx>${t('취소')}</button><button class="btn sm primary" data-nok>${t('저장')}</button></div></div>`;
       const ta = $('#pnotetxt', box);
       // Grow with the text (no inner scroll) so the editor lines up with the card it replaced.
-      const fit = () => { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; };
+      // Measuring needs height:auto, which briefly shrinks the page; the browser then clamps the scroll position
+      // and the view jumps up on the first keystroke. Hold the page height and the scroll position across it.
+      const fit = () => {
+        const y = window.scrollY, h = document.documentElement.scrollHeight;
+        app.style.minHeight = `${h}px`;
+        ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`;
+        if (Math.abs(window.scrollY - y) > 1) { userMove.selfUntil = Date.now() + 120; window.scrollTo(0, y); }
+        app.style.minHeight = '';
+      };
       fit(); ta.oninput = fit;
       ta.focus({ preventScroll: true }); ta.setSelectionRange(caret, caret);
       // The editor's text is bigger (16px, so iOS doesn't zoom) and wraps differently than the card, so aligning

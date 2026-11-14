@@ -6,6 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Fixed
+- **The memo editor no longer jumps up when you start typing or deleting.** Resizing the editor to fit the text briefly shortened the page, so the browser pulled the scroll position up on the first keystroke. The page height and your place are now held while it resizes.
 - **Tapping a session in a project no longer does nothing.** If you started a new chat, left before the reply finished, and later tapped that same session, Baton ignored the tap (the address changed but the screen stayed), and only a refresh opened it. Baton now forgets its "skip the next redraw" note as soon as you navigate.
 
 ## [0.11.1] - 2026-11-14
