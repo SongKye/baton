@@ -10,6 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Version checks now verify the permission levels too: `compat:check` requires the flags and values Baton passes and runs a model-free Codex sandbox probe, and `compat:smoke` adds a required "everyday work (auto)" step (git commit + network from a command) for every CLI. See docs/compatibility.md → Permission levels.
 
 ### Fixed
+- **Phone: the tab bar no longer rides up the screen after coming back to Baton**, and tapping a notification while Baton is open goes to that chat inside the page. After a keyboard or app switch, iOS could keep a shifted viewport so the fixed tab bar floated mid-screen and moved with every scroll; Baton now resets it when the app returns.
 - **OpenCode "Full" permission really approves everything** (`--auto`). It used to pass the same arguments as "Auto".
 - **Codex shows "🔒 blocked by permissions"** with **Retry with full permissions** when its sandbox stops a command. Codex reports these as ordinary failed commands, so the card never appeared.
 - **Chat warnings stay in view**: the usage-limit warning, the "hit the limit" card, the "blocked by permissions" card, errors and the "also open in a PC terminal" warning now sit just above the message box instead of at the top or in the middle of the conversation, so you see them without scrolling.

@@ -426,6 +426,33 @@ function repaint() {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') repaint(); });
 })();
 
+/**
+ * Coming back to the app (notification tap, app switcher) iOS can keep the visual viewport the keyboard
+ * left behind: the page is scrolled/offset, so position:fixed bars (the tab bar) float up the screen and
+ * ride along with every scroll. With no field focused there is nothing to keep it for — reset the scroll
+ * and repaint, again after iOS has settled (it restores late).
+ */
+function settleViewport() {
+  const fix = () => {
+    const f = document.activeElement;
+    if (f && f !== document.body && f.matches?.('input, textarea, select, [contenteditable]')) return; // keyboard really is up
+    const vv = window.visualViewport;
+    if (vv && (vv.offsetTop > 1 || vv.pageTop > 1 || Math.abs(vv.height - window.innerHeight) > 1)) window.scrollTo(0, 0);
+    repaint();
+  };
+  fix();
+  setTimeout(fix, 350);
+  setTimeout(fix, 1200);
+}
+window.addEventListener('pageshow', settleViewport);
+window.addEventListener('focus', settleViewport);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') settleViewport(); });
+window.visualViewport?.addEventListener('scroll', () => {
+  // fixed bars follow a visual viewport that is scrolled away from the top while no field is focused
+  const vv = window.visualViewport, f = document.activeElement;
+  if (vv.offsetTop > 1 && !(f && f.matches?.('input, textarea, select, [contenteditable]'))) settleViewport();
+});
+
 // ---------------------------------------------------------------- back keeps your place
 // Each history entry remembers where you were (page scroll + a few list states, e.g. which page of
 // sessions). Opening a chat and coming back lands where you left, not at the top of page 1.
@@ -4490,7 +4517,15 @@ async function viewScheduled() {
 // ---------------------------------------------------------------- boot
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 navigator.serviceWorker?.addEventListener('message', (e) => {
-  if (e.data?.type === 'navigate' && e.data.url) location.href = e.data.url;
+  if (e.data?.type === 'navigate' && e.data.url) {
+    // Tapping a notification while Baton is already open: go to that chat inside this page. Assigning the
+    // same URL (or only its hash) would otherwise do nothing, or reload the whole app.
+    const u = new URL(e.data.url, location.href);
+    if (u.origin !== location.origin) location.href = e.data.url;
+    else if ((u.hash || '#/') === (location.hash || '#/')) render();
+    else location.hash = u.hash || '#/';
+    settleViewport();
+  }
   if (e.data?.type === 'desk-cards?') e.ports[0]?.postMessage({ cards: deskCardsOn() && document.visibilityState === 'visible' });
 });
 pushStatus().then((p) => { desk.pushOn = Boolean(p.sub); }).catch(() => {});
