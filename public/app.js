@@ -398,17 +398,29 @@ setInterval(() => { if (document.visibilityState === 'visible') loadState(); }, 
  * compositing layer on #app, makes the compositor commit and paint the current screen again.
  */
 let repaintQueued = false;
-function repaint() {
-  if (repaintQueued) return;
+// When the user last scrolled/touched. A repaint nudge in the middle of a fling or drag is exactly what
+// feels like "scroll suddenly stops / jumps back", so repaint waits until the hands are off.
+const userMove = { at: 0, selfUntil: 0 };
+const markMove = () => { userMove.at = Date.now(); };
+['touchstart', 'touchmove', 'wheel', 'keydown', 'pointerdown'].forEach((ev) => window.addEventListener(ev, markMove, { passive: true, capture: true }));
+window.addEventListener('scroll', () => { if (Date.now() > userMove.selfUntil) markMove(); }, { passive: true });
+const scrolling = () => Date.now() - userMove.at < 700;
+function repaint(tries = 0) {
+  if (repaintQueued && !tries) return;
   repaintQueued = true;
   requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (scrolling()) { // try again once the finger is up and the momentum is over; give up quietly after ~6s
+      if (tries < 12) setTimeout(() => repaint(tries + 1), 500); else repaintQueued = false;
+      return;
+    }
     const se = document.scrollingElement || document.documentElement;
     const y = se.scrollTop, room = se.scrollHeight - se.clientHeight;
     const nudge = room > 0 ? (y > 0 ? y - 1 : 1) : null;
+    userMove.selfUntil = Date.now() + 120;
     if (nudge != null) window.scrollTo(0, nudge);
     app.style.willChange = 'opacity'; // opacity, not transform: transform would re-anchor the fixed FAB
     requestAnimationFrame(() => {
-      if (nudge != null && Math.round(se.scrollTop) === nudge) window.scrollTo(0, y);
+      if (nudge != null && Math.round(se.scrollTop) === nudge) { userMove.selfUntil = Date.now() + 120; window.scrollTo(0, y); }
       app.style.willChange = '';
       repaintQueued = false;
     });
@@ -437,7 +449,10 @@ function settleViewport() {
     const f = document.activeElement;
     if (f && f !== document.body && f.matches?.('input, textarea, select, [contenteditable]')) return; // keyboard really is up
     const vv = window.visualViewport;
-    if (vv && (vv.offsetTop > 1 || vv.pageTop > 1 || Math.abs(vv.height - window.innerHeight) > 1)) window.scrollTo(0, 0);
+    // Only a visual viewport that is displaced from the layout viewport (what the keyboard leaves behind) needs a reset.
+    // Not pageTop (that is simply how far the page is scrolled) and not a height difference (pinch-zoom):
+    // those made every focus / app-switch throw a scrolled tab back to the top.
+    if (vv && vv.offsetTop > 1 && vv.scale <= 1.01) window.scrollTo(0, 0);
     repaint();
   };
   fix();
@@ -465,16 +480,19 @@ const saveScroll = () => { clearTimeout(scrollSaveTimer); scrollSaveTimer = null
 window.addEventListener('scroll', () => { clearTimeout(scrollSaveTimer); scrollSaveTimer = setTimeout(saveScroll, 150); }, { passive: true });
 document.addEventListener('click', (e) => { if (e.target.closest?.('a[href^="#"]')) saveScroll(); }, true); // tap right after a fling
 /** Scroll back to `y` once the screen is tall enough (lists can still be growing); a touch cancels it. */
-function restoreScroll(y) {
+function restoreScroll(y, onDone) {
   let cancelled = false;
+  const evs = ['touchstart', 'wheel', 'keydown', 'mousedown'];
   const stop = () => { cancelled = true; };
-  window.addEventListener('touchstart', stop, { once: true, passive: true });
+  evs.forEach((ev) => window.addEventListener(ev, stop, { once: true, passive: true, capture: true }));
+  const finish = () => { evs.forEach((ev) => window.removeEventListener(ev, stop, true)); onDone?.(); };
   const until = Date.now() + 1200, navCount = G.navCount;
   const step = () => {
-    if (cancelled || navCount !== G.navCount) return;
+    if (cancelled || navCount !== G.navCount) { finish(); return; }
+    userMove.selfUntil = Date.now() + 120;
     window.scrollTo(0, y);
     if (Math.abs(window.scrollY - y) > 2 && Date.now() < until) requestAnimationFrame(step);
-    else window.removeEventListener('touchstart', stop);
+    else finish();
   };
   step();
 }
@@ -513,6 +531,12 @@ async function render() {
   if (G.cleanup) { try { G.cleanup(); } catch { /* ignore */ } G.cleanup = null; }
   clearTimeout(scrollSaveTimer); scrollSaveTimer = null; // a pending save belongs to the screen we just left
   G.restore = entryState(); // what this entry remembered (empty when it's a new screen)
+  // Same hash again = a refresh of this very screen (pull-to-refresh, an action that re-renders): stay where you are.
+  const refresh = raw === G.lastRaw && !document.body.classList.contains('chat-mode');
+  G.lastRaw = raw;
+  const keepY = refresh ? Math.round(window.scrollY) : 0;
+  app.style.minHeight = '';
+  if (keepY > 0) { G.restore = { ...G.restore, y: keepY }; app.style.minHeight = `${document.documentElement.scrollHeight}px`; } // don't let the skeleton shrink the page
   G.navCount = (G.navCount || 0) + 1;
   const navCount = G.navCount;
   for (const [re, fn, tab, sideTab] of routes) {
@@ -521,10 +545,11 @@ async function render() {
     // tab === null → full-screen chat (mobile hides the tab bar); the desktop sidebar still marks where you are.
     document.body.classList.toggle('chat-mode', tab === null);
     $$('#tabbar a').forEach((a) => a.classList.toggle('on', a.dataset.tab === (tab ?? sideTab)));
-    window.scrollTo(0, 0);
+    if (!keepY) window.scrollTo(0, 0);
     try { await fn(m.slice(1).map(decodeURIComponent), params); drawRunPill(); }
     catch (e) { console.error(e); if (navCount === G.navCount) app.innerHTML = `<div class="empty" style="padding-top:30vh"><b>${t('불러오지 못했어요')}</b>${esc(e.message)}<br><br><button class="btn" onclick="location.reload()">${t('다시 시도')}</button></div>`; }
-    if (navCount === G.navCount) { if (G.restore.y > 0) restoreScroll(G.restore.y); repaint(); }
+    const unlock = () => { if (navCount === G.navCount) app.style.minHeight = ''; };
+    if (navCount === G.navCount) { if (G.restore.y > 0) restoreScroll(G.restore.y, unlock); else unlock(); repaint(); }
     return;
   }
   location.hash = '#/';
@@ -551,27 +576,32 @@ window.addEventListener('hashchange', render);
     el.classList.toggle('ready', d >= PULL);
   };
   const hide = () => { if (!ind) return; ind.style.transition = ''; ind.style.opacity = '0'; ind.style.transform = 'translate(-50%, 0)'; ind.classList.remove('ready', 'busy'); };
-  document.addEventListener('touchstart', (e) => {
-    y0 = null; pulling = false; dy = 0;
-    if (busy || sheetStack.length || e.touches.length !== 1) return;
-    if (e.target.closest?.('input, textarea, select, [contenteditable], .sheet, .scrim, .composer')) return;
-    if (!atTop()) return;
-    y0 = e.touches[0].clientY; x0 = e.touches[0].clientX;
-  }, { passive: true });
-  document.addEventListener('touchmove', (e) => {
+  const move = (e) => {
     if (y0 == null) return;
     const t0 = e.touches[0], ddy = t0.clientY - y0, ddx = t0.clientX - x0;
     if (!pulling) {
-      if (ddy < -4 || Math.abs(ddx) > Math.abs(ddy) + 4) { y0 = null; return; } // scrolling up or sideways
+      if (ddy < -4 || Math.abs(ddx) > Math.abs(ddy) + 4) { y0 = null; unlisten(); return; } // scrolling up or sideways
       if (ddy < 10 || !atTop()) return;
       pulling = true;
     }
     dy = ddy - 10;
     if (e.cancelable) e.preventDefault(); // no rubber-band while pulling
     show(dy);
-  }, { passive: false });
+  };
+  // A non-passive touchmove listener makes the browser wait for JS before every scroll step. Keep it on
+  // the document only for the gesture that can actually become a pull (finger down at the very top).
+  const unlisten = () => document.removeEventListener('touchmove', move);
+  document.addEventListener('touchstart', (e) => {
+    y0 = null; pulling = false; dy = 0; unlisten();
+    if (busy || sheetStack.length || e.touches.length !== 1) return;
+    if (e.target.closest?.('input, textarea, select, [contenteditable], .sheet, .scrim, .composer')) return;
+    if (!atTop()) return;
+    y0 = e.touches[0].clientY; x0 = e.touches[0].clientX;
+    document.addEventListener('touchmove', move, { passive: false });
+  }, { passive: true });
   const end = async () => {
     const go = pulling && dy >= PULL;
+    unlisten();
     y0 = null; pulling = false; dy = 0;
     if (!go) { hide(); return; }
     busy = true;
@@ -581,7 +611,7 @@ window.addEventListener('hashchange', render);
     try { await Promise.all([render(), loadState()]); } finally { busy = false; hide(); }
   };
   document.addEventListener('touchend', end);
-  document.addEventListener('touchcancel', () => { y0 = null; pulling = false; dy = 0; hide(); });
+  document.addEventListener('touchcancel', () => { unlisten(); y0 = null; pulling = false; dy = 0; hide(); });
 })();
 
 function shell({ title, sub = '', right = '', fab = true }) {

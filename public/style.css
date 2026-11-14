@@ -62,6 +62,7 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; }
+html { overscroll-behavior-y: none; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -139,8 +140,9 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
   position: sticky; top: 0; z-index: 20;
   padding: calc(var(--safe-t) + 10px) 16px 10px;
   display: flex; align-items: center; gap: 10px;
-  background: color-mix(in srgb, var(--bg) 86%, transparent);
-  backdrop-filter: saturate(1.4) blur(14px); -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  /* Opaque on purpose: a backdrop blur over scrolling content is re-rendered every frame (flicker, dropped frames). */
+  background: var(--bg);
+  transform: translateZ(0);
 }
 .topbar h1 { font-size: 24px; font-weight: 750; letter-spacing: -0.02em; margin: 0; flex: 1; min-width: 0; }
 .topbar .sub { font-size: 13px; color: var(--text-3); font-weight: 500; }
@@ -157,8 +159,7 @@ main.view { flex: 1; padding: 4px 16px calc(var(--tabbar-h) + var(--safe-b) + 84
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
   height: calc(var(--tabbar-h) + var(--safe-b)); padding-bottom: var(--safe-b);
   display: grid; grid-template-columns: repeat(5, 1fr);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: saturate(1.4) blur(18px); -webkit-backdrop-filter: saturate(1.4) blur(18px);
+  background: var(--surface);
   border-top: 1px solid var(--border);
 }
 .tabbar a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600; color: var(--text-3); position: relative; }
@@ -216,7 +217,7 @@ main.view { flex: 1; padding: 4px 16px calc(var(--tabbar-h) + var(--safe-b) + 84
 .chip.on { background: var(--text); color: var(--bg); border-color: transparent; }
 .chip .n { color: var(--text-3); font-weight: 600; }
 .chip.on .n { color: color-mix(in srgb, var(--bg) 70%, transparent); }
-.chips { display: flex; gap: 6px; overflow-x: auto; padding: 2px 16px; margin: 0 -16px; scrollbar-width: none; }
+.chips { display: flex; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; padding: 2px 16px; margin: 0 -16px; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }
 
 .btn { height: 44px; padding: 0 18px; border-radius: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--surface-2); color: var(--text); }
@@ -255,7 +256,7 @@ main.view { flex: 1; padding: 4px 16px calc(var(--tabbar-h) + var(--safe-b) + 84
 .stat .v { font-size: 22px; font-weight: 780; letter-spacing: -0.02em; }
 .stat .l { font-size: 12px; color: var(--text-3); font-weight: 600; }
 
-.hscroll { display: flex; gap: 10px; overflow-x: auto; padding: 2px 16px 8px; margin: 0 -16px; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.hscroll { display: flex; gap: 10px; overflow-x: auto; overscroll-behavior-x: contain; padding: 2px 16px 8px; margin: 0 -16px; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .hscroll::-webkit-scrollbar { display: none; }
 .hscroll > * { scroll-snap-align: start; flex: none; }
 @media (hover: hover) and (pointer: fine) {
