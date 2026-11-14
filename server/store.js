@@ -44,6 +44,13 @@ CREATE TABLE IF NOT EXISTS events (
   url TEXT,
   read INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS run_outcome (
+  key TEXT PRIMARY KEY,           -- "<tool>:<id>"
+  kind TEXT NOT NULL,             -- limited | denied | error
+  error TEXT,
+  denied TEXT,                    -- JSON array of blocked tools
+  at INTEGER NOT NULL
+);
 `);
 
 const q = (sql) => db.prepare(sql);
@@ -115,6 +122,19 @@ export function patchSessionMeta(key, patch) {
     .run(key, next.pinned ? 1 : 0, next.hidden ? 1 : 0, next.title ?? null, next.last_seen ?? null, Number(next.notify) || 0, next.cwd_override ?? null);
   return next;
 }
+
+// ---------- how the last run of a session ended (so the chat can keep showing it) ----------
+export function getRunOutcome(key) {
+  const r = q('SELECT * FROM run_outcome WHERE key = ?').get(key);
+  if (!r) return null;
+  let denied = [];
+  try { denied = JSON.parse(r.denied || '[]'); } catch { /* keep empty */ }
+  return { kind: r.kind, error: r.error || null, denied, at: r.at };
+}
+export function setRunOutcome(key, { kind, error = null, denied = [] }) {
+  q('INSERT OR REPLACE INTO run_outcome (key, kind, error, denied, at) VALUES (?, ?, ?, ?, ?)').run(key, kind, error, JSON.stringify(denied || []), Date.now());
+}
+export function clearRunOutcome(key) { q('DELETE FROM run_outcome WHERE key = ?').run(key); }
 
 // ---------- project meta ----------
 export function allProjectMeta() {
