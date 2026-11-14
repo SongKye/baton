@@ -636,7 +636,7 @@ function sessionRow(s, { showProject = true } = {}) {
   else if (s.terminal && s.background) flags.push(`<span class="flag warn">${t('백그라운드에서 작업 중')}</span>`);
   else if (s.terminal) flags.push(`<span class="flag warn">${s.terminal === 'busy' ? t('PC에서 작업 중') : t('PC에서 열림')}</span>`);
   if (s.automated) flags.push(`<span class="flag">${t('자동')}</span>`);
-  else if (s.delegated) flags.push(`<span class="flag" title="${t('다른 도구가 백그라운드로 실행한 세션')}">${t('위임됨')}</span>`);
+  else if (s.delegated) flags.push(`<span class="flag" title="${t('Baton 밖에서 다른 도구가 실행해 실제로 작업한 세션')}">${t('외부 실행')}</span>`);
   if (s.notify < 0) flags.push(`<span class="flag bell" title="${t('알림 꺼짐')}">🔕</span>`);
   const preview = s.lastReply || s.lastPrompt || s.firstPrompt || '';
   return `<a class="srow" href="#/s/${s.tool}/${encodeURIComponent(s.id)}">
