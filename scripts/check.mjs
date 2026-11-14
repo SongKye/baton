@@ -38,7 +38,7 @@ try {
   for (const dir of ['server', 'server/sources', 'public', 'scripts']) {
     for (const file of await fs.readdir(path.join(app, dir))) if (/\.(?:m?js|cjs)$/.test(file)) run(['--check', path.join(dir, file)]);
   }
-  const checks = ['i18n', 'update-alerts', 'windows-install', 'chat-images', 'opencode-storage', 'opencode-models', 'codex-fallback', 'access', 'codex-index', 'skill-create', 'mcp-install', 'listener', 'compat-remote', 'compat-contracts', 'compat-weekly', 'session-restore', 'runner'];
+  const checks = ['i18n', 'update-alerts', 'windows-install', 'chat-images', 'opencode-storage', 'opencode-live', 'opencode-models', 'codex-fallback', 'access', 'codex-index', 'skill-create', 'mcp-install', 'listener', 'compat-remote', 'compat-contracts', 'compat-weekly', 'session-restore', 'runner'];
   if (process.platform !== 'win32') checks.push('mention', 'folder'); // creating symlinks requires Windows privileges
   for (const name of checks) run(['--no-warnings', `scripts/${name}-check.mjs`]);
   run(['--no-warnings', 'scripts/ci-boot.mjs']);
