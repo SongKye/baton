@@ -1,5 +1,5 @@
 // Baton service worker: app-shell cache + web push.
-const CACHE = 'baton-v29';
+const CACHE = 'baton-v30';
 const SHELL = ['/', '/style.css?v=19', '/app.js?v=25', '/theme.js?v=5', '/palettes.css?v=3', '/studio.css?v=5', '/studio.js?v=5', '/vendor/marked.js', '/vendor/purify.js', '/icon.svg?v=2', '/baton-mark.svg', '/icon-handoff-180-v1.png', '/icon-handoff-192-v1.png', '/icon-handoff-512-v1.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
@@ -60,8 +60,18 @@ self.addEventListener('notificationclick', (e) => {
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const c of all) {
       if ('focus' in c) {
-        await c.focus();
-        c.postMessage({ type: 'navigate', url });
+        await c.focus().catch(() => {});
+        // A PWA that iOS froze or discarded can still be listed here but never hears the message (the app then
+        // opens on whatever it showed before). Wait for the page to confirm; otherwise navigate it ourselves.
+        const acked = await new Promise((resolve) => {
+          const ch = new MessageChannel();
+          const timer = setTimeout(() => resolve(false), 1500);
+          ch.port1.onmessage = () => { clearTimeout(timer); resolve(true); };
+          try { c.postMessage({ type: 'navigate', url }, [ch.port2]); } catch { clearTimeout(timer); resolve(false); }
+        });
+        if (acked) return;
+        try { if (c.navigate && await c.navigate(url)) return; } catch { /* fall through */ }
+        await self.clients.openWindow(url);
         return;
       }
     }

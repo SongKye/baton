@@ -2034,7 +2034,10 @@ async function viewChat([tool, id]) {
   };
   const comp = wireComposer(tool, send, `draft:${key}`, () => ({ session: id }));
   $('#cmore').onclick = () => session && sessionMenu(session, () => load({ keepScroll: true }), { onTrashed: () => { if (G.navCount > 1) history.back(); else location.hash = '#/sessions'; } });
-  await load();
+  // Right after the phone wakes (notification tap) the network may not be up yet: one quiet retry
+  // beats an error screen that only a restart clears.
+  try { await load(); }
+  catch (e) { if (e.status) throw e; await new Promise((r) => setTimeout(r, 1200)); await load(); }
   if (navCount !== G.navCount || !msgsEl.isConnected) return;
   const onVis = () => { if (document.visibilityState === 'visible' && !live) load({ keepScroll: true }); };
   document.addEventListener('visibilitychange', onVis);
@@ -4518,6 +4521,7 @@ async function viewScheduled() {
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 navigator.serviceWorker?.addEventListener('message', (e) => {
   if (e.data?.type === 'navigate' && e.data.url) {
+    e.ports[0]?.postMessage({ ok: true });
     // Tapping a notification while Baton is already open: go to that chat inside this page. Assigning the
     // same URL (or only its hash) would otherwise do nothing, or reload the whole app.
     const u = new URL(e.data.url, location.href);
