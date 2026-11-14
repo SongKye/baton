@@ -5,15 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-14
+
 ### Fixed
 - **Tapping the project memo now opens the editor right where you were reading.** Before, a long memo jumped the page away and the cursor ended up off-screen. The cursor now lands on the line you tapped and the page scrolls so that line stays under your finger.
 - **Scrolling on Home, Projects, Sessions, Tools and Settings is smooth again.** Coming back to the app (switching windows, tapping a notification) threw a scrolled page back to the top, because the "fix the viewport" step mistook "the page is scrolled" for "the keyboard left the screen offset". The repaint workaround no longer nudges the page while you are scrolling, restoring your place after a refresh yields as soon as you touch, scroll or press a key, and refreshing a screen keeps your scroll position instead of flashing to the top. The top and bottom bars are no longer blurred (a blur over moving content flickered), and pull-to-refresh no longer slows every scroll down.
 - **OpenCode sessions run from a temporary folder (`/tmp`) now get the "Auto" label**, like Claude, Codex and Antigravity already did. Before, OpenCode only tagged sub-sessions, so throwaway runs from scripts and tests looked like your own sessions. Sessions started from Baton are never tagged.
-
-### Fixed
 - **No more brief "working on the PC" flash when a reply you started in Baton finishes.** For a second or so after a run ended, Baton still remembered the finished process as busy and labelled the session as open in a PC terminal. It now drops a process the moment it has exited.
-
-### Fixed
 - **OpenCode sessions now show "working in the background" while a reply is in progress**, and the chat follows along on its own. Before, an `opencode run` started by a script or dashboard never showed as running and the conversation only updated after a manual refresh. Baton reads the unfinished reply from OpenCode's database and checks that an `opencode` process is still there to finish it, so abandoned runs don't stay "working".
 - **"Finished" notifications now fire for OpenCode sessions.** The watcher looked for a file that doesn't exist for OpenCode 1.x (its sessions live in a database), so it never saw them working.
 
