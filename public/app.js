@@ -525,7 +525,9 @@ const routes = [
 
 async function render() {
   const raw = location.hash || '#/';
-  if (G.skipHash && G.skipHash === raw) { G.skipHash = null; return; }
+  // skipHash is a one-shot: the URL we just rewrote ourselves (new chat got its session id). It must never
+  // outlive the next navigation, or a later tap on that same session is swallowed and does nothing.
+  if (G.skipHash) { const skip = G.skipHash === raw; G.skipHash = null; if (skip) return; }
   const [hash, qs] = raw.split('?');
   const params = new URLSearchParams(qs || '');
   if (G.cleanup) { try { G.cleanup(); } catch { /* ignore */ } G.cleanup = null; }
@@ -2175,7 +2177,7 @@ async function viewNew(_, params) {
       },
       onDone: () => { if (sid) { G.skipHash = null; render(); } },
     });
-    G.cleanup = () => { live.close(); cleanVV(); };
+    G.cleanup = () => { live.close(); cleanVV(); G.skipHash = null; };
     loadState();
   };
   G.cleanup = cleanVV;
