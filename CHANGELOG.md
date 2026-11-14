@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- Going back from a chat no longer jumps the list to the top again. The phone-viewport reset added in 0.11.0 mistook any scrolled page for a stuck keyboard offset and scrolled it to the top.
+
 ## [0.11.0] - 2026-11-14
 
 ### Changed

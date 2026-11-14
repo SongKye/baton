@@ -437,7 +437,13 @@ function settleViewport() {
     const f = document.activeElement;
     if (f && f !== document.body && f.matches?.('input, textarea, select, [contenteditable]')) return; // keyboard really is up
     const vv = window.visualViewport;
-    if (vv && (vv.offsetTop > 1 || vv.pageTop > 1 || Math.abs(vv.height - window.innerHeight) > 1)) window.scrollTo(0, 0);
+    // Only the keyboard's leftover offset counts. pageTop includes the page's own scroll, so testing it (or the
+    // height) reset every scrolled page to the top — including the place "back" had just restored.
+    if (vv && vv.offsetTop > 1) {
+      window.scrollTo(0, 0);
+      const y = entryState().y;
+      if (y > 0) restoreScroll(y);
+    }
     repaint();
   };
   fix();
