@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- **OpenCode sessions now show "working in the background" while a reply is in progress**, and the chat follows along on its own. Before, an `opencode run` started by a script or dashboard never showed as running and the conversation only updated after a manual refresh. Baton reads the unfinished reply from OpenCode's database and checks that an `opencode` process is still there to finish it, so abandoned runs don't stay "working".
+- **"Finished" notifications now fire for OpenCode sessions.** The watcher looked for a file that doesn't exist for OpenCode 1.x (its sessions live in a database), so it never saw them working.
+
 ## [0.11.0] - 2026-11-14
 
 ### Changed

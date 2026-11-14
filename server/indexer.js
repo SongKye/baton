@@ -67,8 +67,8 @@ export async function decoratedSessions({ includeHidden } = {}) {
     // Automated sessions (scripts, `codex exec`, another tool's `claude -p`) are listed like any other, tagged
     // "Auto"; the user hides the ones they don't want (one by one or in bulk).
     const lv = liveMap.get(s.key);
-    const terminal = lv && !childPids.has(lv.pid) ? lv : null; // Baton's own child processes are shown as runs instead
     const run = activeRunFor(s.key);
+    const terminal = lv && !run && !childPids.has(lv.pid) ? lv : null; // Baton's own child processes are shown as runs instead
     out.push({
       ...s,
       file: undefined,
@@ -78,6 +78,7 @@ export async function decoratedSessions({ includeHidden } = {}) {
       lastSeen: m?.last_seen || null,
       notify: m?.notify || 0,
       terminal: terminal ? terminal.status : null,
+      background: Boolean(s.background || terminal?.background), // run by another tool with no terminal of its own
       running: run ? run.id : null,
       live: Boolean(terminal || run || (s.tool === 'agy' && s.busy && Date.now() - s.updated < 10 * 60_000)),
       unseen: Boolean(m?.last_seen && s.updated > m.last_seen + 2000),

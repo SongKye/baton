@@ -9,6 +9,7 @@ import { liveSessions } from './live.js';
 import { activeRunFor, bus } from './runner.js';
 import { notify } from './push.js';
 import { fromLine } from './models.js';
+import { isOpencodeDbRef } from './sources/opencode.js';
 import { clip } from './util.js';
 import { tr } from './i18n.js';
 
@@ -21,6 +22,7 @@ const batonEnded = new Map(); // key -> ts of last Baton run end (Baton already 
 bus.on('run_end', (run) => { if (run.sessionId) batonEnded.set(`${run.tool}:${run.sessionId}`, Date.now()); });
 
 async function mtimeOf(s) {
+  if (isOpencodeDbRef(s.file)) return s.updated; // a db row, not a file: there is nothing to stat
   let m = 0;
   for (const f of s.tool === 'agy' || s.tool === 'cursor' ? [s.file, `${s.file}-wal`] : [s.file]) {
     try { m = Math.max(m, (await fsp.stat(f)).mtimeMs); } catch { /* gone */ }

@@ -194,6 +194,29 @@ export async function opencodeUsage(file) {
   }));
 }
 
+/**
+ * Sessions whose newest message is an assistant reply that hasn't finished (no `time.completed`), from opencode.db:
+ * Map id -> { directory, activity } where activity is the last time the db was touched for it. OpenCode only
+ * writes at step boundaries (the streamed text is not in the db until the step ends), so a quiet db is normal
+ * mid-reply; callers pair this with a process check and only use `activity` as a fallback. A crashed run leaves
+ * the message unfinished forever, hence the window on the session's own timestamp.
+ */
+export function opencodeInflight(windowMs = 12 * 3600_000) {
+  return withDb((db) => {
+    const out = new Map();
+    const rows = db.prepare(`SELECT s.id, s.directory, m.data, m.time_updated AS mu,
+        (SELECT MAX(time_updated) FROM part WHERE session_id = s.id) AS pu
+      FROM session s JOIN message m ON m.id = (SELECT id FROM message WHERE session_id = s.id ORDER BY time_created DESC, id DESC LIMIT 1)
+      WHERE s.time_archived IS NULL AND s.time_updated >= ?`).all(Date.now() - windowMs);
+    for (const r of rows) {
+      let m; try { m = JSON.parse(r.data); } catch { continue; }
+      if (m.role !== 'assistant' || m.time?.completed || m.error) continue;
+      out.set(r.id, { directory: r.directory, activity: Math.max(r.mu || 0, r.pu || 0) });
+    }
+    return out;
+  }, new Map());
+}
+
 /** Every session id in opencode.db (legacy JSON copies of these must not be counted again). */
 export function opencodeDbSessionIds() {
   return new Set(withDb((db) => db.prepare('SELECT id FROM session').all().map((r) => r.id), []));
