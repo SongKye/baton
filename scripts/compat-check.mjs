@@ -12,6 +12,7 @@ import { TOOLS, TOOL_IDS, binFor } from '../server/tools.js';
 import { runCli } from '../server/platform.js';
 import { COMPAT, compatState } from '../server/compat.js';
 import { checkVersion } from './lib-compat-contracts.mjs';
+import { probeCodexSandbox } from './lib-perm-probe.mjs';
 
 const only = process.argv.slice(2).filter((a) => !a.startsWith('-'));
 const ids = only.length ? only : TOOL_IDS;
@@ -38,6 +39,11 @@ for (const id of ids) {
     const cmd = `${id} ${chk.args.join(' ')}`;
     if (h.code !== 0 || missing.length) { failed++; console.log(`  ✗ ${cmd}: exit ${h.code}; missing ${missing.join(', ')}`); }
     else console.log(`  ✓ ${cmd} (${chk.expect.length} flags)`);
+  }
+  if (id === 'codex') {
+    // the permission levels still mean what Baton says (no model call)
+    try { console.log(`  ✓ permission sandbox: ${await probeCodexSandbox(bin)}`); }
+    catch (e) { failed++; console.log(`  ✗ permission sandbox: ${e.message}`); }
   }
 }
 

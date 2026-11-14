@@ -18,7 +18,7 @@ try {
   await fs.mkdir(path.join(tmp, 'server')); await fs.mkdir(path.join(tmp, 'scripts')); await fs.mkdir(path.join(tmp, 'logs'));
   await fs.writeFile(path.join(tmp, 'server', 'compat.json'), JSON.stringify({ codex: { verified: '1.0.0', level: 'supported' } }));
   const validReport = { tool: 'codex', ok: true, version: '1.1.0', expectedVersion: '1.1.0', revision: 'commit-under-test', dirty: false, platform: process.platform, arch: process.arch, drift,
-    steps: ['CLI flags', 'new session', 'resume session', 'session list', 'transcript', 'trash and restore', 'plan preserves files', 'file edit', 'command execution', 'one-shot', 'limits', 'model list'].map(name => ({ name, ok: true })) };
+    steps: ['CLI flags', 'new session', 'resume session', 'session list', 'transcript', 'trash and restore', 'plan preserves files', 'file edit', 'command execution', 'everyday work (auto)', 'permission sandbox', 'one-shot', 'limits', 'model list'].map(name => ({ name, ok: true })) };
   for (const patch of [{}, { dirty: true }, { revision: 'different-commit' }, { platform: 'different-os' }, { arch: 'different-arch' }, { dirty: undefined }]) {
     let edits = 0;
     const file = path.join(tmp, 'manual-report.json'); await fs.writeFile(file, JSON.stringify([{ ...validReport, ...patch }]));

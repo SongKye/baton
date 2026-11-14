@@ -43,8 +43,9 @@ export function shouldAttemptFix(test) {
 }
 
 export function reportPassed(report, expectedVersion) {
-  const required = ['CLI flags', 'new session', 'resume session', 'session list', 'transcript', 'trash and restore', 'plan preserves files', 'file edit', 'command execution', 'one-shot', 'model list'];
+  const required = ['CLI flags', 'new session', 'resume session', 'session list', 'transcript', 'trash and restore', 'plan preserves files', 'file edit', 'command execution', 'everyday work (auto)', 'one-shot', 'model list'];
   if (report?.tool === 'claude') required.push('question and answer');
+  if (report?.tool === 'codex' && report.platform !== 'win32') required.push('permission sandbox'); // model-free sandbox probe
   if (['claude', 'codex', 'agy'].includes(report?.tool)) required.push('limits');
   return Boolean(report?.ok && !report.skipped && report.version && (!expectedVersion || report.version === expectedVersion)
     && Array.isArray(report.steps) && report.steps.every((s) => s.ok)

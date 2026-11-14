@@ -62,6 +62,12 @@ function run(input) {
     return;
   }
   if (scenario.name === 'tools') tools();
+  if (scenario.name === 'sandboxed' && tool === 'codex') {
+    // what Codex's workspace sandbox looks like: an ordinary failed command, never a denial event
+    emit({ type: 'item.started', item: { type: 'command_execution', command: "/bin/bash -lc 'git commit -qm x'" } });
+    emit({ type: 'item.completed', item: { type: 'command_execution', command: "/bin/bash -lc 'git commit -qm x'", exit_code: 128, aggregated_output: "fatal: Unable to create '/p/.git/index.lock': Read-only file system" } });
+    emit({ type: 'item.completed', item: { type: 'command_execution', command: "/bin/bash -lc 'npm test'", exit_code: 1, aggregated_output: '1 failing' } });
+  }
   if (scenario.name === 'slow') {
     text('first');
     const timer = setInterval(() => {

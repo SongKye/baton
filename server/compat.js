@@ -22,6 +22,8 @@ const CHECKS = {
     // `--help` output must mention these, or a feature Baton relies on is gone
     checks: [
       { args: ['--help'], expect: ['--output-format', '--input-format', '--include-partial-messages', '--permission-prompt-tool', '--resume', '--model', '--effort', '--permission-mode', '--dangerously-skip-permissions', '--no-session-persistence', '--fork-session', '--tools'] },
+      // permission levels (server/permissions.js): the --permission-mode choices Baton passes
+      { args: ['--help'], expect: ['"plan"', '"auto"'] },
       { args: ['mcp', '--help'], expect: ['add-json', 'get', 'list', 'remove'] },
       { args: ['auth', '--help'], expect: ['login', 'status'] },
     ],
@@ -29,6 +31,9 @@ const CHECKS = {
   codex: {
     checks: [
       { args: ['exec', '--help'], expect: ['resume', '--json', '--skip-git-repo-check', '--ephemeral', '--image', '--dangerously-bypass-approvals-and-sandbox', '--model', '--config'] },
+      // permission levels: sandbox_mode values; `codex sandbox` runs the model-free sandbox probe (scripts/lib-perm-probe.mjs)
+      { args: ['exec', '--help'], expect: ['--sandbox', 'read-only', 'workspace-write'] },
+      { args: ['sandbox', '--help'], expect: ['--config'] },
       { args: ['exec', 'resume', '--help'], expect: ['SESSION_ID', '--image', '--json'] },
       { args: ['mcp', '--help'], expect: ['get', 'list'] },
       { args: ['mcp', 'get', '--help'], expect: ['--json'] },
@@ -39,12 +44,16 @@ const CHECKS = {
   agy: {
     checks: [
       { args: ['--help'], expect: ['--output-format', 'stream-json', '--conversation', '--model', '--effort', '--mode', 'accept-edits', 'plan', '--dangerously-skip-permissions', 'models'] },
+      // permission levels: "auto" passes allow rules for the session through --settings
+      { args: ['--help'], expect: ['--settings'] },
       { args: ['mcp', '--help'], expect: ['add', 'remove', 'list'] },
     ],
   },
   opencode: {
     checks: [
       { args: ['run', '--help'], expect: ['--format', '--session', '--model', '--variant', '--agent', '--file'] },
+      // permission levels: "full" approves everything with --auto
+      { args: ['run', '--help'], expect: ['--auto'] },
       { args: ['models', '--help'], expect: ['--verbose'] },
     ],
   },

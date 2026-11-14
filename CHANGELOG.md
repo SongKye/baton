@@ -5,7 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Changed
+- **"Auto" permission means the same on every CLI**: everyday work inside the project (edit files, run the project's tools, commit with git, install packages, use the network) runs without "Full"; work outside the project and destructive actions stay blocked. Before, each CLI read "Auto" differently. **Codex** now runs with network access, and the repository's git folder and package caches are writable, inside its sandbox, so commits, pushes and installs work. Before, all three failed. **Antigravity** now runs common development tools (git, npm, node, python, …) through allow rules added on top of your own. Before, it couldn't run any shell command and the reply ended empty. The permission picker shows what "Auto" covers for the selected CLI.
+- Version checks now verify the permission levels too: `compat:check` requires the flags and values Baton passes and runs a model-free Codex sandbox probe, and `compat:smoke` adds a required "everyday work (auto)" step (git commit + network from a command) for every CLI. See docs/compatibility.md → Permission levels.
+
 ### Fixed
+- **OpenCode "Full" permission really approves everything** (`--auto`). It used to pass the same arguments as "Auto".
+- **Codex shows "🔒 blocked by permissions"** with **Retry with full permissions** when its sandbox stops a command. Codex reports these as ordinary failed commands, so the card never appeared.
 - **Chat warnings stay in view**: the usage-limit warning, the "hit the limit" card, the "blocked by permissions" card, errors and the "also open in a PC terminal" warning now sit just above the message box instead of at the top or in the middle of the conversation, so you see them without scrolling.
 - **"Hit the limit" no longer disappears**: how a session's last run ended (limit, blocked tools, error) is remembered until you send again or close the card with ✕. Switching apps, leaving and coming back no longer wipes it.
 - The near-limit warning shows when the limit resets and appears even when only one CLI is installed (then without the hand-off buttons). Its button now says **Other CLI** instead of the vague "Hand off", and the two buttons sit together.

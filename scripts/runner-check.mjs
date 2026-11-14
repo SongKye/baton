@@ -68,14 +68,40 @@ if (!process.argv.includes('--child')) {
       const argsFile = path.join(os.homedir(), 'args.json');
       const run = start(tool, 'tools', { argsFile }, { perm, sessionId: `${tool}-test`, model: 'fixture-model', effort: 'low' });
       assert((await finished(run)).ok);
-      const args = await fs.readFile(argsFile, 'utf8');
+      const args = JSON.parse(await fs.readFile(argsFile, 'utf8'));
       assert(args.includes('fixture-model') && args.includes(`${tool}-test`));
-      const expected = tool === 'claude' ? { plan: 'plan', auto: 'auto', full: '--dangerously-skip-permissions' }
-        : tool === 'codex' ? { plan: 'read-only', auto: 'workspace-write', full: '--dangerously-bypass-approvals-and-sandbox' }
-          : tool === 'agy' ? { plan: 'plan', auto: 'accept-edits', full: '--dangerously-skip-permissions' }
-            : { plan: 'plan', auto: 'build', full: 'build' };
-      assert(args.includes(expected[perm]), `${tool}/${perm} args`);
+      const has = (...xs) => xs.every((x) => args.some((a) => a.includes(x)));
+      const lacks = (...xs) => xs.every((x) => !args.some((a) => a.includes(x)));
+      // the same meaning for every CLI: plan = read only, auto = everyday project work, full = no limits
+      const ok = {
+        claude: { plan: () => has('plan') && lacks('--dangerously'), auto: () => has('auto') && lacks('--dangerously'), full: () => has('--dangerously-skip-permissions') },
+        codex: {
+          plan: () => has('sandbox_mode="read-only"') && lacks('network_access', '--dangerously'),
+          auto: () => has('sandbox_mode="workspace-write"', 'sandbox_workspace_write.network_access=true', 'sandbox_workspace_write.writable_roots=') && lacks('--dangerously'),
+          full: () => has('--dangerously-bypass-approvals-and-sandbox') && lacks('sandbox_mode'),
+        },
+        agy: {
+          plan: () => has('plan') && lacks('--settings', '--dangerously'),
+          auto: () => { const i = args.indexOf('--settings'); const allow = i > 0 ? JSON.parse(args[i + 1]).permissions.allow : []; return has('accept-edits') && ['command(git)', 'command(npm)', 'command(node)'].every((r) => allow.includes(r)) && !allow.includes('command(rm)') && !allow.includes('command(*)') && lacks('--dangerously'); },
+          full: () => has('--dangerously-skip-permissions') && lacks('accept-edits'),
+        },
+        opencode: { plan: () => has('plan') && lacks('--auto'), auto: () => has('build') && lacks('--auto'), full: () => has('build', '--auto') },
+      };
+      assert(ok[tool][perm](), `${tool}/${perm} args: ${JSON.stringify(args)}`);
     }
+  }
+  {
+    // Codex sandbox refusals arrive as failed commands; in auto they are reported as blocked, in full they are not
+    const blocked = await finished(start('codex', 'sandboxed', {}, { perm: 'auto' }));
+    assert.deepEqual(blocked.denied, ['shell: git commit'], JSON.stringify(blocked.denied));
+    assert.deepEqual((await finished(start('codex', 'sandboxed', {}, { perm: 'full' }))).denied, []);
+    // a git repository's folder becomes writable for Codex in auto, found from a subfolder too
+    const repo = path.join(os.homedir(), 'repo'), sub = path.join(repo, 'src', 'deep');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true }); await fs.mkdir(sub, { recursive: true });
+    const argsFile = path.join(os.homedir(), 'args-repo.json');
+    assert((await finished(start('codex', 'tools', { argsFile }, { perm: 'auto', cwd: sub }))).ok);
+    const roots = JSON.parse(await fs.readFile(argsFile, 'utf8')).find((a) => a.startsWith('sandbox_workspace_write.writable_roots='));
+    assert(roots.includes(JSON.stringify(path.join(repo, '.git'))), roots);
   }
   for (const answer of [{ 'Pick?': 'Yes' }, { 'Pick?': 'free text' }, null]) {
     const run = start('claude', 'ask');
