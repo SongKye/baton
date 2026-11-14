@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- **Tapping a session in a project no longer does nothing.** If you started a new chat, left before the reply finished, and later tapped that same session, Baton ignored the tap (the address changed but the screen stayed), and only a refresh opened it. Baton now forgets its "skip the next redraw" note as soon as you navigate.
+
 ## [0.11.1] - 2026-11-14
 
 ### Fixed
