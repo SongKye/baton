@@ -6,6 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Fixed
+- **Tapping the project memo now opens the editor right where you were reading.** Before, a long memo jumped the page away and the cursor ended up off-screen. The cursor now lands on the line you tapped and the page scrolls so that line stays under your finger.
 - **Scrolling on Home, Projects, Sessions, Tools and Settings is smooth again.** Coming back to the app (switching windows, tapping a notification) threw a scrolled page back to the top, because the "fix the viewport" step mistook "the page is scrolled" for "the keyboard left the screen offset". The repaint workaround no longer nudges the page while you are scrolling, restoring your place after a refresh yields as soon as you touch, scroll or press a key, and refreshing a screen keeps your scroll position instead of flashing to the top. The top and bottom bars are no longer blurred (a blur over moving content flickered), and pull-to-refresh no longer slows every scroll down.
 - **OpenCode sessions run from a temporary folder (`/tmp`) now get the "Auto" label**, like Claude, Codex and Antigravity already did. Before, OpenCode only tagged sub-sessions, so throwaway runs from scripts and tests looked like your own sessions. Sessions started from Baton are never tagged.
 

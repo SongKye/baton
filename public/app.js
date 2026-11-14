@@ -1015,17 +1015,43 @@ async function viewProject([id]) {
     if ($('#psrv')) bindServers($('#psrv'), () => load());
     bindServices($('#psvc'), p.id, () => load());
     // memo: tap it to edit right there
-    const editNote = () => {
+    const editNote = (ev) => {
       if (noteEditing) return;
       noteEditing = true;
       const box = $('#pnote');
+      // Stay where the reader is: remember where the card sat on screen and which character was tapped,
+      // so the editor opens in the same spot with the caret there (not at the top of the page).
+      const topBefore = box.getBoundingClientRect().top;
+      const note = p.note || '';
+      let caret = note.length;
+      if (ev && ev.clientX != null && note) {
+        const pos = document.caretPositionFromPoint?.(ev.clientX, ev.clientY);
+        const node = pos ? pos.offsetNode : null, off = pos ? pos.offset : document.caretRangeFromPoint?.(ev.clientX, ev.clientY)?.startOffset;
+        if (node?.nodeType === 3 && node.parentElement?.closest('.card.memo') && off != null) caret = Math.min(off, note.length);
+      }
       box.innerHTML = `<div class="section-h"><h2>${t('메모')}</h2></div>
         <div class="card memo-edit"><textarea id="pnotetxt" placeholder="${t('예) 결제 붙이기 전에 약관 먼저 정리')}" maxlength="2000">${esc(p.note || '')}</textarea>
           <div class="memo-act"><span class="small muted">${t('Ctrl+Enter로 저장')}</span><button class="btn sm ghost" data-nx>${t('취소')}</button><button class="btn sm primary" data-nok>${t('저장')}</button></div></div>`;
       const ta = $('#pnotetxt', box);
-      const fit = () => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight + 2, innerHeight * 0.6)}px`; };
+      // Grow with the text (no inner scroll) so the editor lines up with the card it replaced.
+      const fit = () => { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; };
       fit(); ta.oninput = fit;
-      ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+      ta.focus({ preventScroll: true }); ta.setSelectionRange(caret, caret);
+      // The editor's text is bigger (16px, so iOS doesn't zoom) and wraps differently than the card, so aligning
+      // the card tops drifts. Align the tapped line instead: measure where the caret is in the editor with a
+      // mirror element and scroll so it sits where the finger was (kept above the on-screen keyboard).
+      const mirror = document.createElement('div'), cs = getComputedStyle(ta);
+      mirror.style.cssText = `position:absolute;visibility:hidden;left:-9999px;top:0;white-space:pre-wrap;overflow-wrap:break-word;width:${ta.clientWidth}px;`
+        + ['font', 'lineHeight', 'letterSpacing', 'wordBreak', 'paddingTop', 'paddingLeft', 'paddingRight'].map((k) => `${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}:${cs[k]};`).join('');
+      mirror.textContent = ta.value.slice(0, caret);
+      const mark = document.createElement('span'); mark.textContent = '\u200b'; mirror.appendChild(mark);
+      document.body.appendChild(mirror);
+      const caretY = ta.getBoundingClientRect().top + mark.offsetTop;
+      mirror.remove();
+      const vh = window.visualViewport?.height || innerHeight;
+      const want = ev && ev.clientY != null ? Math.min(ev.clientY, vh * 0.4) : topBefore;
+      const drift = caretY - want;
+      if (Math.abs(drift) > 1) { userMove.selfUntil = Date.now() + 120; window.scrollBy(0, drift); }
       const finish = async (save) => {
         if (save && ta.value !== (p.note || '')) {
           try { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { note: ta.value } }); toast(t('메모를 저장했어요')); }
