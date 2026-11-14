@@ -11,6 +11,7 @@ import { allSessionMeta, allProjectMeta, allBriefs, cwdOverrides } from './store
 import { activeRunFor, childPids } from './runner.js';
 import { trashedKeys } from './trash.js';
 import { isInternalCwd } from './util.js';
+import { boxSorter } from './boxes.js';
 
 let snapshot = { at: 0, sessions: [], byKey: new Map(), byFile: new Map() };
 let refreshing = null;
@@ -58,6 +59,7 @@ export async function decoratedSessions({ includeHidden } = {}) {
   const meta = allSessionMeta();
   const liveMap = await liveSessions(snap.byFile);
   const trashed = trashedKeys();
+  const sortBox = boxSorter();
   const out = [];
   for (const s of snap.sessions) {
     if (trashed.has(s.key)) continue;
@@ -65,9 +67,10 @@ export async function decoratedSessions({ includeHidden } = {}) {
     const hidden = Boolean(m?.hidden);
     if (hidden && !includeHidden) continue;
     // Automated sessions (scripts, `codex exec`, another tool's `claude -p`) are listed like any other, tagged
-    // "Auto"; the user hides the ones they don't want (one by one or in bulk).
+    // "Auto", and sorted into the built-in "auto" box (kept off Home). Boxes: see boxes.js.
     const lv = liveMap.get(s.key);
     const run = activeRunFor(s.key);
+    const { box, manual: boxManual } = sortBox({ ...s, title: m?.title || s.title }, m?.box);
     const terminal = lv && !run && !childPids.has(lv.pid) ? lv : null; // Baton's own child processes are shown as runs instead
     out.push({
       ...s,
@@ -82,6 +85,7 @@ export async function decoratedSessions({ includeHidden } = {}) {
       running: run ? run.id : null,
       live: Boolean(terminal || run || (s.tool === 'agy' && s.busy && Date.now() - s.updated < 10 * 60_000)),
       unseen: Boolean(m?.last_seen && s.updated > m.last_seen + 2000),
+      box, boxManual,
     });
   }
   out.sort((a, b) => b.updated - a.updated);

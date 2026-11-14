@@ -57,6 +57,7 @@ const q = (sql) => db.prepare(sql);
 // migrations
 try { db.exec('ALTER TABLE session_meta ADD COLUMN notify INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ }
 try { db.exec('ALTER TABLE session_meta ADD COLUMN cwd_override TEXT'); } catch { /* exists */ }
+try { db.exec('ALTER TABLE session_meta ADD COLUMN box TEXT'); } catch { /* exists */ } // box id set by hand (see boxes.js)
 try { db.exec('ALTER TABLE project_meta ADD COLUMN muted INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ }
 try { db.exec('ALTER TABLE events ADD COLUMN quiet INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ } // inbox only, no pop-up
 // Notifications are on for every session by default now: session_meta.notify -1 = muted, 0 = default.
@@ -115,11 +116,11 @@ export function patchSessionMetaMany(keys, patch) {
   try { for (const key of keys) patchSessionMeta(key, patch); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
 }
 export function patchSessionMeta(key, patch) {
-  const cur = q('SELECT * FROM session_meta WHERE key = ?').get(key) || { key, pinned: 0, hidden: 0, title: null, last_seen: null, notify: 0, cwd_override: null };
+  const cur = q('SELECT * FROM session_meta WHERE key = ?').get(key) || { key, pinned: 0, hidden: 0, title: null, last_seen: null, notify: 0, cwd_override: null, box: null };
   const next = { ...cur, ...patch };
-  q(`INSERT INTO session_meta (key, pinned, hidden, title, last_seen, notify, cwd_override) VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET pinned=excluded.pinned, hidden=excluded.hidden, title=excluded.title, last_seen=excluded.last_seen, notify=excluded.notify, cwd_override=excluded.cwd_override`)
-    .run(key, next.pinned ? 1 : 0, next.hidden ? 1 : 0, next.title ?? null, next.last_seen ?? null, Number(next.notify) || 0, next.cwd_override ?? null);
+  q(`INSERT INTO session_meta (key, pinned, hidden, title, last_seen, notify, cwd_override, box) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET pinned=excluded.pinned, hidden=excluded.hidden, title=excluded.title, last_seen=excluded.last_seen, notify=excluded.notify, cwd_override=excluded.cwd_override, box=excluded.box`)
+    .run(key, next.pinned ? 1 : 0, next.hidden ? 1 : 0, next.title ?? null, next.last_seen ?? null, Number(next.notify) || 0, next.cwd_override ?? null, next.box ?? null);
   return next;
 }
 

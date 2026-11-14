@@ -637,6 +637,7 @@ function sessionRow(s, { showProject = true } = {}) {
   else if (s.terminal) flags.push(`<span class="flag warn">${s.terminal === 'busy' ? t('PC에서 작업 중') : t('PC에서 열림')}</span>`);
   if (s.automated) flags.push(`<span class="flag">${t('자동')}</span>`);
   else if (s.delegated) flags.push(`<span class="flag" title="${t('Baton 밖에서 다른 도구가 실행해 실제로 작업한 세션')}">${t('외부 실행')}</span>`);
+  if (s.box && s.box !== 'auto') flags.push(`<span class="flag box">🗂 ${esc(boxName(s.box))}</span>`);
   if (s.notify < 0) flags.push(`<span class="flag bell" title="${t('알림 꺼짐')}">🔕</span>`);
   const preview = s.lastReply || s.lastPrompt || s.firstPrompt || '';
   return `<a class="srow" href="#/s/${s.tool}/${encodeURIComponent(s.id)}">
@@ -647,6 +648,51 @@ function sessionRow(s, { showProject = true } = {}) {
       ${preview ? `<div class="p">${esc(preview)}</div>` : ''}
     </div><span class="srow-more" role="button" tabindex="0" aria-label="${t('세션 메뉴')}">${ICON.more}</span></a>`;
 }
+// ---------------------------------------------------------------- session boxes
+// Mail-style folders: keyword rules sort sessions into boxes, and a box can stay off Home. The built-in
+// "auto" box holds what a CLI or script ran on its own. Server side: server/boxes.js.
+const boxList = () => G.state?.boxes || [{ id: 'auto', builtin: true, keywords: [], hideHome: true }];
+function boxName(id) { return id === 'auto' ? t('자동 세션') : boxList().find((b) => b.id === id)?.name || t('보관함'); }
+/** Create or edit a box. Resolves true when something changed. */
+function boxSheet(box = null) {
+  return sheet({
+    title: box ? t('보관함 편집') : t('새 보관함'),
+    body: `<div class="boxform">
+      <label>${t('이름')}<input type="text" data-name maxlength="40" value="${esc(box?.name || '')}" placeholder="${t('예) 배포 로그')}"></label>
+      <label>${t('키워드')}<input type="text" data-kw value="${esc((box?.keywords || []).join(', '))}" placeholder="${t('예) deploy, 배포, 릴리스')}"></label>
+      <p class="small muted">${t('세션 제목이나 첫 메시지에 키워드가 하나라도 들어 있으면 이 보관함으로 들어가요. 쉼표로 여러 개 적을 수 있어요.')}</p>
+      <label class="chip check"><input type="checkbox" data-hh ${box?.hideHome === false ? '' : 'checked'}> ${t('홈 「이어서 하기」에서 숨기기')}</label>
+    </div>`,
+    footer: `${box ? `<button class="btn ghost danger" data-del>${t('삭제')}</button>` : ''}<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('저장')}</button>`,
+    onMount: (el, close) => {
+      const name = $('[data-name]', el);
+      setTimeout(() => name.focus(), 250);
+      $('[data-x]', el).onclick = () => close(false);
+      $('[data-ok]', el).onclick = async () => {
+        if (!name.value.trim()) { toast(t('이름을 적어주세요'), true); name.focus(); return; }
+        try { await api('/api/boxes', { body: { id: box?.id, name: name.value, keywords: $('[data-kw]', el).value, hideHome: $('[data-hh]', el).checked } }); }
+        catch (e) { toast(e.message, true); return; }
+        await loadState(); toast(t('보관함을 저장했어요')); close(true);
+      };
+      const del = $('[data-del]', el);
+      if (del) del.onclick = async () => {
+        const ok = await pick(t('「{name}」 보관함을 지울까요?', { name: box.name }), [{ value: true, label: t('지우기'), desc: t('세션은 그대로 남고, 다시 규칙대로 분류돼요'), danger: true }, { value: false, label: t('취소') }]);
+        if (!ok) return;
+        try { await api(`/api/boxes/${encodeURIComponent(box.id)}`, { method: 'DELETE' }); } catch (e) { toast(e.message, true); return; }
+        await loadState(); toast(t('보관함을 지웠어요')); close(true);
+      };
+    },
+  });
+}
+/** Choose where sessions go. Resolves a box id, '-' (no box), null (back to the rules) or undefined (cancelled). */
+function boxPick(title, current) {
+  return pick(title, [
+    ...boxList().map((b) => ({ value: b.id, icon: glyph('folder'), label: boxName(b.id), desc: b.builtin ? t('CLI·스크립트가 알아서 실행한 세션') : (b.keywords?.length ? t('키워드: {k}', { k: b.keywords.join(', ') }) : '') })),
+    { value: '-', icon: glyph('eyeOff'), label: t('보관함에서 빼기'), desc: t('어느 보관함에도 넣지 않고 홈에 보여요') },
+    { value: null, icon: glyph('shuffle'), label: t('규칙대로 분류'), desc: t('직접 고른 것을 풀고 키워드·자동 판정에 맡겨요') },
+  ], current);
+}
+
 /** Session rows have a ⋯ button: open the session menu right from the list, without entering the chat. */
 function onRowMore(e) {
   const b = e.target.closest?.('.srow-more'); if (!b) return;
@@ -747,7 +793,7 @@ async function viewHome(_, params) {
   }
   parts.push(`<div class="section"><div class="section-h"><h2>${t('이어서 하기')}</h2><a class="more" href="#/sessions">${t('전체 보기')}</a></div>
     ${d.recent.length ? `<div class="card list">${d.recent.slice(0, 6).map((s) => sessionRow(s)).join('')}</div>` : `<div class="card empty"><b>${t('아직 세션이 없어요')}</b>${t('오른쪽 아래 「새 세션」으로 시작해보세요')}</div>`}
-    ${d.autoCount ? `<a class="more" style="display:block;margin:8px 2px 0" href="#/sessions?auto=1">${t('자동 세션 {n}개 ›', { n: d.autoCount })}</a>` : ''}</div>`);
+    ${d.boxes?.length ? `<div class="boxlinks">${d.boxes.map((b) => `<a class="more" href="#/sessions?box=${encodeURIComponent(b.id)}">🗂 ${esc(b.builtin ? t('자동 세션') : b.name)} ${b.n} ›</a>`).join('')}</div>` : ''}</div>`);
   if (d.dozing.length) {
     parts.push(`<div class="section"><div class="section-h"><h2>${t('잠자는 프로젝트 💤')}</h2><span class="count">${d.dozing.length}</span><a class="more" href="#/projects?f=dozing">${t('모두')}</a></div>
       <div class="hscroll">${d.dozing.map(dozeCard).join('')}</div></div>`);
@@ -1171,19 +1217,29 @@ async function viewSessions(_, params) {
   let selecting = false;
   const sel = new Set();
   const f = { tool: '', hidden: false, ...store.get('sfilter', {}) };
-  f.automated = params?.get('auto') === '1'; // the automated-only view is opened on demand (home link / chip), never sticky
+  // A box view is opened on demand (Home link / chip) and never sticky. ?auto=1 is the older link to the auto box.
+  delete f.automated;
+  f.box = params?.get('box') || (params?.get('auto') === '1' ? 'auto' : '');
   const seenTools = new Set();
   let q = sessionStorage.getItem('sq') || '';
   let offset = 0, items = [], total = 0;
   v.innerHTML = `
     <label class="search">${ICON.search}<input id="sq" type="search" placeholder="${t('제목·대화 내용·폴더 검색')}" value="${esc(q)}" autocomplete="off"></label>
     <div class="chips" id="sf"></div>
+    <div id="sboxinfo"></div>
     <div id="slist" style="margin-top:12px"></div>
-    <div class="bulkbar" id="sbar" hidden><button class="btn sm ghost" id="sall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="scount">0</b>' })}</span><button class="btn sm" id="shide"></button><button class="btn primary danger-fill" id="strash">${t('휴지통으로')}</button></div>`;
+    <div class="bulkbar" id="sbar" hidden><button class="btn sm ghost" id="sall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="scount">0</b>' })}</span><button class="btn sm" id="sbox">${t('보관함')}</button><button class="btn sm" id="shide"></button><button class="btn primary danger-fill" id="strash">${t('휴지통으로')}</button></div>`;
   const drawChips = () => {
     $('#sf').innerHTML = [['', t('전체')], ...TOOL_IDS().filter((k) => k === f.tool || seenTools.has(k) || INSTALLED().includes(k)).map((k) => [k, TOOL[k].name])]
       .map(([k, l]) => `<button class="chip ${f.tool === k ? 'on' : ''}" data-tool="${k}">${l}</button>`).join('')
-      + `<button class="chip ${f.hidden ? 'on' : ''}" data-tg="hidden">${t('숨긴 세션')}</button><button class="chip ${f.automated ? 'on' : ''}" data-tg="automated">${t('자동 세션')}</button><a class="chip" href="#/cleanup">${t('🧹 정리하기')}</a>`;
+      + `<button class="chip ${f.hidden ? 'on' : ''}" data-tg="hidden">${t('숨긴 세션')}</button>${boxList().map((b) => `<button class="chip ${f.box === b.id ? 'on' : ''}" data-box="${esc(b.id)}">🗂 ${esc(boxName(b.id))}</button>`).join('')}<button class="chip" data-newbox>＋ ${t('보관함')}</button><a class="chip" href="#/cleanup">${t('🧹 정리하기')}</a>`;
+    const cur = f.box && boxList().find((b) => b.id === f.box);
+    $('#sboxinfo').innerHTML = cur ? `<div class="banner boxinfo"><div class="l">${cur.builtin
+      ? t('CLI·스크립트가 알아서 실행한 세션이에요. 잘못 들어온 세션은 ⋯ › 「보관함으로 옮기기」에서 뺄 수 있어요.')
+      : `${cur.keywords?.length ? esc(t('키워드: {k}', { k: cur.keywords.join(', ') })) : t('키워드 없음 (직접 옮긴 세션만)')}${cur.hideHome ? ` · ${t('홈에서 숨김')}` : ''}`}</div>${cur.builtin ? '' : `<button class="btn sm" data-editbox>${t('편집')}</button>`}</div>` : '';
+    $('[data-editbox]', v) && ($('[data-editbox]', v).onclick = async () => { if (await boxSheet(cur)) { if (!boxList().some((b) => b.id === f.box)) f.box = ''; reload(); } });
+    $$('[data-box]', v).forEach((b) => (b.onclick = () => { f.box = f.box === b.dataset.box ? '' : b.dataset.box; reload(); }));
+    $('[data-newbox]', v).onclick = async () => { if (await boxSheet()) reload(); };
     $$('[data-tool]', v).forEach((b) => (b.onclick = () => { f.tool = b.dataset.tool; reload(); }));
     $$('[data-tg]', v).forEach((b) => (b.onclick = () => { f[b.dataset.tg] = !f[b.dataset.tg]; reload(); }));
   };
@@ -1192,7 +1248,7 @@ async function viewSessions(_, params) {
     if (q) sp.set('q', q);
     if (f.tool) sp.set('tool', f.tool);
     if (f.hidden) sp.set('hidden', '1');
-    if (f.automated) sp.set('automated', '1');
+    if (f.box) sp.set('box', f.box);
     const d = await api('/api/sessions?' + sp);
     total = d.total; items = offset ? items.concat(d.items) : d.items;
     for (const s of d.items) seenTools.add(s.tool); // history from a CLI that's since been uninstalled still gets a chip
@@ -1201,17 +1257,25 @@ async function viewSessions(_, params) {
     $('#slist').innerHTML = items.length
       ? `<div class="small muted" style="margin:0 2px 8px">${t('{n}개', { n: total })}</div><div class="card list">${items.map((s) => (selecting ? selRow(s) : sessionRow(s))).join('')}</div>
          ${items.length < total ? `<button class="btn block ghost" id="smore" style="margin-top:10px">${t('더 보기')}</button>` : ''}`
-      : `<div class="empty"><b>${q ? t('검색 결과가 없어요') : f.hidden ? t('숨긴 세션이 없어요') : t('세션이 없어요')}</b></div>`;
+      : `<div class="empty"><b>${q ? t('검색 결과가 없어요') : f.hidden ? t('숨긴 세션이 없어요') : f.box ? t('이 보관함은 비어 있어요') : t('세션이 없어요')}</b></div>`;
     const more = $('#smore'); if (more) more.onclick = async () => { offset += 50; await fetchPage(); remember({ soff: offset }); draw(); };
     if (!selecting) attachLongPress($('#slist'));
     $$('[data-k]', v).forEach((c) => { c.checked = sel.has(c.dataset.k); c.onchange = () => { c.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); drawBar(); }; });
     drawBar();
   };
-  const drawBar = () => { $('#sbar').hidden = !selecting; $('#scount').textContent = sel.size; $('#strash').disabled = !sel.size; $('#shide').disabled = !sel.size; $('#shide').textContent = f.hidden ? t('다시 보이기') : t('숨기기'); };
+  const drawBar = () => { $('#sbar').hidden = !selecting; $('#scount').textContent = sel.size; $('#strash').disabled = !sel.size; $('#shide').disabled = !sel.size; $('#sbox').disabled = !sel.size; $('#shide').textContent = f.hidden ? t('다시 보이기') : t('숨기기'); };
   $('#selbtn').onclick = () => { selecting = !selecting; sel.clear(); $('#selbtn').textContent = selecting ? t('완료') : t('선택'); document.body.classList.toggle('selecting', selecting); draw(); };
   $('#sall').onclick = () => { const all = items.filter((s) => !s.live).every((s) => sel.has(s.key)); for (const s of items) if (!s.live) all ? sel.delete(s.key) : sel.add(s.key); draw(); };
   $('#strash').onclick = async () => {
     if (!(await trashMany([...sel]))) return;
+    sel.clear(); await reload();
+  };
+  $('#sbox').onclick = async () => {
+    const n = sel.size;
+    const to = await boxPick(t('{n}개 세션을 어디로 옮길까요?', { n }));
+    if (to === undefined) return;
+    await api('/api/sessions/box', { body: { keys: [...sel], box: to } });
+    toast(t('{n}개를 옮겼어요', { n }));
     sel.clear(); await reload();
   };
   $('#shide').onclick = async () => {
@@ -1257,6 +1321,7 @@ async function sessionMenu(s, after, { onTrashed } = {}) {
     { value: 'mcp', icon: glyph('plug'), label: t('MCP 서버 보기'), desc: t('이 세션이 불러오는 MCP와 실제로 호출한 도구') },
     { value: 'move', icon: glyph('folder'), label: t('작업 폴더 옮기기'), desc: s.moved ? t('지금: {p}', { p: s.cwd }) : t('실제 작업하는 프로젝트 폴더로 이 세션을 옮겨요') },
     { value: 'handoff', icon: glyph('shuffle'), label: t('다른 CLI로 이어가기'), desc: t('토큰이 부족할 때 다른 도구가 이 세션을 이어받아요') },
+    { value: 'box', icon: glyph('folder'), label: t('보관함으로 옮기기'), desc: s.box ? t('지금: {b}', { b: boxName(s.box) }) + (s.boxManual ? '' : ` (${t('규칙')})`) : s.boxManual ? t('지금: 보관함에서 뺌') : t('지금: 보관함 없음') },
     { value: 'pin', icon: glyph('pin'), label: s.pinned ? t('고정 해제') : t('고정') },
     { value: 'rename', icon: glyph('edit'), label: t('이름 바꾸기') },
     { value: 'project', icon: glyph('folder'), label: t('프로젝트 보기'), desc: shortPath(s.project || s.cwd) },
@@ -1268,6 +1333,12 @@ async function sessionMenu(s, after, { onTrashed } = {}) {
   else if (act === 'hide') { await meta({ hidden: !s.hidden }); toast(s.hidden ? t('다시 보이게 했어요') : t('숨겼어요 (세션 탭 「숨긴 세션」에서 볼 수 있어요)')); }
   else if (act === 'rename') { const n = await promptSheet(t('세션 이름 (Baton에서만 보여요)'), s.title); if (n === undefined) return; await meta({ title: n || null }); }
   else if (act === 'project') { if (s.project) location.hash = `#/p/${encodeURIComponent(s.project)}`; return; }
+  else if (act === 'box') {
+    const to = await boxPick(t('보관함으로 옮기기'), s.boxManual ? (s.box || '-') : null);
+    if (to === undefined) return;
+    await meta({ box: to });
+    toast(to === null ? t('규칙대로 분류할게요') : to === '-' ? t('보관함에서 뺐어요') : t('「{b}」로 옮겼어요', { b: boxName(to) }));
+  }
   else if (act === 'notify') { await meta({ notify: s.notify < 0 ? 0 : -1 }); toast(s.notify < 0 ? t('알림을 다시 켰어요') : t('이 세션 알림을 껐어요')); }
   else if (act === 'newhere') { await newSessionHere(s); return; }
   else if (act === 'schedule') { if (await scheduleSheet(s)) after?.(); return; }

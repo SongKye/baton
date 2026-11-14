@@ -5,10 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-### Changed
-- **The "Delegated" label is now "External run".** The old name suggested someone handed the task over on purpose, but Baton only knows that a session was run outside Baton and actually worked with tools (not that anyone delegated it). The new name says just that.
+### Added
+- **Session boxes, like mail folders.** Make a box in the Sessions tab (＋ Box) with a name and keywords; sessions whose title or first message contains a keyword go in it, and a box can stay off Home. Automated sessions now live in a built-in "Automated sessions" box. Home shows one link per box it keeps off, the Sessions tab gets a chip per box, and ⋯ › "Move to box" (or the selection bar) puts sessions in a box by hand, takes them out of every box, or hands them back to the rules. So a session wrongly labelled "Auto" can be brought back to Home.
 
 ### Changed
+- **The "Delegated" label is now "External run".** The old name suggested someone handed the task over on purpose, but Baton only knows that a session was run outside Baton and actually worked with tools (not that anyone delegated it). The new name says just that.
 - **Automated sessions no longer clutter Home.** Runs that a CLI or a script started on its own (the ones labelled "Auto") are left out of "Continue" and the weekly session count, so Home shows what you were actually working on. Sessions that are running right now and pinned ones still show. Home gets an "N automated sessions ›" link, and the Sessions tab gets an "Automated sessions" chip to see only those. The Sessions tab still lists everything by default.
 
 ### Fixed

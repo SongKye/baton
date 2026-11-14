@@ -30,6 +30,7 @@ import { isLocal, authorized } from './auth.js';
 import { toolsMeta, binFor, TOOL_IDS } from './tools.js';
 import { OS_NAME, openBrowser } from './platform.js';
 import { tr, lang } from './i18n.js';
+import { listBoxes, saveBox, deleteBox, homeHiddenBoxes, NO_BOX } from './boxes.js';
 import { providersSummary, resetProviderCache } from './providers.js';
 import { connect, testConnection, probeModels, findLocalLlms } from './connect.js';
 import { presets as mcpPresets, addMcp, copyMcp, removeMcp, planInstall, previewInstall } from './mcp-install.js';
@@ -75,7 +76,7 @@ function sessionView(s) {
     key: s.key, tool: s.tool, id: s.id, title: s.title, cwd: shortHome(s.cwd), project: s.project, created: s.created, updated: s.updated,
     lastPrompt: s.lastPrompt, lastReply: s.lastReply, firstPrompt: s.firstPrompt, model: s.model, automated: s.automated, delegated: s.delegated, background: Boolean(s.background),
     origCwd: s.moved ? shortHome(s.origCwd) : null, moved: Boolean(s.moved),
-    pinned: s.pinned, hidden: s.hidden, terminal: s.terminal, running: s.running, live: s.live, unseen: s.unseen, agentName: s.agentName, notify: s.notify || 0,
+    pinned: s.pinned, hidden: s.hidden, box: s.box || null, boxManual: Boolean(s.boxManual), terminal: s.terminal, running: s.running, live: s.live, unseen: s.unseen, agentName: s.agentName, notify: s.notify || 0,
   };
 }
 function matches(s, q) {
@@ -116,7 +117,22 @@ route('GET', '/api/state', async () => ({
   boot: BOOT, // changes on every start: lets the page tell a restarted server from the old one
   update: updateCached(),
   os: OS_NAME,
+  boxes: listBoxes(),
 }));
+
+// ---------- session boxes (see boxes.js) ----------
+route('GET', '/api/boxes', async () => {
+  const sessions = await decoratedSessions();
+  const n = {};
+  for (const s of sessions) if (s.box) n[s.box] = (n[s.box] || 0) + 1;
+  return { items: listBoxes().map((b) => ({ ...b, n: n[b.id] || 0 })) };
+});
+route('POST', '/api/boxes', async (req) => {
+  try { return saveBox(await body(req)); } catch (e) { return [400, { error: e.message }]; }
+});
+route('DELETE', '/api/boxes/:id', async (req, url, { id }) => {
+  try { deleteBox(decodeURIComponent(id)); return { ok: true }; } catch (e) { return [400, { error: e.message }]; }
+});
 
 // ---------- CLI environment (company setups: Bedrock, gateways, proxies…) ----------
 const SECRET_KEY = /KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH/i;
@@ -193,16 +209,21 @@ route('GET', '/api/home', async () => {
   const projects = await projectsList();
   const settings = store.getSettings();
   const live = sessions.filter((s) => s.live).slice(0, 12);
-  // Automated runs (CLI sub-sessions, scripts) are not "where I left off": they stay in the Sessions tab, not here.
-  const recent = sessions.filter((s) => !s.live && !s.automated).slice(0, 10);
-  const autoCount = sessions.filter((s) => s.automated).length;
+  // Sessions in a box kept off Home (automated runs, user rules) are not "where I left off": they stay in the
+  // Sessions tab and get a link per box here instead. Live and pinned ones still show above.
+  const offHome = homeHiddenBoxes();
+  const away = (s) => s.box && offHome.has(s.box);
+  const recent = sessions.filter((s) => !s.live && !away(s)).slice(0, 10);
+  const boxCounts = {};
+  for (const s of sessions) if (away(s)) boxCounts[s.box] = (boxCounts[s.box] || 0) + 1;
+  const boxes = listBoxes().filter((b) => boxCounts[b.id]).map((b) => ({ id: b.id, name: b.name, builtin: Boolean(b.builtin), n: boxCounts[b.id] }));
   const pinned = sessions.filter((s) => s.pinned).slice(0, 10);
   const dozing = dozingProjects(projects, settings).slice(0, 8);
   const activeProjects = projects.filter((p) => p.status === 'active').sort((a, b) => b.lastActivity - a.lastActivity).slice(0, 6);
-  const week = sessions.filter((s) => !s.automated && Date.now() - s.updated < 7 * DAY);
+  const week = sessions.filter((s) => !away(s) && Date.now() - s.updated < 7 * DAY);
   return {
     live: live.map(sessionView), recent: recent.map(sessionView), pinned: pinned.map(sessionView),
-    dozing, activeProjects, autoCount,
+    dozing, activeProjects, boxes,
     stats: { sessions: sessions.length, projects: projects.length, week: week.length, weekProjects: new Set(week.map((s) => s.project)).size },
     runs: listRuns().slice(0, 10), unread: store.unreadCount(),
   };
@@ -216,7 +237,9 @@ route('GET', '/api/sessions', async (req, url) => {
   const project = sp.get('project');
   if (project) list = list.filter((s) => s.project === project);
   if (sp.get('hidden') === '1') list = list.filter((s) => s.hidden);
-  if (sp.get('automated') === '1') list = list.filter((s) => s.automated);
+  if (sp.get('automated') === '1') list = list.filter((s) => s.box === 'auto'); // older clients
+  const box = sp.get('box');
+  if (box) list = list.filter((s) => s.box === box);
   const q = sp.get('q');
   if (q) list = list.filter((s) => matches(s, q));
   list.sort((a, b) => (b.pinned - a.pinned) || (b.live - a.live) || (b.updated - a.updated));
@@ -257,6 +280,7 @@ route('POST', '/api/sessions/:tool/:id/meta', async (req, url, { tool, id }) => 
   if ('hidden' in b) patch.hidden = Boolean(b.hidden);
   if ('title' in b) patch.title = b.title ? String(b.title).slice(0, 200) : null;
   if ('notify' in b) patch.notify = Number(b.notify) < 0 ? -1 : 0; // -1 = muted, 0 = default (notify)
+  if ('box' in b) patch.box = b.box == null ? null : b.box === NO_BOX || listBoxes().some((x) => x.id === b.box) ? b.box : null; // null = sort by rules
   return store.patchSessionMeta(`${tool}:${decodeURIComponent(id)}`, patch);
 });
 
@@ -502,6 +526,13 @@ route('GET', '/api/cleanup', async () => {
   const items = [];
   for (const s of all) { if (s.hidden) continue; const reason = cleanupReason(s); if (reason) items.push({ ...s, reason }); }
   return { items };
+});
+route('POST', '/api/sessions/box', async (req) => {
+  const b = await body(req);
+  const keys = Array.isArray(b.keys) ? b.keys.filter((k) => typeof k === 'string').slice(0, 5000) : [];
+  const box = b.box == null ? null : b.box === NO_BOX || listBoxes().some((x) => x.id === b.box) ? b.box : null;
+  store.patchSessionMetaMany(keys, { box });
+  return { changed: keys.length };
 });
 route('POST', '/api/sessions/hide', async (req) => {
   const b = await body(req);
