@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-14
+
 ### Added
 - **Boxes: collect sessions by keyword, like mail folders.** Tap the box icon next to "Select" in the Sessions tab, make a box with a name and keywords (type one, tap Add, repeat), and every session whose title or first message contains a keyword shows up in it, whether you started it or a script did. Each box shows how many sessions it holds, how many came in today, a 14-day chart of how many arrived per day, and the sessions grouped by day with their latest reply, so you can check now and then that a recurring job ran and what it came back with. Boxes only collect: nothing is hidden anywhere else.
 
