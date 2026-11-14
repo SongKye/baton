@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Changed
+- **Automated sessions no longer clutter Home.** Runs that a CLI or a script started on its own (the ones labelled "Auto") are left out of "Continue" and the weekly session count, so Home shows what you were actually working on. Sessions that are running right now and pinned ones still show. Home gets an "N automated sessions ›" link, and the Sessions tab gets an "Automated sessions" chip to see only those. The Sessions tab still lists everything by default.
+
 ### Fixed
 - **The memo editor no longer jumps up when you start typing or deleting.** Resizing the editor to fit the text briefly shortened the page, so the browser pulled the scroll position up on the first keystroke. The page height and your place are now held while it resizes.
 - **Tapping a session in a project no longer does nothing.** If you started a new chat, left before the reply finished, and later tapped that same session, Baton ignored the tap (the address changed but the screen stayed), and only a refresh opened it. Baton now forgets its "skip the next redraw" note as soon as you navigate.

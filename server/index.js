@@ -193,14 +193,16 @@ route('GET', '/api/home', async () => {
   const projects = await projectsList();
   const settings = store.getSettings();
   const live = sessions.filter((s) => s.live).slice(0, 12);
-  const recent = sessions.filter((s) => !s.live).slice(0, 10);
+  // Automated runs (CLI sub-sessions, scripts) are not "where I left off": they stay in the Sessions tab, not here.
+  const recent = sessions.filter((s) => !s.live && !s.automated).slice(0, 10);
+  const autoCount = sessions.filter((s) => s.automated).length;
   const pinned = sessions.filter((s) => s.pinned).slice(0, 10);
   const dozing = dozingProjects(projects, settings).slice(0, 8);
   const activeProjects = projects.filter((p) => p.status === 'active').sort((a, b) => b.lastActivity - a.lastActivity).slice(0, 6);
-  const week = sessions.filter((s) => Date.now() - s.updated < 7 * DAY);
+  const week = sessions.filter((s) => !s.automated && Date.now() - s.updated < 7 * DAY);
   return {
     live: live.map(sessionView), recent: recent.map(sessionView), pinned: pinned.map(sessionView),
-    dozing, activeProjects,
+    dozing, activeProjects, autoCount,
     stats: { sessions: sessions.length, projects: projects.length, week: week.length, weekProjects: new Set(week.map((s) => s.project)).size },
     runs: listRuns().slice(0, 10), unread: store.unreadCount(),
   };
@@ -214,6 +216,7 @@ route('GET', '/api/sessions', async (req, url) => {
   const project = sp.get('project');
   if (project) list = list.filter((s) => s.project === project);
   if (sp.get('hidden') === '1') list = list.filter((s) => s.hidden);
+  if (sp.get('automated') === '1') list = list.filter((s) => s.automated);
   const q = sp.get('q');
   if (q) list = list.filter((s) => matches(s, q));
   list.sort((a, b) => (b.pinned - a.pinned) || (b.live - a.live) || (b.updated - a.updated));

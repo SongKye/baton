@@ -746,7 +746,8 @@ async function viewHome(_, params) {
     parts.push(`<div class="section"><div class="section-h"><h2>${t('📌 고정')}</h2></div><div class="card list">${d.pinned.map((s) => sessionRow(s)).join('')}</div></div>`);
   }
   parts.push(`<div class="section"><div class="section-h"><h2>${t('이어서 하기')}</h2><a class="more" href="#/sessions">${t('전체 보기')}</a></div>
-    ${d.recent.length ? `<div class="card list">${d.recent.slice(0, 6).map((s) => sessionRow(s)).join('')}</div>` : `<div class="card empty"><b>${t('아직 세션이 없어요')}</b>${t('오른쪽 아래 「새 세션」으로 시작해보세요')}</div>`}</div>`);
+    ${d.recent.length ? `<div class="card list">${d.recent.slice(0, 6).map((s) => sessionRow(s)).join('')}</div>` : `<div class="card empty"><b>${t('아직 세션이 없어요')}</b>${t('오른쪽 아래 「새 세션」으로 시작해보세요')}</div>`}
+    ${d.autoCount ? `<a class="more" style="display:block;margin:8px 2px 0" href="#/sessions?auto=1">${t('자동 세션 {n}개 ›', { n: d.autoCount })}</a>` : ''}</div>`);
   if (d.dozing.length) {
     parts.push(`<div class="section"><div class="section-h"><h2>${t('잠자는 프로젝트 💤')}</h2><span class="count">${d.dozing.length}</span><a class="more" href="#/projects?f=dozing">${t('모두')}</a></div>
       <div class="hscroll">${d.dozing.map(dozeCard).join('')}</div></div>`);
@@ -1165,12 +1166,12 @@ async function viewProject([id]) {
 }
 
 // ---------------------------------------------------------------- SESSIONS
-async function viewSessions() {
+async function viewSessions(_, params) {
   const v = shell({ title: t('세션'), right: `<button class="btn sm ghost" id="selbtn">${t('선택')}</button>` });
   let selecting = false;
   const sel = new Set();
   const f = { tool: '', hidden: false, ...store.get('sfilter', {}) };
-  delete f.automated; // automated sessions are always listed now
+  f.automated = params?.get('auto') === '1'; // the automated-only view is opened on demand (home link / chip), never sticky
   const seenTools = new Set();
   let q = sessionStorage.getItem('sq') || '';
   let offset = 0, items = [], total = 0;
@@ -1182,7 +1183,7 @@ async function viewSessions() {
   const drawChips = () => {
     $('#sf').innerHTML = [['', t('전체')], ...TOOL_IDS().filter((k) => k === f.tool || seenTools.has(k) || INSTALLED().includes(k)).map((k) => [k, TOOL[k].name])]
       .map(([k, l]) => `<button class="chip ${f.tool === k ? 'on' : ''}" data-tool="${k}">${l}</button>`).join('')
-      + `<button class="chip ${f.hidden ? 'on' : ''}" data-tg="hidden">${t('숨긴 세션')}</button><a class="chip" href="#/cleanup">${t('🧹 정리하기')}</a>`;
+      + `<button class="chip ${f.hidden ? 'on' : ''}" data-tg="hidden">${t('숨긴 세션')}</button><button class="chip ${f.automated ? 'on' : ''}" data-tg="automated">${t('자동 세션')}</button><a class="chip" href="#/cleanup">${t('🧹 정리하기')}</a>`;
     $$('[data-tool]', v).forEach((b) => (b.onclick = () => { f.tool = b.dataset.tool; reload(); }));
     $$('[data-tg]', v).forEach((b) => (b.onclick = () => { f[b.dataset.tg] = !f[b.dataset.tg]; reload(); }));
   };
@@ -1191,6 +1192,7 @@ async function viewSessions() {
     if (q) sp.set('q', q);
     if (f.tool) sp.set('tool', f.tool);
     if (f.hidden) sp.set('hidden', '1');
+    if (f.automated) sp.set('automated', '1');
     const d = await api('/api/sessions?' + sp);
     total = d.total; items = offset ? items.concat(d.items) : d.items;
     for (const s of d.items) seenTools.add(s.tool); // history from a CLI that's since been uninstalled still gets a chip
