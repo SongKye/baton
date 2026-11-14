@@ -30,6 +30,7 @@ import { isLocal, authorized } from './auth.js';
 import { toolsMeta, binFor, TOOL_IDS } from './tools.js';
 import { OS_NAME, openBrowser } from './platform.js';
 import { tr, lang } from './i18n.js';
+import { listBoxes, saveBox, deleteBox, boxMatcher } from './boxes.js';
 import { providersSummary, resetProviderCache } from './providers.js';
 import { connect, testConnection, probeModels, findLocalLlms } from './connect.js';
 import { presets as mcpPresets, addMcp, copyMcp, removeMcp, planInstall, previewInstall } from './mcp-install.js';
@@ -193,19 +194,48 @@ route('GET', '/api/home', async () => {
   const projects = await projectsList();
   const settings = store.getSettings();
   const live = sessions.filter((s) => s.live).slice(0, 12);
-  // Automated runs (CLI sub-sessions, scripts) are not "where I left off": they stay in the Sessions tab, not here.
-  const recent = sessions.filter((s) => !s.live && !s.automated).slice(0, 10);
-  const autoCount = sessions.filter((s) => s.automated).length;
+  // Runs the user didn't start themselves (automated, external runs) are not "where I left off": they get
+  // their own Home widget instead of crowding "Continue". Live and pinned ones still show at the top.
+  const unattended = (s) => s.automated || s.delegated;
+  const recent = sessions.filter((s) => !s.live && !unattended(s)).slice(0, 10);
+  const bg = sessions.filter((s) => !s.live && unattended(s));
+  const dayStart = new Date().setHours(0, 0, 0, 0);
   const pinned = sessions.filter((s) => s.pinned).slice(0, 10);
   const dozing = dozingProjects(projects, settings).slice(0, 8);
   const activeProjects = projects.filter((p) => p.status === 'active').sort((a, b) => b.lastActivity - a.lastActivity).slice(0, 6);
-  const week = sessions.filter((s) => !s.automated && Date.now() - s.updated < 7 * DAY);
+  const week = sessions.filter((s) => !unattended(s) && Date.now() - s.updated < 7 * DAY);
   return {
     live: live.map(sessionView), recent: recent.map(sessionView), pinned: pinned.map(sessionView),
-    dozing, activeProjects, autoCount,
+    dozing, activeProjects,
+    unattended: { items: bg.slice(0, 4).map(sessionView), total: bg.length, today: bg.filter((s) => s.updated >= dayStart).length },
     stats: { sessions: sessions.length, projects: projects.length, week: week.length, weekProjects: new Set(week.map((s) => s.project)).size },
     runs: listRuns().slice(0, 10), unread: store.unreadCount(),
   };
+});
+
+// ---------- session boxes: saved keyword views (see boxes.js) ----------
+route('GET', '/api/boxes', async () => {
+  const sessions = await decoratedSessions();
+  return {
+    items: listBoxes().map((b) => {
+      const hits = sessions.filter(boxMatcher(b));
+      return { ...b, n: hits.length, last: hits[0]?.updated || null };
+    }),
+  };
+});
+route('GET', '/api/boxes/:id', async (req, url, { id }) => {
+  const box = listBoxes().find((b) => b.id === decodeURIComponent(id));
+  if (!box) return [404, { error: tr('보관함을 찾을 수 없어요') }];
+  const hits = (await decoratedSessions()).filter(boxMatcher(box)); // newest first
+  // every match's time for the per-day chart; full rows for the newest ones
+  return { box, total: hits.length, times: hits.map((s) => s.updated), items: hits.slice(0, 300).map(sessionView) };
+});
+route('POST', '/api/boxes', async (req) => {
+  try { return saveBox(await body(req)); } catch (e) { return [400, { error: e.message }]; }
+});
+route('DELETE', '/api/boxes/:id', async (req, url, { id }) => {
+  deleteBox(decodeURIComponent(id));
+  return { ok: true };
 });
 
 route('GET', '/api/sessions', async (req, url) => {
@@ -216,7 +246,7 @@ route('GET', '/api/sessions', async (req, url) => {
   const project = sp.get('project');
   if (project) list = list.filter((s) => s.project === project);
   if (sp.get('hidden') === '1') list = list.filter((s) => s.hidden);
-  if (sp.get('automated') === '1') list = list.filter((s) => s.automated);
+  if (sp.get('automated') === '1') list = list.filter((s) => s.automated || s.delegated); // Home widget's "all"
   const q = sp.get('q');
   if (q) list = list.filter((s) => matches(s, q));
   list.sort((a, b) => (b.pinned - a.pinned) || (b.live - a.live) || (b.updated - a.updated));

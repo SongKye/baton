@@ -5,11 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-### Changed
-- **The "Delegated" label is now "External run".** The old name suggested someone handed the task over on purpose, but Baton only knows that a session was run outside Baton and actually worked with tools (not that anyone delegated it). The new name says just that.
+### Added
+- **Boxes: collect sessions by keyword, like mail folders.** Tap the box icon next to "Select" in the Sessions tab, make a box with a name and keywords (type one, tap Add, repeat), and every session whose title or first message contains a keyword shows up in it, whether you started it or a script did. Each box shows how many sessions it holds, how many came in today, a 14-day chart of how many arrived per day, and the sessions grouped by day with their latest reply, so you can check now and then that a recurring job ran and what it came back with. Boxes only collect: nothing is hidden anywhere else.
 
 ### Changed
-- **Automated sessions no longer clutter Home.** Runs that a CLI or a script started on its own (the ones labelled "Auto") are left out of "Continue" and the weekly session count, so Home shows what you were actually working on. Sessions that are running right now and pinned ones still show. Home gets an "N automated sessions ›" link, and the Sessions tab gets an "Automated sessions" chip to see only those. The Sessions tab still lists everything by default.
+- **Sessions you didn't start yourself get their own spot on Home.** Sessions labelled "Auto" or "External run" no longer fill up "Continue" or count toward "this week". They show in a separate "Automated & external runs" section below it, with today's count and an "All" link. Sessions that are running right now and pinned ones still show at the top.
+- **The "Delegated" label is now "External run".** The old name suggested someone handed the task over on purpose, but Baton only knows that a session was run outside Baton and actually worked with tools (not that anyone delegated it). The new name says just that.
 
 ### Fixed
 - **The memo editor no longer jumps up when you start typing or deleting.** Resizing the editor to fit the text briefly shortened the page, so the browser pulled the scroll position up on the first keystroke. The page height and your place are now held while it resizes.

@@ -46,6 +46,7 @@ const ICON = {
   pin: '📌',
   image: '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>',
   x: '<svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  box: '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/></svg>',
 };
 /** Line glyphs (same stroke style as ICON) for lists and cards that used to use emoji. */
 const GLYPH = {
@@ -503,6 +504,8 @@ const routes = [
   [/^#\/projects$/, viewProjects, 'projects'],
   [/^#\/p\/(.+)$/, viewProject, 'projects'],
   [/^#\/sessions$/, viewSessions, 'sessions'],
+  [/^#\/boxes$/, viewBoxes, 'sessions'],
+  [/^#\/box\/(.+)$/, viewBox, 'sessions'],
   [/^#\/s\/([a-z]+)\/(.+)$/, viewChat, null, 'sessions'],
   [/^#\/setup$/, viewSetup, 'settings'],
   [/^#\/new$/, viewNew, null, 'sessions'],
@@ -746,8 +749,13 @@ async function viewHome(_, params) {
     parts.push(`<div class="section"><div class="section-h"><h2>${t('📌 고정')}</h2></div><div class="card list">${d.pinned.map((s) => sessionRow(s)).join('')}</div></div>`);
   }
   parts.push(`<div class="section"><div class="section-h"><h2>${t('이어서 하기')}</h2><a class="more" href="#/sessions">${t('전체 보기')}</a></div>
-    ${d.recent.length ? `<div class="card list">${d.recent.slice(0, 6).map((s) => sessionRow(s)).join('')}</div>` : `<div class="card empty"><b>${t('아직 세션이 없어요')}</b>${t('오른쪽 아래 「새 세션」으로 시작해보세요')}</div>`}
-    ${d.autoCount ? `<a class="more" style="display:block;margin:8px 2px 0" href="#/sessions?auto=1">${t('자동 세션 {n}개 ›', { n: d.autoCount })}</a>` : ''}</div>`);
+    ${d.recent.length ? `<div class="card list">${d.recent.slice(0, 6).map((s) => sessionRow(s)).join('')}</div>` : `<div class="card empty"><b>${t('아직 세션이 없어요')}</b>${t('오른쪽 아래 「새 세션」으로 시작해보세요')}</div>`}</div>`);
+  const u = d.unattended;
+  if (u?.total) {
+    parts.push(`<div class="section"><div class="section-h"><h2>${t('자동·외부 실행')}</h2><span class="count">${u.total}</span><a class="more" href="#/sessions?auto=1">${t('모두')}</a></div>
+      <div class="small muted" style="margin:-4px 2px 8px">${t('직접 시작하지 않은 세션이에요')}${u.today ? ` · ${t('오늘 {n}개', { n: u.today })}` : ''}</div>
+      <div class="card list">${u.items.map((s) => sessionRow(s)).join('')}</div></div>`);
+  }
   if (d.dozing.length) {
     parts.push(`<div class="section"><div class="section-h"><h2>${t('잠자는 프로젝트 💤')}</h2><span class="count">${d.dozing.length}</span><a class="more" href="#/projects?f=dozing">${t('모두')}</a></div>
       <div class="hscroll">${d.dozing.map(dozeCard).join('')}</div></div>`);
@@ -1167,23 +1175,24 @@ async function viewProject([id]) {
 
 // ---------------------------------------------------------------- SESSIONS
 async function viewSessions(_, params) {
-  const v = shell({ title: t('세션'), right: `<button class="btn sm ghost" id="selbtn">${t('선택')}</button>` });
+  const v = shell({ title: t('세션'), right: `<a class="icon-btn" href="#/boxes" aria-label="${t('보관함')}" title="${t('보관함')}">${ICON.box}</a><button class="btn sm ghost" id="selbtn">${t('선택')}</button>` });
   let selecting = false;
   const sel = new Set();
   const f = { tool: '', hidden: false, ...store.get('sfilter', {}) };
-  f.automated = params?.get('auto') === '1'; // the automated-only view is opened on demand (home link / chip), never sticky
+  f.automated = params?.get('auto') === '1'; // opened from the Home widget's "all" link; never sticky
   const seenTools = new Set();
   let q = sessionStorage.getItem('sq') || '';
   let offset = 0, items = [], total = 0;
   v.innerHTML = `
     <label class="search">${ICON.search}<input id="sq" type="search" placeholder="${t('제목·대화 내용·폴더 검색')}" value="${esc(q)}" autocomplete="off"></label>
     <div class="chips" id="sf"></div>
+    ${f.automated ? `<div class="banner" style="margin-top:10px"><span>${t('자동·외부 실행 세션만 보고 있어요')}</span><a class="btn sm" href="#/sessions">${t('전체 보기')}</a></div>` : ''}
     <div id="slist" style="margin-top:12px"></div>
     <div class="bulkbar" id="sbar" hidden><button class="btn sm ghost" id="sall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="scount">0</b>' })}</span><button class="btn sm" id="shide"></button><button class="btn primary danger-fill" id="strash">${t('휴지통으로')}</button></div>`;
   const drawChips = () => {
     $('#sf').innerHTML = [['', t('전체')], ...TOOL_IDS().filter((k) => k === f.tool || seenTools.has(k) || INSTALLED().includes(k)).map((k) => [k, TOOL[k].name])]
       .map(([k, l]) => `<button class="chip ${f.tool === k ? 'on' : ''}" data-tool="${k}">${l}</button>`).join('')
-      + `<button class="chip ${f.hidden ? 'on' : ''}" data-tg="hidden">${t('숨긴 세션')}</button><button class="chip ${f.automated ? 'on' : ''}" data-tg="automated">${t('자동 세션')}</button><a class="chip" href="#/cleanup">${t('🧹 정리하기')}</a>`;
+      + `<button class="chip ${f.hidden ? 'on' : ''}" data-tg="hidden">${t('숨긴 세션')}</button><a class="chip" href="#/cleanup">${t('🧹 정리하기')}</a>`;
     $$('[data-tool]', v).forEach((b) => (b.onclick = () => { f.tool = b.dataset.tool; reload(); }));
     $$('[data-tg]', v).forEach((b) => (b.onclick = () => { f[b.dataset.tg] = !f[b.dataset.tg]; reload(); }));
   };
@@ -1230,6 +1239,135 @@ async function viewSessions(_, params) {
   let searchTimer;
   $('#sq').oninput = (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { q = e.target.value.trim(); sessionStorage.setItem('sq', q); reload(); }, 220); };
   await reload();
+}
+
+// ---------------------------------------------------------------- BOXES
+// Saved keyword views, like mail folders: a session whose title or first message has one of the keywords
+// shows up in the box. Nothing is hidden anywhere else. Server side: server/boxes.js.
+
+/** Create or edit a box. Resolves the saved box, 'deleted', or undefined (cancelled). */
+function boxSheet(box = null) {
+  const kws = [...(box?.keywords || [])];
+  return sheet({
+    title: box ? t('보관함 편집') : t('새 보관함'),
+    body: `<div class="boxform">
+      <label>${t('이름')}<input type="text" data-name maxlength="40" value="${esc(box?.name || '')}" placeholder="${t('예) 매일 리포트')}"></label>
+      <div class="boxform-l">${t('키워드')}</div>
+      <div class="kwadd"><input type="text" data-kw maxlength="60" placeholder="${t('키워드를 적고 추가를 누르세요')}" enterkeyhint="done"><button class="btn sm" data-add>${t('추가')}</button></div>
+      <div class="kwchips" data-chips></div>
+      <p class="small muted">${t('제목이나 첫 메시지에 키워드가 하나라도 들어 있는 세션이 여기에 모여요. 다른 화면에서 숨겨지지는 않아요.')}</p>
+    </div>`,
+    footer: `${box ? `<button class="btn ghost danger" data-del>${t('삭제')}</button>` : ''}<button class="btn ghost" data-x>${t('취소')}</button><button class="btn primary" data-ok>${t('저장')}</button>`,
+    onMount: (el, close) => {
+      const name = $('[data-name]', el), kw = $('[data-kw]', el), chips = $('[data-chips]', el);
+      const draw = () => {
+        chips.innerHTML = kws.length
+          ? kws.map((k, i) => `<span class="kwchip">${esc(k)}<button data-rm="${i}" aria-label="${t('빼기')}">${ICON.x}</button></span>`).join('')
+          : `<span class="small muted">${t('아직 키워드가 없어요')}</span>`;
+        $$('[data-rm]', chips).forEach((b) => (b.onclick = () => { kws.splice(+b.dataset.rm, 1); draw(); }));
+      };
+      const add = () => {
+        const k = kw.value.trim();
+        if (!k) return;
+        if (!kws.some((x) => x.toLowerCase() === k.toLowerCase())) kws.push(k);
+        kw.value = ''; draw(); kw.focus();
+      };
+      draw();
+      setTimeout(() => (box ? kw : name).focus(), 250);
+      $('[data-add]', el).onclick = add;
+      kw.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); add(); } }; // not mid-way through a Korean syllable
+      $('[data-x]', el).onclick = () => close(undefined);
+      $('[data-ok]', el).onclick = async () => {
+        add(); // a keyword typed but not added yet still counts
+        if (!name.value.trim()) { toast(t('이름을 적어주세요'), true); name.focus(); return; }
+        if (!kws.length) { toast(t('키워드를 하나 이상 넣어주세요'), true); kw.focus(); return; }
+        try { close(await api('/api/boxes', { body: { id: box?.id, name: name.value, keywords: kws } })); }
+        catch (e) { toast(e.message, true); }
+      };
+      const del = $('[data-del]', el);
+      if (del) del.onclick = async () => {
+        const ok = await pick(t('「{name}」 보관함을 지울까요?', { name: box.name }), [{ value: true, label: t('지우기'), desc: t('세션은 지워지지 않아요'), danger: true }, { value: false, label: t('취소') }]);
+        if (!ok) return;
+        await api(`/api/boxes/${encodeURIComponent(box.id)}`, { method: 'DELETE' });
+        close('deleted');
+      };
+    },
+  });
+}
+
+async function viewBoxes() {
+  const v = shell({ title: t('보관함'), fab: false, right: `<a class="icon-btn" href="#/sessions" aria-label="${t('목록')}">${ICON.back}</a>` });
+  v.innerHTML = '<div class="section"><div class="skeleton" style="height:120px"></div></div>';
+  const d = await api('/api/boxes');
+  v.innerHTML = `
+    <div class="section"><p class="small muted" style="margin:0 2px">${t('키워드로 세션을 모아 보는 곳이에요. 주기적으로 도는 작업이 언제 돌았고 결과가 어땠는지 가끔 확인할 때 좋아요.')}</p></div>
+    <div class="section">${d.items.length ? `<div class="list">${d.items.map((b) => `
+      <a class="card boxrow" href="#/box/${encodeURIComponent(b.id)}">
+        <div class="top"><span class="name">🗂 ${esc(b.name)}</span><span class="n">${t('{n}개', { n: b.n })}</span></div>
+        <div class="kws">${b.keywords.map((k) => `<span class="kwchip sm">${esc(k)}</span>`).join('')}</div>
+        <div class="meta">${b.last ? t('마지막 {ago}', { ago: ago(b.last) }) : t('아직 모인 세션이 없어요')}</div>
+      </a>`).join('')}</div>` : `<div class="card empty"><b>${t('보관함이 없어요')}</b>${t('예) 매일 도는 리포트의 키워드로 보관함을 만들어 보세요')}</div>`}</div>
+    <div class="section"><button class="btn block" id="bnew">＋ ${t('새 보관함')}</button></div>`;
+  $('#bnew').onclick = async () => {
+    const r = await boxSheet();
+    if (r?.id) location.hash = `#/box/${encodeURIComponent(r.id)}`;
+  };
+}
+
+async function viewBox([id]) {
+  const v = shell({ title: t('보관함'), fab: false, right: `<button class="icon-btn" id="bedit" aria-label="${t('편집')}">${glyph('edit')}</button><a class="icon-btn" href="#/boxes" aria-label="${t('목록')}">${ICON.back}</a>` });
+  v.innerHTML = '<div class="section"><div class="skeleton" style="height:160px"></div></div>';
+  const d = await api(`/api/boxes/${encodeURIComponent(id)}`);
+  $('.topbar h1').textContent = `🗂 ${d.box.name}`;
+  $('#bedit').onclick = async () => {
+    const r = await boxSheet(d.box);
+    if (r === 'deleted') { toast(t('보관함을 지웠어요')); location.hash = '#/boxes'; }
+    else if (r) { toast(t('보관함을 저장했어요')); render(); }
+  };
+  // per local day, newest first
+  const dayKey = (ts) => { const x = new Date(ts); return `${x.getFullYear()}-${x.getMonth() + 1}-${x.getDate()}`; };
+  const today0 = new Date().setHours(0, 0, 0, 0);
+  const yest0 = (() => { const x = new Date(today0); x.setDate(x.getDate() - 1); return x.getTime(); })();
+  const DAYS = 14, days = [];
+  for (let i = DAYS - 1; i >= 0; i--) { const d0 = new Date(today0); d0.setDate(d0.getDate() - i); days.push({ key: dayKey(d0), at: d0.getTime(), n: 0 }); }
+  const byKey = new Map(days.map((x) => [x.key, x]));
+  for (const ts of d.times) { const x = byKey.get(dayKey(ts)); if (x) x.n++; }
+  const max = Math.max(1, ...days.map((x) => x.n));
+  const dayLabel = (at) => (at === today0 ? t('오늘') : at === yest0 ? t('어제') : new Date(at).toLocaleDateString(LOCALE, { month: 'short', day: 'numeric', weekday: 'short' }));
+  const short = (at) => new Date(at).toLocaleDateString(LOCALE, { month: 'numeric', day: 'numeric' });
+  const sum14 = days.reduce((a, x) => a + x.n, 0);
+  const todayN = days[DAYS - 1].n;
+  const groups = [];
+  for (const s of d.items) {
+    const k = dayKey(s.updated);
+    if (groups[groups.length - 1]?.key !== k) groups.push({ key: k, at: new Date(s.updated).setHours(0, 0, 0, 0), items: [] });
+    groups[groups.length - 1].items.push(s);
+  }
+  v.innerHTML = `
+    <div class="section"><div class="kws">${d.box.keywords.map((k) => `<span class="kwchip sm">${esc(k)}</span>`).join('')}</div></div>
+    <div class="stats">
+      <div class="card stat"><div class="v">${d.total}</div><div class="l">${t('전체')}</div></div>
+      <div class="card stat"><div class="v">${todayN}</div><div class="l">${t('오늘')}</div></div>
+      <div class="card stat"><div class="v">${d.items[0] ? esc(ago(d.items[0].updated)) : '–'}</div><div class="l">${t('마지막')}</div></div>
+    </div>
+    <div class="section"><div class="card boxchart-card">
+      <div class="boxchart-h"><b>${t('최근 14일')}</b><span id="bread">${t('{n}개', { n: sum14 })}</span></div>
+      <div class="boxchart" role="img" aria-label="${esc(days.map((x) => `${short(x.at)} ${x.n}`).join(', '))}">${days.map((x) => `
+        <button class="bcol ${x.n ? '' : 'zero'}" data-day="${x.key}" title="${esc(`${dayLabel(x.at)} · ${t('{n}개', { n: x.n })}`)}"><i style="height:${x.n ? Math.max(6, Math.round((x.n / max) * 100)) : 0}%"></i></button>`).join('')}</div>
+      <div class="boxchart-x"><span>${short(days[0].at)}</span><span>${t('오늘')}</span></div>
+    </div></div>
+    ${groups.length ? groups.map((g) => `<div class="section" id="day-${g.key}"><div class="section-h"><h2>${esc(dayLabel(g.at))}</h2><span class="count">${g.items.length}</span></div>
+      <div class="card list">${g.items.map((s) => sessionRow(s)).join('')}</div></div>`).join('')
+      : `<div class="section"><div class="card empty"><b>${t('아직 모인 세션이 없어요')}</b>${t('키워드가 제목이나 첫 메시지에 들어 있는 세션이 생기면 여기에 보여요')}</div></div>`}
+    ${d.total > d.items.length ? `<div class="section small muted" style="text-align:center">${t('최근 {n}개만 보여요', { n: d.items.length })}</div>` : ''}`;
+  // tap a bar: read its count, and jump to that day's sessions
+  $$('.boxchart .bcol', v).forEach((b) => (b.onclick = () => {
+    const x = byKey.get(b.dataset.day);
+    $$('.boxchart .bcol', v).forEach((o) => o.classList.toggle('on', o === b));
+    $('#bread').textContent = `${dayLabel(x.at)} · ${t('{n}개', { n: x.n })}`;
+    document.getElementById(`day-${x.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+  $$('.card.list', v).forEach(attachLongPress);
 }
 
 function attachLongPress(root) {
