@@ -51,7 +51,7 @@ If a feature breaks right after a CLI update, look here first. The file shows wh
 | Surface | Used for | Code |
 |---|---|---|
 | `-p --output-format stream-json --verbose --include-partial-messages --input-format stream-json --permission-prompt-tool stdio` | Chat. Uses the Agent SDK control protocol (`control_request` / `control_response`, `initialize`, `can_use_tool` for AskUserQuestion) | `server/runner.js` `claudeCmd`, `claudeParser` |
-| `--resume`, `--model`, `--effort`, `--permission-mode plan\|auto`, `--dangerously-skip-permissions` | Continue a session, model/effort pickers, permission modes | `server/runner.js` |
+| `--resume`, `--model`, `--effort`, `--permission-mode plan\|auto`, `--dangerously-skip-permissions` | Continue a session, model/effort pickers, permission levels | `server/runner.js`, `server/permissions.js` |
 | Stream events `system/init` (`session_id`, `model`, `mcp_servers`), `stream_event` (`content_block_*`), `assistant`, `user`, `result` (`total_cost_usd`, `usage`, `permission_denials`) | Live chat view, MCP status, cost | `server/runner.js` `claudeParser` |
 | `-p --output-format json --no-session-persistence --permission-mode plan --tools ""` | Briefs, skill and MCP drafts | `server/runner.js` `oneShot` |
 | `--resume <id> --fork-session --no-session-persistence` | Hand-off summary | `server/handoff.js` |
@@ -68,6 +68,7 @@ If a feature breaks right after a CLI update, look here first. The file shows wh
 | Surface | Used for | Code |
 |---|---|---|
 | `exec [resume] --json --skip-git-repo-check --image -m -c model_reasoning_effort=… -c sandbox_mode=… --dangerously-bypass-approvals-and-sandbox <id> -` | Chat, continue a session | `server/runner.js` `codexCmd` |
+| `-c sandbox_workspace_write.network_access=true`, `-c sandbox_workspace_write.writable_roots=[<repo>/.git, package caches]`; `codex sandbox` (tests only) | "Auto" permission level: git commits, installs and network inside the workspace sandbox. Sandbox refusals arrive as failed commands (`Read-only file system`, `Could not resolve host`) and are reported as blocked | `server/permissions.js`, `codexParser`, `scripts/lib-perm-probe.mjs` |
 | Events `thread.started`, `item.started` / `item.completed` (`agent_message`, `reasoning`, `command_execution`, `file_change`, `mcp_tool_call`, `web_search`, `todo_list`), `turn.completed`, `turn.failed`, `error` | Live chat view | `server/runner.js` `codexParser` |
 | `exec --ephemeral` | Briefs, drafts | `server/runner.js` `oneShot` |
 | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (`session_meta`, `turn_context`, `event_msg`, `response_item`), `~/.codex/session_index.jsonl` | Session list, transcripts, token usage | `server/sources/codex.js`, `server/usage.js` |
@@ -81,6 +82,7 @@ If a feature breaks right after a CLI update, look here first. The file shows wh
 | Surface | Used for | Code |
 |---|---|---|
 | `-p=… --output-format stream-json --conversation --model --effort --mode plan\|accept-edits --dangerously-skip-permissions` | Chat | `server/runner.js` `agyCmd` |
+| `--settings '{"permissions":{"allow":["command(git)", …]}}'` (merged with the user's own rules), `result.denied_actions` | "Auto" permission level: common development programs run without prompts. Print mode ends the turn at the first denied action. Each part of `a && b \| c` must be allowed; `> file` redirection is denied | `server/permissions.js` |
 | Events `init` (`conversation_id`), `step_update` (`step_type`, `state`, `text_delta`, `tool_name`), `result` (`status`, `denied_actions`) | Live chat view | `server/runner.js` `agyParser` |
 | `~/.gemini/antigravity-cli/conversation_summaries.db`, `conversations/<id>.db` (table `steps`, **undocumented protobuf**: step types 14/15, field paths in the file header) | Session list, transcripts, token usage | `server/sources/agy.js`, `server/usage.js` |
 | `-p … --output-format json` one-shot: `conversation_id` in the result (the conversation Antigravity keeps for the call is hidden; there is no "don't save" flag) | Briefs, drafts, connection check | `server/runner.js` `oneShot`, `oneShotSessionId` |
@@ -95,7 +97,7 @@ numbers without notice.
 
 | Surface | Used for | Code |
 |---|---|---|
-| `run --format json --session --model --variant --agent plan\|build --file` | Chat, continue a session | `server/runner.js` `opencodeCmd`, `opencodeParser` |
+| `run --format json --session --model --variant --agent plan\|build --file --auto` | Chat, continue a session; `--auto` for the "full" permission level | `server/runner.js` `opencodeCmd`, `opencodeParser`, `server/permissions.js` |
 | Events `text`, `reasoning`, `tool_use`/`tool` (`part.state`), `step_finish` (`part.tokens`, `part.cost`), `error`; `sessionID` on every event | Live chat view, tokens | `server/runner.js` |
 | `<data>/opencode/opencode.db` (1.x, tables `session` / `message` / `part`) or the older `storage/*.json` | Session list, transcripts, token usage | `server/sources/opencode.js`, `server/usage.js` |
 | `run --format json` one-shot: `sessionID` in the output events (the session OpenCode keeps for the call is hidden; there is no "don't save" flag) | Briefs, drafts, connection check | `server/runner.js` `oneShot`, `oneShotSessionId` |
@@ -132,6 +134,35 @@ Versions verified on `main` but not released yet are never shown to users: they 
 There is deliberately no downgrade button: Claude Code's auto-updater would undo it within hours, new models need
 new CLI versions, a newer CLI may have migrated its data, and the same CLI is used in the terminal too.
 
+## Permission levels
+
+Baton offers three levels and gives them the same meaning on every CLI (`server/permissions.js`):
+
+| Level | Meaning |
+|---|---|
+| Plan only | Reads only. Nothing in the project changes |
+| Auto | Everyday work inside the project runs without prompts: edit files, run the project's tools, commit with git, install packages, use the network. Outside the project and destructive actions stay blocked |
+| Full | Everything, no sandbox |
+
+Each CLI needs different settings for "auto" (measured on Linux with the same six tasks: write a file, git commit, curl, write `~/.cache`, write `/tmp`, `npm view`):
+
+| CLI | "Auto" passes | Before (2026-11) | Now |
+|---|---|---|---|
+| Claude Code | `--permission-mode auto` (a classifier approves safe actions) | 6/6 | 6/6 |
+| Codex | workspace-write sandbox + network + the repo's git folder and package caches writable | 2/6: no git commit, network or caches | 6/6; home and other folders stay read-only |
+| Antigravity | `--mode accept-edits` + allow rules for git, npm, node, python and similar tools (no `rm`, no `command(*)`) | 0/6: every shell command denied, the turn ended without a reply | commands of the allowed tools run; `> file` redirection, `rm` and other programs still need Full |
+| OpenCode | `--agent build` (Full adds `--auto`) | 4/6: folders outside the project blocked | unchanged; Full now really approves everything (it used to equal Auto) |
+| Cursor | no flag (Full: `--force`) | not verified | not verified |
+
+Antigravity's `--mode auto` exists but is not offered on every account (it falls back to a sandbox without git or network).
+
+When a command is blocked, the chat shows "🔒 Some actions were blocked" with **Retry with full permissions**.
+For Codex the blocks are recognised from the command output, because Codex reports them as ordinary failed commands.
+
+What the version checks verify: `compat:check` requires the flags and values above in each `--help` and runs the
+Codex sandbox probe; `compat:smoke` runs the *everyday work in "auto"* step on every CLI (a required step for the weekly
+auto-verification and releases); `npm test` (runner-check) checks the arguments each level produces and the Codex block detection.
+
 ## Live test (`compat:smoke`)
 
 `npm run compat:smoke` drives each supported CLI through Baton's own code, the way a user would:
@@ -141,10 +172,11 @@ new CLI versions, a newer CLI may have migrated its data, and the same CLI is us
 3. **Session list, transcript and restore**: find the session in the requested project directory and read all four user/assistant messages back in order. Trash only that generated test session, verify it disappears, then restore it with the same project and full transcript. File checks stop if the project directory does not match.
 4. **Plan/read**: read a randomly generated file through a tool without changing it.
 5. **File edit and command**: independently uppercase that file in automatic edit mode and execute a command in full permission mode. Check actual file contents, a randomly generated command marker, and tool progress/completion events.
-6. **Question/answer (Claude)**: receive an `AskUserQuestion` control request, submit an answer through Baton, and see the chosen answer in the reply.
-7. **One-shot**: the path used for briefs and skill/MCP drafts.
-8. **Limits**: check usage windows, percentages and reset timestamps. Authentication, quota and network failures are classified separately.
-9. **Model list**: concrete model ids, with a successful live CLI refresh for Codex, Antigravity and OpenCode. Claude's built-in catalog is explicitly recorded as built-in, not a live listing.
+6. **Everyday work in "auto"**: with the auto permission level, commit with git and reach the network from a shell command. Both must work on every CLI without "full" (see *Permission levels* below). Codex also gets a model-free **permission sandbox** probe: `codex sandbox` with the exact auto/plan overrides must allow the project, its git folder, package caches and the network, and still block the home folder (plan: read-only).
+7. **Question/answer (Claude)**: receive an `AskUserQuestion` control request, submit an answer through Baton, and see the chosen answer in the reply.
+8. **One-shot**: the path used for briefs and skill/MCP drafts.
+9. **Limits**: check usage windows, percentages and reset timestamps. Authentication, quota and network failures are classified separately.
+10. **Model list**: concrete model ids, with a successful live CLI refresh for Codex, Antigravity and OpenCode. Claude's built-in catalog is explicitly recorded as built-in, not a live listing.
 
 Each run uses a new project inside the test home. Reports include the executable, actual/expected CLI version,
 Baton git revision and dirty-worktree flag, OS/architecture, Node version, check time and the result/category of every step.

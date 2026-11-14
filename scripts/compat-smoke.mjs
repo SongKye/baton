@@ -268,7 +268,7 @@ async function child(tool) {
         if (ev.t !== 'done') return;
         clearTimeout(timer);
         if (!ev.ok) return reject(new Error(`run failed: ${ev.error || 'unknown'}${run.stderr ? `\nstderr: ${run.stderr.slice(-600)}` : ''}`));
-        resolve({ sessionId: run.sessionId, text: text || ev.result || '', tools, completed, questions, toolNames });
+        resolve({ sessionId: run.sessionId, text: text || ev.result || '', tools, completed, questions, toolNames, denied: ev.denied || [] });
       });
     });
     const expect = (text, word) => requireContract(String(text).includes(word), `expected "${word}" in the reply, got: ${String(text).slice(0, 300) || '(empty)'}`);
@@ -280,6 +280,12 @@ async function child(tool) {
         if (help.code !== 0) throw new Error(`help command failed (${help.code}): ${help.stderr}`);
         requireContract(check.expect.every((x) => (help.stdout + help.stderr).includes(x)), `missing flags in ${check.args.join(' ')}`);
       }
+    });
+
+    if (tool === 'codex') await step('permission sandbox', async () => {
+      // model-free: the sandbox policy behind "plan" and "auto" (server/permissions.js)
+      const { probeCodexSandbox } = await import(pathToFileURL(path.join(REPO, 'scripts', 'lib-perm-probe.mjs')).href);
+      return probeCodexSandbox(bin);
     });
 
     const secret = `BATON-${crypto.randomBytes(12).toString('hex')}`;
@@ -369,6 +375,26 @@ async function child(tool) {
       requireContract(r.tools > 0 && r.completed > 0, 'command tool events are missing');
       requireContract(r.toolNames.some((name) => /bash|shell|terminal|command|exec/i.test(name)), `no command execution tool observed: ${r.toolNames.join(', ')}`);
       return `tools: ${r.toolNames.join(', ')}`;
+    });
+    await step('everyday work (auto)', async () => {
+      // "auto" must cover normal project work on every CLI without "full": a git commit and a network call
+      // from the shell (server/permissions.js). Codex blocked both and Antigravity ran no command at all before.
+      requireContract(projectVerified, 'everyday check blocked: session project was not verified');
+      const git = (...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
+      if (git('rev-parse', '--git-dir').status !== 0) git('init', '-q');
+      git('config', 'user.name', 'Baton smoke'); git('config', 'user.email', 'smoke@localhost');
+      const subject = `baton everyday ${crypto.randomBytes(4).toString('hex')}`;
+      const net = path.join(cwd, 'baton-net.txt');
+      await fsp.rm(net, { force: true });
+      const fetchJs = "fetch('https://registry.npmjs.org/-/ping').then(r=>require('fs').writeFileSync('baton-net.txt','net-'+r.status))";
+      const r = await chat(`Use your shell command tool (not a file tool) to run these two commands in the current directory, one at a time, without asking for confirmation:
+1. git add -A && git commit -q -m "${subject}"
+2. node -e "${fetchJs}"
+Then reply with DONE. Do not access other directories.`, null, { perm: 'auto' });
+      const blocked = r.denied.length ? ` (blocked: ${r.denied.join(', ')})` : '';
+      requireContract(git('log', '-1', '--format=%s').stdout.trim() === subject, `"auto" could not commit with git${blocked}`);
+      requireContract(fs.existsSync(net) && /^net-2\d\d$/.test(await fsp.readFile(net, 'utf8')), `"auto" could not reach the network from a command${blocked}`);
+      return 'git commit and network allowed';
     });
     if (tool === 'claude') await step('question and answer', async () => {
       const r = await chat('Use AskUserQuestion to ask me to choose between BATONANSWER and OTHER. Wait for my selection, then reply with my selection. Do not choose for me.', null, { answer: 'BATONANSWER' });

@@ -17,9 +17,18 @@ const TOOL_IDS = () => Object.keys(TOOL);
 const INSTALLED = () => { const l = (G.state?.tools || []).filter((x) => x.installed).map((x) => x.id); return l.length ? l : TOOL_IDS(); };
 const PERM = {
   plan: { label: t('계획만'), desc: t('읽기만 하고 파일은 바꾸지 않아요') },
-  auto: { label: t('자동'), desc: t('안전한 작업은 자동 승인 (Antigravity는 파일 수정만)') },
-  full: { label: t('전체 허용'), desc: t('모든 명령과 수정을 승인해요. 주의!') },
+  auto: { label: t('자동'), desc: t('프로젝트 안의 수정·명령·git·설치·네트워크는 바로 실행, 프로젝트 밖과 위험한 작업은 막아요') },
+  full: { label: t('전체 허용'), desc: t('제한 없이 모든 명령과 수정을 승인해요. 주의!') },
 };
+/** What "auto" actually covers for each CLI (server/permissions.js), shown under the option in the picker. */
+const PERM_AUTO_NOTE = {
+  claude: t('위험한지 Claude가 판단해서 안전한 작업만 자동 승인해요'),
+  codex: t('샌드박스 안에서 실행돼요. 프로젝트·git·패키지 캐시 밖에는 쓸 수 없어요'),
+  agy: t('git·npm·node·python 같은 개발 도구만 실행돼요. rm과 `> 파일` 리다이렉트는 막혀요'),
+  opencode: t('프로젝트 폴더 밖의 파일은 막혀요'),
+  cursor: t('Cursor에서는 확인되지 않았어요. 명령 실행에는 전체 허용이 필요할 수 있어요'),
+};
+const permDesc = (tool, id) => (id === 'auto' && PERM_AUTO_NOTE[tool] ? `${PERM.auto.desc} · ${PERM_AUTO_NOTE[tool]}` : PERM[id]?.desc || '');
 const STATUS = { active: t('진행중'), paused: t('보류'), done: t('완료'), archived: t('보관') };
 const ICON = {
   back: '<svg class="i" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -1387,7 +1396,7 @@ function drawOpts(tool) {
       v = await pick(t('추론 노력 (effort)'), list.map((e) => (e
         ? { value: e, label: e, desc: EFFORT_DESC[e] }
         : { value: '', label: `${t('기본값 ·')} ${defEffort || t('알 수 없음')}`, desc: src })), p.effort);
-    } else v = await pick(t('권한'), Object.entries(PERM).map(([id, x]) => ({ value: id, label: x.label, desc: x.desc })), p.perm);
+    } else v = await pick(t('권한'), Object.entries(PERM).map(([id, x]) => ({ value: id, label: x.label, desc: permDesc(tool, id) })), p.perm);
     if (v === undefined) return;
     p[k] = v;
     if (tool === 'agy' && (k === 'model' || k === 'effort')) {

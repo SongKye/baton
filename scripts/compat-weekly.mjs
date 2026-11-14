@@ -443,7 +443,7 @@ async function main() {
 |---|---|---|---|
 ${passed.map((r) => `| ${NAMES[r.tool]} | ${r.from} | **${r.to}** | ${(r.test.report.steps || []).filter((s) => s.ok).length}/${(r.test.report.steps || []).length} steps pass${r.status === 'passed-drift' ? ', **schema review required**' : ''} |`).join('\n')}
 
-Steps: context-preserving resume, ordered transcript, plan/read, file edit and command, Claude question/answer, one-shot, limits, concrete model list; plus \`compat:check\` (flags).
+Steps: context-preserving resume, ordered transcript, plan/read, file edit and command, everyday work in "auto" (git commit + network), Codex sandbox probe, Claude question/answer, one-shot, limits, concrete model list; plus \`compat:check\` (flags).
 ${drift.length ? `\n## Schema changes (review before merging)\nEvery step passes, but fields, types or observed event kinds changed (or the baseline is missing). Review the report before accepting a new baseline.\n${drift.map((r) => `\n**${NAMES[r.tool]}** (since ${r.test.report.drift.baseline}):\n${[...r.test.report.drift.removed, ...(r.test.report.drift.changed || []), ...(r.test.report.drift.missingKinds || []).map((k) => `unobserved kind: ${k}`)].slice(0, 40).map((p) => `- \`${p}\``).join('\n')}`).join('\n')}\n` : ''}
 ${passed.some((r) => r.test.report.drift?.added?.length) ? `\n<details><summary>New fields</summary>\n\n${passed.map((r) => (r.test.report.drift?.added || []).slice(0, 40).map((p) => `- ${NAMES[r.tool]}: \`${p}\``).join('\n')).join('\n')}\n</details>\n` : ''}
 Updates \`server/compat.json\`, the shape baselines, docs and CHANGELOG. ${drift.length ? '**Left open for review** because the schema needs review.' : 'Merged automatically once CI is green.'}

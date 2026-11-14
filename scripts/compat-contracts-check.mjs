@@ -26,6 +26,16 @@ assert.equal(shouldAttemptFix({ ...test, expectedVersion: '1.2.4' }), false);
 assert.equal(shouldAttemptFix({ ...test, report: null }), false);
 assert.equal(reportPassed({ ok: true, version: '1.2.3', steps: [] }, '1.2.3'), false);
 assert.equal(reportPassed({ ok: true, version: '1.2.3', steps: [{ name: 'one-shot', ok: true }] }, '1.2.3'), false);
+{
+  // the permission levels are part of verification: "auto" everyday work everywhere, Codex's sandbox probe off Windows
+  const base = ['CLI flags', 'new session', 'resume session', 'session list', 'transcript', 'trash and restore', 'plan preserves files', 'file edit', 'command execution', 'one-shot', 'model list', 'limits'];
+  const rep = (tool, platform, extra) => ({ tool, platform, ok: true, version: '1.2.3', steps: [...base, ...extra].map((name) => ({ name, ok: true })) });
+  assert.equal(reportPassed(rep('agy', 'linux', []), '1.2.3'), false);
+  assert.equal(reportPassed(rep('agy', 'linux', ['everyday work (auto)']), '1.2.3'), true);
+  assert.equal(reportPassed(rep('codex', 'linux', ['everyday work (auto)']), '1.2.3'), false);
+  assert.equal(reportPassed(rep('codex', 'linux', ['everyday work (auto)', 'permission sandbox']), '1.2.3'), true);
+  assert.equal(reportPassed(rep('codex', 'win32', ['everyday work (auto)']), '1.2.3'), true);
+}
 const checkout = { revision: 'test-commit', platform: 'linux', arch: 'x64' };
 const provenance = { ...checkout, dirty: false };
 assert.equal(reportMatchesCheckout(provenance, checkout), true);

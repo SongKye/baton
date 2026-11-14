@@ -22,6 +22,7 @@ import { codexDefaultFallback } from './providers.js';
 import { clip, ONESHOT_DIR } from './util.js';
 import { noteMcpStatus } from './mcp.js';
 import { createRunEvents } from './run-events.js';
+import { claudePermArgs, codexPermArgs, agyPermArgs, opencodePermArgs, codexSandboxBlock } from './permissions.js';
 
 const runs = new Map();         // runId -> run
 const activeByKey = new Map();  // "<tool>:<sessionId>" -> runId
@@ -78,13 +79,11 @@ function claudeCmd({ sessionId, model, effort, perm, prompt, images }) {
   if (sessionId) args.push('--resume', sessionId);
   if (model) args.push('--model', model);
   if (effort) args.push('--effort', effort);
-  if (perm === 'plan') args.push('--permission-mode', 'plan');
-  else if (perm === 'full') args.push('--dangerously-skip-permissions');
-  else args.push('--permission-mode', 'auto');
+  args.push(...claudePermArgs(perm));
   return { bin: 'claude', args, stdin, keepOpen: true };
 }
 
-function codexCmd({ sessionId, model, effort, perm, prompt, images }) {
+function codexCmd({ sessionId, model, effort, perm, prompt, images, cwd }) {
   const args = ['exec'];
   if (sessionId) args.push('resume');
   for (const im of images || []) args.push(`--image=${im.path}`);
@@ -92,8 +91,7 @@ function codexCmd({ sessionId, model, effort, perm, prompt, images }) {
   model ||= codexDefaultFallback(); // config.toml's model isn't offered on this ChatGPT account
   if (model) args.push('-m', model);
   if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
-  if (perm === 'full') args.push('--dangerously-bypass-approvals-and-sandbox');
-  else args.push('-c', `sandbox_mode="${perm === 'plan' ? 'read-only' : 'workspace-write'}"`);
+  args.push(...codexPermArgs(perm, cwd)); // auto: workspace sandbox + network, git folder and package caches
   if (sessionId) args.push(sessionId);
   args.push('-');
   return { bin: 'codex', args, stdin: prompt };
@@ -110,9 +108,7 @@ function agyCmd({ sessionId, model, effort, perm, prompt, images, cwd }) {
   if (sessionId) args.push('--conversation', sessionId);
   if (model) args.push('--model', model);
   if (effort) args.push('--effort', effort);
-  if (perm === 'plan') args.push('--mode', 'plan');
-  else if (perm === 'full') args.push('--dangerously-skip-permissions');
-  else args.push('--mode', 'accept-edits'); // `auto` isn't available on every account
+  args.push(...agyPermArgs(perm)); // auto: accept-edits + allow rules for common dev programs (see permissions.js)
   return { bin: 'agy', args, stdin: null };
 }
 
@@ -122,7 +118,7 @@ function opencodeCmd({ sessionId, model, effort, perm, prompt, images }) {
   if (sessionId) args.push('--session', sessionId);
   if (model) args.push('--model', model);
   if (model && effort) args.push('--variant', effort); // the model's reasoning variant (low/medium/high/…)
-  args.push('--agent', perm === 'plan' ? 'plan' : 'build');
+  args.push(...opencodePermArgs(perm));
   for (const im of images || []) args.push('--file', im.path);
   return { bin: 'opencode', args, stdin: prompt };
 }
@@ -196,6 +192,7 @@ function claudeParser(run) {
 }
 
 function codexParser(run) {
+  const blocked = []; // commands the sandbox stopped (Codex reports them as plain failures)
   return (e) => {
     const it = e.item || {};
     if (e.type === 'thread.started' && e.thread_id) run.setSession(e.thread_id);
@@ -207,7 +204,11 @@ function codexParser(run) {
     } else if (e.type === 'item.completed') {
       if (it.type === 'agent_message' && it.text) { run.emit({ t: 'text', text: it.text }); run.emit({ t: 'text_end' }); run.lastText = it.text; }
       else if (it.type === 'reasoning') run.emit({ t: 'thinking' });
-      else if (it.type === 'command_execution') run.emit({ t: 'tool_done', error: it.exit_code ? it.exit_code !== 0 : false });
+      else if (it.type === 'command_execution') {
+        run.emit({ t: 'tool_done', error: it.exit_code ? it.exit_code !== 0 : false });
+        const b = run.perm !== 'full' && codexSandboxBlock(it);
+        if (b) blocked.push(b);
+      }
       else if (it.type === 'file_change') {
         const files = (it.changes || []).map((c) => `${c.kind || ''} ${c.path || ''}`.trim()).join(', ');
         run.emit({ t: 'tool', name: 'edit', summary: clip(files, 160) });
@@ -215,11 +216,11 @@ function codexParser(run) {
       } else if (it.type === 'mcp_tool_call' || it.type === 'web_search') run.emit({ t: 'tool_done', error: it.status === 'failed' });
       else if (it.type === 'todo_list') run.emit({ t: 'tool', name: 'todo', summary: (it.items || []).map((x) => (x.completed ? '☑' : '☐') + ' ' + x.text).join(' · ') });
     } else if (e.type === 'turn.completed') {
-      run.result = { ok: true, result: run.lastText, usage: e.usage };
+      run.result = { ok: true, result: run.lastText, usage: e.usage, denied: blocked };
     } else if (e.type === 'turn.failed') {
-      run.result = { ok: false, error: e.error?.message || 'turn failed' };
+      run.result = { ok: false, error: e.error?.message || 'turn failed', denied: blocked };
     } else if (e.type === 'error') {
-      run.result = { ok: false, error: e.message || 'error' };
+      run.result = { ok: false, error: e.message || 'error', denied: blocked };
     }
   };
 }
