@@ -372,19 +372,6 @@ Updates the ${OS_NAMES[os]} column of \`server/compat.json\` and docs/compatibil
   if (url) log(`PR ${url}: ${review ? 'review required' : await mergeWhenGreen(url)}`);
 }
 
-/** PR-body section for the CLIs that are not in this bump, so none silently disappears from the report. */
-function otherCliLines(results, passed) {
-  const others = results.filter((r) => NAMES[r.tool] && !passed.includes(r));
-  if (!others.length) return '';
-  const why = (r) => {
-    if (r.status === 'behind') return `skipped: ${r.note}`;
-    if (!r.newRelease && (r.status === 'passed' || r.status === 'passed-drift')) return `no new release; ${r.from} still passes`;
-    if (r.status === 'failed') return `${r.to} failed the live test (handled in a separate fix PR or issue)`;
-    return `${r.status}${r.note ? `: ${r.note.slice(0, 300)}` : ''}`;
-  };
-  return `\n## Not updated this run\n${others.map((r) => `- ${NAMES[r.tool]} (verified ${r.from}): ${why(r)}`).join('\n')}\n\n`;
-}
-
 async function main() {
   await bootstrap();
   logFile = path.join(LOGS, `${today()}.log`);
@@ -502,6 +489,19 @@ ${otherCliLines(state.results, passed)}Updates \`server/compat.json\`, the shape
   log(`done${state.needsAttention ? ' — needs attention' : ''}`);
   // back to a clean origin/main so the worktree never holds stray work
   await sh('git', ['checkout', '--quiet', '--detach', '--force', REF], { quiet: true });
+}
+
+/** PR-body section for the CLIs that are not in this bump, so none silently disappears from the report. */
+function otherCliLines(results, passed) {
+  const others = results.filter((r) => NAMES[r.tool] && !passed.includes(r));
+  if (!others.length) return '';
+  const why = (r) => {
+    if (r.status === 'behind') return `skipped: ${r.note}`;
+    if (!r.newRelease && (r.status === 'passed' || r.status === 'passed-drift')) return `no new release; ${r.from} still passes`;
+    if (r.status === 'failed') return `${r.to} failed the live test (handled in a separate fix PR or issue)`;
+    return `${r.status}${r.note ? `: ${r.note.slice(0, 300)}` : ''}`;
+  };
+  return `\n## Not updated this run\n${others.map((r) => `- ${NAMES[r.tool]} (verified ${r.from}): ${why(r)}`).join('\n')}\n\n`;
 }
 
 if (argv.includes('--maintainer-check')) { // used by compat-schedule.mjs
