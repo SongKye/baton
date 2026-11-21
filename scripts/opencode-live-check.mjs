@@ -1,7 +1,7 @@
-// Regression: OpenCode has no per-session registry, so Baton reads "still replying" from opencode.db (the newest
-// message is an assistant reply with no time.completed) and pairs it with a running `opencode` process.
-// Covers a one-shot `opencode run` (background), the TUI (terminal), an abandoned run, and a server-style run
-// with no process of its own. Runs the real modules in a throwaway copy with a fake HOME.
+// Regression: OpenCode has no per-session registry, so Baton reads "still working" from opencode.db (OpenCode 2:
+// session_v2.time_busy after the last time_idle) and pairs it with a running `opencode` process in that folder.
+// Covers a one-shot `opencode run` (background), the TUI (terminal), an abandoned run, and a run inside OpenCode's
+// background service (no process of its own). Runs the real modules in a throwaway copy with a fake HOME.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -26,49 +26,46 @@ try {
       env: { ...process.env, HOME: home, USERPROFILE: home, XDG_DATA_HOME: path.join(home, 'data'), BATON_NO_SHELL_ENV: '1', PATH: path.dirname(process.execPath) + path.delimiter + '/usr/bin:/bin', CHECK_TMP: tmp },
     });
   } else {
-    const { DatabaseSync } = await import('node:sqlite');
+    const { opencodeFixture } = await import('./lib-opencode-fixture.mjs');
     const base = path.join(process.env.XDG_DATA_HOME, 'opencode');
     await fs.mkdir(base, { recursive: true });
     const now = Date.now();
-    const db = new DatabaseSync(path.join(base, 'opencode.db'));
-    db.exec(`CREATE TABLE session (id text PRIMARY KEY, project_id text, parent_id text, directory text, title text, time_created integer, time_updated integer, time_archived integer);
-      CREATE TABLE message (id text PRIMARY KEY, session_id text, time_created integer, time_updated integer, data text);
-      CREATE TABLE part (id text PRIMARY KEY, message_id text, session_id text, time_created integer, time_updated integer, data text);`);
+    const f = opencodeFixture(path.join(base, 'opencode.db'));
     const dirs = {};
-    // id -> [directory name, last assistant message, db last touched ms ago, archived]
+    // id -> [directory name, { busy, idle, updated } ms ago (null idle = never idle yet), archived]
     const cases = {
-      run_working: ['d_run', { role: 'assistant', time: { created: now - 90_000 } }, 90_000],            // process: `opencode run`
-      tui_working: ['d_tui', { role: 'assistant', time: { created: now - 90_000 } }, 90_000],            // process: the TUI
-      abandoned: ['d_gone', { role: 'assistant', time: { created: now - 90_000 } }, 90_000],             // crashed: nothing is left to finish it
-      server_style: ['d_srv', { role: 'assistant', time: { created: now - 5_000 } }, 5_000],             // no process in its folder, db just touched
-      finished: ['d_done', { role: 'assistant', time: { created: now - 9_000, completed: now - 3_000 }, finish: 'stop' }, 3_000],
-      errored: ['d_err', { role: 'assistant', time: { created: now - 9_000 }, error: { name: 'APIError' } }, 3_000],
-      archived: ['d_arch', { role: 'assistant', time: { created: now - 9_000 } }, 3_000, true],
-      waiting_for_reply: ['d_wait', { role: 'user', time: { created: now - 3_000 } }, 3_000],
+      run_working: ['d_run', { busy: 90_000, idle: null, updated: 90_000 }],          // process: `opencode run`
+      tui_working: ['d_tui', { busy: 90_000, idle: 200_000, updated: 90_000 }],       // process: the TUI; an earlier turn finished
+      abandoned: ['d_gone', { busy: 90_000, idle: null, updated: 90_000 }],           // killed hard: nothing is left to finish it
+      service_run: ['d_srv', { busy: 5_000, idle: null, updated: 5_000 }],            // inside the background service, db just touched
+      finished: ['d_done', { busy: 9_000, idle: 3_000, updated: 3_000 }],
+      failed: ['d_err', { busy: 9_000, idle: 3_000, updated: 3_000 }],
+      archived: ['d_arch', { busy: 9_000, idle: null, updated: 3_000 }, true],
+      stale: ['d_old', { busy: 13 * 3600_000, idle: null, updated: 13 * 3600_000 }], // older than the 12 h window
     };
-    for (const [id, [dn, asst, ago, archived]] of Object.entries(cases)) {
+    for (const [id, [dn, t, archived]] of Object.entries(cases)) {
       const dir = path.join(process.env.CHECK_TMP, dn);
       await fs.mkdir(dir, { recursive: true });
       dirs[id] = dir;
-      db.prepare('INSERT INTO session VALUES (?, ?, NULL, ?, ?, ?, ?, ?)').run(id, 'p', dir, id, now - 100_000, now - ago, archived ? now : null);
-      db.prepare('INSERT INTO message VALUES (?, ?, ?, ?, ?)').run(`${id}_m`, id, now - 100_000, now - ago, JSON.stringify(asst));
+      f.session(id, { directory: dir, title: id, t: { created: now - 14 * 3600_000, busy: now - t.busy, idle: t.idle == null ? null : now - t.idle, updated: now - t.updated, archived: archived ? now : null } });
+      f.entry(id, 'user', { text: id }, now - t.busy);
     }
     // a normal project folder, finished: a person's session
-    db.prepare('INSERT INTO session VALUES (?, ?, NULL, ?, ?, ?, ?, NULL)').run('human', 'p', '/home/dev/project', 'human', now - 100_000, now - 3_000);
-    db.prepare('INSERT INTO message VALUES (?, ?, ?, ?, ?)').run('human_m', 'human', now - 100_000, now - 3_000, JSON.stringify({ role: 'assistant', time: { created: now - 9_000, completed: now - 3_000 }, finish: 'stop' }));
+    f.session('human', { directory: '/home/dev/project', title: 'human' });
+    f.entry('human', 'user', { text: 'hi' });
     // a literal /tmp folder (the rule is on the path text; os.tmpdir() is not /tmp on macOS or Windows)
-    db.prepare('INSERT INTO session VALUES (?, ?, NULL, ?, ?, ?, ?, NULL)').run('scratch', 'p', '/tmp/scratch', 'scratch', now - 100_000, now - 3_000);
-    db.prepare('INSERT INTO message VALUES (?, ?, ?, ?, ?)').run('scratch_m', 'scratch', now - 100_000, now - 3_000, JSON.stringify({ role: 'assistant', time: { created: now - 9_000, completed: now - 3_000 }, finish: 'stop' }));
-    db.close();
+    f.session('scratch', { directory: '/tmp/scratch', title: 'scratch' });
+    f.entry('scratch', 'user', { text: 'hi' });
+    f.close();
 
     const { opencodeInflight, listOpencode } = await import('../server/sources/opencode.js');
     const inflight = opencodeInflight();
     const rows = new Map((await listOpencode()).map((r) => [r.id, r]));
     assert.equal(rows.get('human').automated, false, 'a session in a project folder is not automated');
     assert.equal(rows.get('scratch').automated, true, 'a session run from /tmp is tagged automated, like Claude / Codex / Antigravity');
-    assert.deepEqual([...inflight.keys()].sort(), ['abandoned', 'run_working', 'server_style', 'tui_working'], 'only unfinished assistant replies count');
+    assert.deepEqual([...inflight.keys()].sort(), ['abandoned', 'run_working', 'service_run', 'tui_working'], 'only runs still in progress count');
 
-    if (process.platform !== 'linux') { console.log('PASS: OpenCode in-flight reply detection (process matching is Linux-only)'); process.exit(0); }
+    if (process.platform !== 'linux') { console.log('PASS: OpenCode in-progress run detection (process matching is Linux-only)'); process.exit(0); }
 
     // Fake `opencode` processes: bash under that name (node renames its main thread, bash keeps comm = "opencode"),
     // started in the session's folder; `opencode run` makes bash run the file ./run, so the argument is the subcommand.
@@ -89,11 +86,11 @@ try {
       assert.equal(st('run_working').pid, procs[0].pid);
       assert.equal(st('tui_working')?.status, 'busy');
       assert.equal(st('tui_working').background, false, 'a terminal UI is not a background run');
-      assert.equal(st('abandoned'), undefined, 'unfinished reply with no process and a quiet db is not live');
-      assert.equal(st('server_style')?.background, true, 'no process of its own but a fresh db: treated as background');
-      for (const id of ['finished', 'errored', 'archived', 'waiting_for_reply']) assert.equal(st(id), undefined, `${id} is not working`);
+      assert.equal(st('abandoned'), undefined, 'a run with no process and a quiet db is not live');
+      assert.equal(st('service_run')?.background, true, 'no process of its own but a fresh db: treated as background');
+      for (const id of ['finished', 'failed', 'archived', 'stale']) assert.equal(st(id), undefined, `${id} is not working`);
     } finally { for (const p of procs) p.kill(); }
-    console.log('PASS: OpenCode working state from opencode.db + running process (run / TUI / abandoned / server-style)');
+    console.log('PASS: OpenCode working state from opencode.db + running process (run / TUI / abandoned / background service)');
     process.exit(0);
   }
 } finally {

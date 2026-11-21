@@ -7,7 +7,7 @@
 //   full  Everything, no sandbox.
 //
 // Each CLI has its own permission model, so "auto" needs different settings per CLI to mean the same thing.
-// Measured on Linux (2026-11, claude 2.1.318, codex 0.169.0, agy 1.5.8, opencode 1.19.5) with the same six
+// Measured on Linux (2026-11, claude 2.1.318, codex 0.169.0, agy 1.5.8, opencode 1.19.5 and 2.3.2) with the same six
 // tasks (write a file, git commit, curl, write ~/.cache, write /tmp, npm view):
 //   claude  --permission-mode auto: a classifier approves safe actions. All six pass.
 //   codex   sandbox_mode=workspace-write alone blocks the network and keeps .git read-only, so commits,

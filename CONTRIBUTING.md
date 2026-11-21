@@ -19,7 +19,7 @@ This checkout stays on `main`: **Update now** pulls `main`, and the install line
 | Path | What it is |
 |---|---|
 | `server/index.js` | HTTP server: JSON API, SSE streams, static files, auth gate |
-| `server/sources/*.js` | Readers for each CLI's session files (Claude JSONL, Codex rollouts, Antigravity SQLite+protobuf, OpenCode JSON, Cursor `store.db`) |
+| `server/sources/*.js` | Readers for each CLI's session files (Claude JSONL, Codex rollouts, Antigravity SQLite+protobuf, OpenCode `opencode.db`, Cursor `store.db`) |
 | `server/runner.js` | Runs the CLIs headlessly and normalizes their streaming output |
 | `server/env.js` | Loaded first: login-shell environment, extra variables, config-dir locations |
 | `server/providers.js`, `server/connect.js` | Which backend each CLI uses (subscription, API key, Bedrock, Vertex, gateway…) and the setup forms that configure them |

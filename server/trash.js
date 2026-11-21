@@ -6,7 +6,7 @@ import path from 'node:path';
 import { DATA_DIR, HOME, DAY } from './util.js';
 import { db } from './store.js';
 import { tr } from './i18n.js';
-import { isOpencodeDbRef, OPENCODE_STORAGE, changeOpencodeArchive } from './sources/opencode.js';
+import { isOpencodeDbRef, changeOpencodeArchive } from './sources/opencode.js';
 
 const TRASH_DIR = path.join(DATA_DIR, 'trash');
 const TRASH_DAYS = 30;
@@ -26,20 +26,7 @@ function sessionFiles(s) {
   const add = (p) => { if (p && fs.existsSync(p)) out.push(p); };
   add(s.file);
   if (s.tool === 'claude') add(s.file.replace(/\.jsonl$/, '')); // subagent transcripts live in <id>/
-  if (s.tool === 'opencode') {
-    if (isOpencodeDbRef(s.file)) {
-      // Migrated installations can retain JSON copies. Move those as well so purging
-      // the DB row cannot resurrect a session from the legacy storage.
-      const root = path.join(OPENCODE_STORAGE, 'session');
-      if (fs.existsSync(root)) {
-        for (const project of fs.readdirSync(root)) add(path.join(root, project, `${s.id}.json`));
-      }
-      add(path.join(OPENCODE_STORAGE, 'message', s.id));
-      return out;
-    }
-    const storage = path.resolve(path.dirname(s.file), '..', '..'); // storage/session/<proj>/<id>.json
-    add(path.join(storage, 'message', s.id)); // parts stay (keyed by message id) — harmless orphans
-  }
+  if (s.tool === 'opencode') return out; // a row in opencode.db: archived in place (trashSession), no files to move
   if (s.tool === 'cursor') { out.length = 0; add(path.dirname(s.file)); } // whole chat folder
   if (s.tool === 'agy') {
     add(`${s.file}-wal`); add(`${s.file}-shm`);

@@ -37,7 +37,7 @@ const FIXTURES = path.join(REPO, 'scripts', 'compat-fixtures');
 const SMOKE_TOOLS = ['claude', 'codex', 'agy', 'opencode']; // Cursor is unverified and not supported
 const HAS_LIMITS = new Set(['claude', 'codex', 'agy']); // OpenCode has no subscription limits
 const MARK = '__BATON_SMOKE_REPORT__';
-const NPM_PKG = { claude: '@anthropic-ai/claude-code', codex: '@openai/codex', opencode: 'opencode-ai' };
+const NPM_PKG = { claude: '@anthropic-ai/claude-code', codex: '@openai/codex', opencode: '@opencode/cli' };
 
 const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(n);

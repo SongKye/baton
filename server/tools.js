@@ -7,7 +7,6 @@ import { which, runCli, IS_WIN } from './platform.js';
 import { CLAUDE_HOME, CODEX_HOME } from './env.js';
 
 const HOME = os.homedir();
-const XDG_DATA = process.env.XDG_DATA_HOME || path.join(HOME, '.local', 'share');
 const exists = (p) => { try { fs.statSync(p); return true; } catch { return false; } };
 
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
@@ -92,9 +91,9 @@ export const TOOLS = {
     id: 'opencode', name: 'OpenCode', short: 'O', vendor: 'SST',
     bins: ['opencode'],
     docs: 'https://opencode.ai/docs/',
-    install: { unix: 'curl -fsSL https://opencode.ai/install | bash', npm: 'opencode-ai' },
+    install: { unix: 'curl -fsSL https://opencode.ai/v2/install | bash', npm: '@opencode/cli' }, // OpenCode 2
     login: { args: ['auth', 'login'], kind: 'terminal' }, // interactive provider picker -> terminal
-    loggedIn: async () => exists(path.join(XDG_DATA, 'opencode', 'auth.json')),
+    loggedIn: async () => (await import('./sources/opencode.js')).opencodeSignedIn(), // lazy: that module opens Baton's db
     optionalLogin: true,
     note: { ko: '무료 모델은 로그인 없이 바로 쓸 수 있어요. Ollama·vLLM 같은 OpenAI 호환 서버도 연결할 수 있어서 자체 서빙 모델에 가장 잘 맞아요.', en: 'Free models work without signing in. Also connects to any OpenAI-compatible server (Ollama, vLLM…) — the best fit for self-hosted models.' },
   },

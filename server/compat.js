@@ -51,10 +51,15 @@ const CHECKS = {
   },
   opencode: {
     checks: [
-      { args: ['run', '--help'], expect: ['--format', '--session', '--model', '--variant', '--agent', '--file'] },
+      // the reasoning level rides on --model as "provider/model#variant"; --standalone keeps each run off the
+      // shared background service; --archived hides one-shot sessions
+      { args: ['run', '--help'], expect: ['--format', '--session', '--model', '#variant', '--agent', '--file', '--standalone', '--archived'] },
       // permission levels: "full" approves everything with --auto
       { args: ['run', '--help'], expect: ['--auto'] },
-      { args: ['models', '--help'], expect: ['--verbose'] },
+      // model picker: `opencode api model.list` (JSON with names and variants)
+      { args: ['api', '--help'], expect: ['operation', '--standalone'] },
+      // "Update" in Settings: `opencode upgrade <version>`
+      { args: ['upgrade', '--help'], expect: ['target', '--method'] },
     ],
   },
   cursor: {
@@ -140,10 +145,13 @@ export function compatInfo(id, installed, { latestBaton = null } = {}) {
 
 // ---------------------------------------------------------------- updating a CLI to the supported version
 const CLI_UPDATABLE = new Set(['claude', 'codex', 'agy', 'opencode']);
-const NPM_PKG = { claude: '@anthropic-ai/claude-code', codex: '@openai/codex', opencode: 'opencode-ai' };
+const NPM_PKG = { claude: '@anthropic-ai/claude-code', codex: '@openai/codex', opencode: '@opencode/cli' };
 
-/** The command that moves this CLI to `version`, the same way it was installed. -> { bin, args, exact } */
-export function cliUpdatePlan(id, bin, version) {
+/** The command that moves this CLI from `installed` to `version`, the same way it was installed. -> { bin, args, exact } */
+export function cliUpdatePlan(id, bin, version, installed = null) {
+  // OpenCode 1 -> 2 is a different package (opencode-ai -> @opencode/cli); OpenCode 1's own `upgrade --major`
+  // swaps it for every install method and removes OpenCode 1, but always installs the newest OpenCode 2.
+  if (id === 'opencode' && installed && cmpVersion(installed, '2.0.0') < 0) return { bin, args: ['upgrade', '--major'], exact: false };
   let real = bin;
   try { real = fs.realpathSync(bin); } catch { /* keep */ }
   if (NPM_PKG[id] && /[\\/]node_modules[\\/]/.test(real)) return { bin: 'npm', args: ['install', '-g', `${NPM_PKG[id]}@${version}`], exact: true };

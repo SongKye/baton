@@ -112,12 +112,23 @@ function agyCmd({ sessionId, model, effort, perm, prompt, images, cwd }) {
   return { bin: 'agy', args, stdin: null };
 }
 
+/** OpenCode 2's --model value: "provider/model#variant", where the variant is the model's reasoning level. */
+export const opencodeModelArg = (model, effort) => (model && effort ? `${model}#${effort}` : model);
+
+// --standalone: each run gets a private OpenCode server that ends with it. Without it the first run starts
+// OpenCode's shared background service, which would then live inside Baton's own service (stopped with every
+// Baton restart, taking the user's terminal sessions with it) and outlive every run.
+const OPENCODE_RUN = ['run', '--format', 'json', '--standalone'];
+
+// OpenCode 1 rejects the flags above by printing its yargs usage ("opencode run [message..]") and exiting 1.
+const OPENCODE_V1_USAGE = /^opencode run \[message\.\.\]/m;
+const opencodeV1Error = () => tr('OpenCode 1은 더 이상 지원하지 않아요. 설정 → 시작하기에서 OpenCode를 업데이트해주세요');
+
 function opencodeCmd({ sessionId, model, effort, perm, prompt, images }) {
   // `opencode run` reads the message from stdin when it isn't a TTY; --format json emits one JSON event per line
-  const args = ['run', '--format', 'json'];
+  const args = [...OPENCODE_RUN];
   if (sessionId) args.push('--session', sessionId);
-  if (model) args.push('--model', model);
-  if (model && effort) args.push('--variant', effort); // the model's reasoning variant (low/medium/high/…)
+  if (model) args.push('--model', opencodeModelArg(model, effort));
   args.push(...opencodePermArgs(perm));
   for (const im of images || []) args.push('--file', im.path);
   return { bin: 'opencode', args, stdin: prompt };
@@ -382,7 +393,8 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
     }
   });
   child.stderr.setEncoding('utf8');
-  child.stderr.on('data', (c) => { run.stderr = (run.stderr + c).slice(-8000); });
+  let stderrHead = '';
+  child.stderr.on('data', (c) => { if (stderrHead.length < 400) stderrHead += c; run.stderr = (run.stderr + c).slice(-8000); });
 
   const finish = (code, signal, spawnErr) => {
     if (run.status !== 'running') return;
@@ -394,6 +406,7 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
     let error = res.error || null;
     if (spawnErr) { ok = false; error = tr('{bin} 실행 실패: {msg}', { bin: cmd.bin, msg: spawnErr.message }); }
     else if (run.stopped) { ok = false; error = tr('사용자가 중지했어요'); }
+    else if (!ok && tool === 'opencode' && OPENCODE_V1_USAGE.test(stderrHead)) error = opencodeV1Error();
     else if (!ok && !error) error = clip(run.stderr.trim().split('\n').slice(-6).join('\n'), 1200) || (code === 0 && res.ok == null ? 'CLI exited without a completion event' : tr('종료 코드 {code}', { code: code ?? signal }));
     run.status = ok ? 'done' : 'error';
     run.error = error;
@@ -480,9 +493,8 @@ export function oneShot({ tool, model, effort, prompt, timeoutMs = 180000, signa
     let bin, args, stdin = true;
     if (tool === 'opencode') {
       bin = 'opencode';
-      args = ['run', '--format', 'json', '--agent', 'plan'];
-      if (model) args.push('--model', model);
-      if (model && effort) args.push('--variant', effort);
+      args = [...OPENCODE_RUN, '--archived', '--agent', 'plan']; // archived: kept out of OpenCode's own session lists
+      if (model) args.push('--model', opencodeModelArg(model, effort));
     } else if (tool === 'cursor') {
       bin = 'cursor-agent';
       args = ['-p', '--output-format', 'json'];
@@ -510,11 +522,11 @@ export function oneShot({ tool, model, effort, prompt, timeoutMs = 180000, signa
     }
     const child = spawnCli(binFor(tool) || bin, args, { cwd, env: childEnv(), stdio: [stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     if (child.pid) childPids.add(child.pid);
-    let out = '', err = '';
+    let out = '', err = '', errHead = '';
     const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
     signal?.addEventListener('abort', () => child.kill('SIGTERM'), { once: true });
     child.stdout.on('data', (c) => { out += c; });
-    child.stderr.on('data', (c) => { err = (err + c).slice(-4000); });
+    child.stderr.on('data', (c) => { if (errHead.length < 400) errHead += c; err = (err + c).slice(-4000); });
     child.on('error', (e) => { clearTimeout(timer); reject(e); });
     child.on('close', (code) => {
       clearTimeout(timer);
@@ -522,6 +534,7 @@ export function oneShot({ tool, model, effort, prompt, timeoutMs = 180000, signa
       const sid = oneShotSessionId(tool, out); // before the failure checks: a failed call can still leave a session
       if (sid) { try { patchSessionMeta(`${tool}:${sid}`, { hidden: true }); } catch { /* the folder rule still hides it */ } }
       if (signal?.aborted) return reject(new Error(tr('취소했어요')));
+      if (code !== 0 && tool === 'opencode' && OPENCODE_V1_USAGE.test(errHead)) return reject(new Error(opencodeV1Error()));
       if (code !== 0) return reject(new Error(`${failLabel || tr('요약 생성 실패')} (code ${code}): ${clip(err || out, 400)}`));
       try {
         if (tool === 'opencode') {

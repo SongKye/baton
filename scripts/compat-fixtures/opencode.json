@@ -1,5 +1,5 @@
 {
- "version": "1.19.6",
+ "version": "2.3.2",
  "stream": [
   "step_finish part",
   "step_finish part.cost",
@@ -15,7 +15,6 @@
   "step_finish part.tokens.input",
   "step_finish part.tokens.output",
   "step_finish part.tokens.reasoning",
-  "step_finish part.tokens.total",
   "step_finish part.type",
   "step_finish sessionID",
   "step_finish timestamp",
@@ -42,33 +41,29 @@
   "text timestamp",
   "text type",
   "tool_use part",
-  "tool_use part.callID",
   "tool_use part.id",
   "tool_use part.messageID",
+  "tool_use part.partID",
   "tool_use part.sessionID",
   "tool_use part.state",
   "tool_use part.state.input",
   "tool_use part.state.input.command",
   "tool_use part.state.input.content",
-  "tool_use part.state.input.filePath",
+  "tool_use part.state.input.path",
   "tool_use part.state.input.workdir",
   "tool_use part.state.metadata",
-  "tool_use part.state.metadata.diagnostics",
-  "tool_use part.state.metadata.display",
-  "tool_use part.state.metadata.display.lineEnd",
-  "tool_use part.state.metadata.display.lineStart",
-  "tool_use part.state.metadata.display.path",
-  "tool_use part.state.metadata.display.text",
-  "tool_use part.state.metadata.display.totalLines",
-  "tool_use part.state.metadata.display.truncated",
-  "tool_use part.state.metadata.display.type",
-  "tool_use part.state.metadata.exists",
-  "tool_use part.state.metadata.exit",
-  "tool_use part.state.metadata.filepath",
-  "tool_use part.state.metadata.loaded",
-  "tool_use part.state.metadata.output",
-  "tool_use part.state.metadata.preview",
-  "tool_use part.state.metadata.truncated",
+  "tool_use part.state.metadata.content",
+  "tool_use part.state.metadata.content[].text",
+  "tool_use part.state.metadata.content[].type",
+  "tool_use part.state.metadata.metadata",
+  "tool_use part.state.metadata.metadata.exit",
+  "tool_use part.state.metadata.metadata.status",
+  "tool_use part.state.metadata.metadata.truncated",
+  "tool_use part.state.metadata.providerCall",
+  "tool_use part.state.metadata.providerCall.executed",
+  "tool_use part.state.metadata.providerResult",
+  "tool_use part.state.metadata.providerResult.executed",
+  "tool_use part.state.metadata.rawInput",
   "tool_use part.state.output",
   "tool_use part.state.status",
   "tool_use part.state.time",
@@ -98,10 +93,10 @@
   "step_start part.id": [
    "string"
   ],
-  "step_start part.messageID": [
+  "step_start part.sessionID": [
    "string"
   ],
-  "step_start part.sessionID": [
+  "step_start part.messageID": [
    "string"
   ],
   "step_start part.type": [
@@ -122,10 +117,10 @@
   "text part.id": [
    "string"
   ],
-  "text part.messageID": [
+  "text part.sessionID": [
    "string"
   ],
-  "text part.sessionID": [
+  "text part.messageID": [
    "string"
   ],
   "text part.type": [
@@ -158,23 +153,23 @@
   "step_finish part.id": [
    "string"
   ],
-  "step_finish part.reason": [
+  "step_finish part.sessionID": [
    "string"
   ],
   "step_finish part.messageID": [
    "string"
   ],
-  "step_finish part.sessionID": [
-   "string"
-  ],
   "step_finish part.type": [
    "string"
   ],
+  "step_finish part.reason": [
+   "string"
+  ],
+  "step_finish part.cost": [
+   "number"
+  ],
   "step_finish part.tokens": [
    "object"
-  ],
-  "step_finish part.tokens.total": [
-   "number"
   ],
   "step_finish part.tokens.input": [
    "number"
@@ -188,13 +183,10 @@
   "step_finish part.tokens.cache": [
    "object"
   ],
-  "step_finish part.tokens.cache.write": [
-   "number"
-  ],
   "step_finish part.tokens.cache.read": [
    "number"
   ],
-  "step_finish part.cost": [
+  "step_finish part.tokens.cache.write": [
    "number"
   ],
   "tool_use type": [
@@ -209,13 +201,22 @@
   "tool_use part": [
    "object"
   ],
+  "tool_use part.partID": [
+   "string"
+  ],
+  "tool_use part.sessionID": [
+   "string"
+  ],
+  "tool_use part.messageID": [
+   "string"
+  ],
   "tool_use part.type": [
    "string"
   ],
-  "tool_use part.tool": [
+  "tool_use part.id": [
    "string"
   ],
-  "tool_use part.callID": [
+  "tool_use part.tool": [
    "string"
   ],
   "tool_use part.state": [
@@ -227,49 +228,46 @@
   "tool_use part.state.input": [
    "object"
   ],
-  "tool_use part.state.input.filePath": [
+  "tool_use part.state.input.path": [
    "string"
   ],
   "tool_use part.state.output": [
    "string"
   ],
+  "tool_use part.state.title": [
+   "string"
+  ],
   "tool_use part.state.metadata": [
    "object"
   ],
-  "tool_use part.state.metadata.preview": [
-   "string"
-  ],
-  "tool_use part.state.metadata.truncated": [
-   "boolean"
-  ],
-  "tool_use part.state.metadata.loaded": [
-   "array"
-  ],
-  "tool_use part.state.metadata.display": [
+  "tool_use part.state.metadata.metadata": [
    "object"
   ],
-  "tool_use part.state.metadata.display.type": [
-   "string"
-  ],
-  "tool_use part.state.metadata.display.path": [
-   "string"
-  ],
-  "tool_use part.state.metadata.display.text": [
-   "string"
-  ],
-  "tool_use part.state.metadata.display.lineStart": [
-   "number"
-  ],
-  "tool_use part.state.metadata.display.lineEnd": [
-   "number"
-  ],
-  "tool_use part.state.metadata.display.totalLines": [
-   "number"
-  ],
-  "tool_use part.state.metadata.display.truncated": [
+  "tool_use part.state.metadata.metadata.truncated": [
    "boolean"
   ],
-  "tool_use part.state.title": [
+  "tool_use part.state.metadata.content": [
+   "array"
+  ],
+  "tool_use part.state.metadata.content[].type": [
+   "string"
+  ],
+  "tool_use part.state.metadata.content[].text": [
+   "string"
+  ],
+  "tool_use part.state.metadata.providerCall": [
+   "object"
+  ],
+  "tool_use part.state.metadata.providerCall.executed": [
+   "boolean"
+  ],
+  "tool_use part.state.metadata.providerResult": [
+   "object"
+  ],
+  "tool_use part.state.metadata.providerResult.executed": [
+   "boolean"
+  ],
+  "tool_use part.state.metadata.rawInput": [
    "string"
   ],
   "tool_use part.state.time": [
@@ -281,40 +279,22 @@
   "tool_use part.state.time.end": [
    "number"
   ],
-  "tool_use part.id": [
-   "string"
-  ],
-  "tool_use part.sessionID": [
-   "string"
-  ],
-  "tool_use part.messageID": [
-   "string"
-  ],
   "tool_use part.state.input.content": [
    "string"
-  ],
-  "tool_use part.state.metadata.diagnostics": [
-   "object"
-  ],
-  "tool_use part.state.metadata.filepath": [
-   "string"
-  ],
-  "tool_use part.state.metadata.exists": [
-   "boolean"
   ],
   "tool_use part.state.input.command": [
    "string"
   ],
-  "tool_use part.state.metadata.output": [
+  "tool_use part.state.input.workdir": [
    "string"
   ],
-  "tool_use part.state.metadata.exit": [
+  "tool_use part.state.metadata.metadata.status": [
+   "string"
+  ],
+  "tool_use part.state.metadata.metadata.exit": [
    "number"
   ],
   "step_start part.snapshot": [
-   "string"
-  ],
-  "tool_use part.state.input.workdir": [
    "string"
   ],
   "step_finish part.snapshot": [
