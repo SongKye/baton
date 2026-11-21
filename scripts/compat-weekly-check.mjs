@@ -57,6 +57,29 @@ try {
     if (mode === 'auth') assert.equal(state.results[0].status, 'error');
     if (mode === 'drift') assert.equal(state.needsAttention, true);
   }
+  // A release feed behind the verified version (Claude `stable` lagging `latest`) is a logged skip, not an error or a test run.
+  {
+    let tested = 0; const logs = [];
+    const stateFile = path.join(tmp, 'state-behind.json');
+    const ctx = context({
+      WORK: tmp, LOGS: path.join(tmp, 'logs'), STATE: stateFile, logFile: null, argv: [], ONLY: [], DRY: true, REF: 'origin/main', NAMES: { codex: 'Codex' },
+      today: () => '2026-01-01', log: (m) => logs.push(m), bootstrap: async () => {}, sh: async () => ({ code: 0, out: 'commit' }),
+      cmp: (a, b) => a.localeCompare(b), latestRelease: async () => ({ version: '0.9.0' }), install: async () => { throw new Error('must not install'); },
+      test: async () => { tested++; return result(); }, repoChecks: async () => null, commitAndPr: async () => null,
+    });
+    vm.runInContext(source.slice(source.indexOf('async function main()'), source.indexOf("if (argv.includes('--maintainer-check'))")), ctx);
+    await ctx.main();
+    const state = JSON.parse(await fs.readFile(stateFile, 'utf8'));
+    assert.equal(tested, 0);
+    assert.equal(state.results[0].status, 'behind');
+    assert.equal(state.needsAttention, false);
+    assert.ok(logs.some((m) => /codex: skipped — the release feed \(0\.9\.0\) is older than the verified 1\.0\.0/.test(m)), logs.join('\n'));
+    const others = vm.runInContext('otherCliLines', ctx)([...state.results, { tool: 'codex', from: '1.0.0', status: 'passed', newRelease: false }, { tool: 'preflight', status: 'error' }], []);
+    assert.match(others, /## Not updated this run/);
+    assert.match(others, /- Codex \(verified 1\.0\.0\): skipped: the release feed \(0\.9\.0\)/);
+    assert.match(others, /- Codex \(verified 1\.0\.0\): no new release; 1\.0\.0 still passes/);
+    assert.doesNotMatch(others, /preflight/);
+  }
   // A passing new version alone cannot mark a fix ready; old binaries and original tests are mandatory.
   for (const mode of ['both-pass', 'old-fails', 'modified-verifier', 'only-verifier', 'old-unavailable']) {
     await fs.writeFile(path.join(tmp, 'package.json'), '{"version":"0.9.0"}');
