@@ -12,34 +12,34 @@
   },
   "codex": {
     "level": "supported",
-    "verified": "0.169.0",
-    "verifiedAt": "2026-11-14",
+    "verified": "0.171.0",
+    "verifiedAt": "2026-11-21",
     "os": {
       "linux": {
-        "verified": "0.169.0",
-        "verifiedAt": "2026-11-14"
+        "verified": "0.171.0",
+        "verifiedAt": "2026-11-21"
       }
     }
   },
   "agy": {
     "level": "supported",
-    "verified": "1.5.8",
-    "verifiedAt": "2026-11-14",
+    "verified": "1.5.13",
+    "verifiedAt": "2026-11-21",
     "os": {
       "linux": {
-        "verified": "1.5.8",
-        "verifiedAt": "2026-11-14"
+        "verified": "1.5.13",
+        "verifiedAt": "2026-11-21"
       }
     }
   },
   "opencode": {
     "level": "supported",
-    "verified": "1.19.5",
-    "verifiedAt": "2026-11-12",
+    "verified": "1.19.6",
+    "verifiedAt": "2026-11-21",
     "os": {
       "linux": {
-        "verified": "1.19.5",
-        "verifiedAt": "2026-11-12"
+        "verified": "1.19.6",
+        "verifiedAt": "2026-11-21"
       }
     }
   },

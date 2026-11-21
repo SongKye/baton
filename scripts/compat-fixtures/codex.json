@@ -1,5 +1,5 @@
 {
- "version": "0.169.0",
+ "version": "0.171.0",
  "stream": [
   "item.completed/agent_message item",
   "item.completed/agent_message item.id",
@@ -175,6 +175,7 @@
   "file:response_item/additional_tools metadata.history_sequence",
   "file:response_item/additional_tools metadata.mcp_attribution",
   "file:response_item/additional_tools metadata.mcp_attribution.status",
+  "file:response_item/additional_tools metadata.model_search_state",
   "file:response_item/additional_tools metadata.sampled_through_sequence",
   "file:response_item/additional_tools ordinal",
   "file:response_item/additional_tools payload",
@@ -251,6 +252,7 @@
   "file:response_item/message metadata.history_sequence",
   "file:response_item/message metadata.mcp_attribution",
   "file:response_item/message metadata.mcp_attribution.status",
+  "file:response_item/message metadata.model_search_state",
   "file:response_item/message metadata.retained_source",
   "file:response_item/message metadata.retained_source.complete",
   "file:response_item/message metadata.retained_source.id",
@@ -419,12 +421,12 @@
   "file:world_state payload.state.skills.includeInstructions",
   "file:world_state payload.state.tools",
   "file:world_state payload.state.tools.*",
+  "file:world_state payload.state.tools.mcp__codex_apps__chatgpt_space",
   "file:world_state payload.state.tools.mcp__codex_apps__codex_document_control",
   "file:world_state payload.state.tools.mcp__codex_apps__hotline",
   "file:world_state payload.state.tools.mcp__codex_apps__pets",
   "file:world_state payload.state.tools.mcp__codex_apps__plugin_management",
   "file:world_state payload.state.tools.mcp__codex_apps__safety_settings",
-  "file:world_state payload.state.tools.mcp__codex_apps__search_service",
   "file:world_state payload.state.tools.mcp__codex_apps__sites",
   "file:world_state payload.state.top_level_tools",
   "file:world_state payload.state.top_level_tools.clock",
@@ -440,6 +442,7 @@
   "file:world_state payload.state.top_level_tools.functions.exec",
   "file:world_state payload.state.top_level_tools.functions.request_user_input",
   "file:world_state payload.state.top_level_tools.functions.request_user_input_async",
+  "file:world_state payload.state.top_level_tools.functions.send_message_to_user_async",
   "file:world_state payload.state.top_level_tools.functions.wait",
   "file:world_state timestamp",
   "file:world_state type"
@@ -739,15 +742,6 @@
   "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.questions.minItems": [
    "number"
   ],
-  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.duration_ms": [
-   "object"
-  ],
-  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.duration_ms.type": [
-   "string"
-  ],
-  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.duration_ms.description": [
-   "string"
-  ],
   "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.message": [
    "object"
   ],
@@ -755,6 +749,15 @@
    "string"
   ],
   "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.message.description": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.duration_ms": [
+   "object"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.duration_ms.type": [
+   "string"
+  ],
+  "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.duration_ms.description": [
    "string"
   ],
   "file:response_item/additional_tools payload.tools[].tools[].parameters.properties.message.encrypted": [
@@ -841,6 +844,9 @@
   "file:response_item/additional_tools metadata.mcp_attribution.status": [
    "string"
   ],
+  "file:response_item/additional_tools metadata.model_search_state": [
+   "string"
+  ],
   "file:response_item/message timestamp": [
    "string"
   ],
@@ -906,6 +912,9 @@
   ],
   "file:response_item/message metadata.client_authored": [
    "boolean"
+  ],
+  "file:response_item/message metadata.model_search_state": [
+   "string"
   ],
   "file:response_item/message payload.internal_chat_message_metadata_passthrough.content_item_metadata[].provenance.namespace": [
    "string"
@@ -1048,6 +1057,9 @@
   "file:world_state payload.state.tools": [
    "object"
   ],
+  "file:world_state payload.state.tools.mcp__codex_apps__chatgpt_space": [
+   "string"
+  ],
   "file:world_state payload.state.tools.mcp__codex_apps__codex_document_control": [
    "string"
   ],
@@ -1064,9 +1076,6 @@
    "string"
   ],
   "file:world_state payload.state.tools.mcp__codex_apps__safety_settings": [
-   "string"
-  ],
-  "file:world_state payload.state.tools.mcp__codex_apps__search_service": [
    "string"
   ],
   "file:world_state payload.state.tools.mcp__codex_apps__sites": [
@@ -1112,6 +1121,9 @@
    "string"
   ],
   "file:world_state payload.state.top_level_tools.functions.request_user_input_async": [
+   "string"
+  ],
+  "file:world_state payload.state.top_level_tools.functions.send_message_to_user_async": [
    "string"
   ],
   "file:world_state payload.state.top_level_tools.functions.wait": [

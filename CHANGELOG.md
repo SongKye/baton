@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Changed
+- Verified with Codex 0.171.0, Antigravity 1.5.13, OpenCode 1.19.6 on Linux (weekly automatic check).
+
 ## [0.12.0] - 2026-11-14
 
 ### Added
