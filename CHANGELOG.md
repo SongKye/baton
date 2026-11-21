@@ -5,8 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-21
+
 ### Changed
-- Verified with Codex 0.171.0, Antigravity 1.5.13 on Linux (weekly automatic check).
+- Verified on Linux with Claude Code 2.1.318, Codex 0.171.0, Antigravity 1.5.13 and OpenCode 2.3.2.
+- The weekly compatibility check now says which CLIs it skipped and why (maintainer-only).
 - **OpenCode 2 is now the version Baton supports (verified with 2.3.2 on Linux).** OpenCode 2 is a new package (`@opencode/cli`) that keeps sessions in new tables, takes the reasoning level as part of the model name and runs a shared background server. Baton now reads OpenCode 2's sessions (including the ones it carries over from OpenCode 1), shows its models with their reasoning levels, and gives every run its own short-lived OpenCode server, so restarting Baton never stops the OpenCode you use in a terminal. Briefs and drafts made with OpenCode no longer show up in OpenCode's own session list. New installs from Settings get OpenCode 2.
 
 ### Removed
