@@ -43,7 +43,7 @@ const ONLY = argv.flatMap((a, i) => (argv[i - 1] === '--only' ? a.split(',') : [
 const REF = `origin/${argv.includes('--ref') ? argv[argv.indexOf('--ref') + 1] : 'main'}`; // test a pushed branch before merging
 
 const NAMES = { claude: 'Claude Code', codex: 'Codex', agy: 'Antigravity', opencode: 'OpenCode' };
-const NPM = { claude: ['@anthropic-ai/claude-code', 'stable'], codex: ['@openai/codex', 'latest'], opencode: ['opencode-ai', 'latest'] };
+const NPM = { claude: ['@anthropic-ai/claude-code', 'stable'], codex: ['@openai/codex', 'latest'], opencode: ['@opencode/cli', 'latest'] }; // OpenCode 2 (opencode-ai is OpenCode 1)
 
 // ------------------------------------------------------------------ helpers
 let logFile = null;

@@ -34,11 +34,11 @@
   },
   "opencode": {
     "level": "supported",
-    "verified": "1.19.6",
+    "verified": "2.3.2",
     "verifiedAt": "2026-11-21",
     "os": {
       "linux": {
-        "verified": "1.19.6",
+        "verified": "2.3.2",
         "verifiedAt": "2026-11-21"
       }
     }

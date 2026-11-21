@@ -1,44 +1,51 @@
-// OpenCode (sst/opencode) sessions.
-// Storage (JSON files): <data>/opencode/storage/
-//   session/<projectID>/<sessionID>.json   { id, title, directory, parentID?, time:{created,updated} }
-//   message/<sessionID>/<messageID>.json   { id, role, time:{created}, modelID, providerID, tokens:{input,output,reasoning,cache:{read,write}} }
-//   part/<messageID>/<partID>.json         { type: text|reasoning|tool|file|step-*, text?, tool?, state?:{status,input,output} }
-// OpenCode 1.x moved to SQLite: <data>/opencode/opencode.db, tables session / message / part, where
-// message.data and part.data hold the same JSON as the old files (minus id). Sessions from the db get
-// file = "<db>#<sessionID>" so the rest of Baton can keep keying sessions by file.
+// OpenCode 2 sessions (anomalyco/opencode, npm @opencode/cli). OpenCode 1 is not supported.
+// Storage: <data>/opencode/opencode.db (SQLite), written by OpenCode's server:
+//   session_v2       one row per session: id, parent_id, directory, title, time_created / time_updated /
+//                    time_archived, and time_busy / time_idle (a run is in progress while time_busy > time_idle)
+//   session_message  the conversation, ordered by seq; `type` + JSON `data`:
+//                      user       { text, files: [{ mime, name, data }] }
+//                      assistant  { model: { id, providerID, variant }, content: [reasoning | text | tool], tokens, time }
+//                                 one row per model step; a tool is { name, state: { status, input, content, error } }
+//                      idle       { outcome: succeeded | failed | interrupted, error? } after each turn
+//                      system / agent-switched / …: notes for the model, not part of the conversation
+// OpenCode 2 copies OpenCode 1's tables (session / message / part) into these on its first start, keeping the
+// ids, titles and archived state, and leaves the old tables behind (only purged here).
+// Sessions get file = "<db>#<sessionID>" so the rest of Baton can keep keying sessions by file.
 import fs from 'node:fs';
-import fsp from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import os from 'node:os';
-import { statSafe, clip, oneLine, cleanPrompt } from '../util.js';
-import { summarizeTool } from './common.js';
+import { clip, oneLine, cleanPrompt } from '../util.js';
+import { summarizeTool, toolOutputText } from './common.js';
 import { getKV } from '../store.js';
 
-const DATA = process.env.XDG_DATA_HOME || (process.platform === 'win32'
-  ? path.join(os.homedir(), '.local', 'share')
-  : path.join(os.homedir(), '.local', 'share'));
-export const OPENCODE_STORAGE = path.join(DATA, 'opencode', 'storage');
+const DATA = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'); // Windows too
 export const OPENCODE_DB = path.join(DATA, 'opencode', 'opencode.db');
 const DB_PREFIX = `${OPENCODE_DB}#`;
 export const isOpencodeDbRef = (file) => String(file || '').startsWith(DB_PREFIX);
-export const opencodeSessionId = (file) => (isOpencodeDbRef(file) ? file.slice(DB_PREFIX.length) : path.basename(file, '.json'));
+export const opencodeSessionId = (file) => (isOpencodeDbRef(file) ? file.slice(DB_PREFIX.length) : path.basename(String(file || ''), '.json'));
 
-// Keep the full session (including auxiliary tables) in place during the restore window.
-// Unlike read probes, mutations must report errors to the trash caller.
+const hasTable = (db, name) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
+
+// Keep the full session in place during the restore window (archived sessions are hidden from OpenCode's own
+// lists too; its server reads the column directly). Unlike read probes, mutations report errors to the trash caller.
 export function changeOpencodeArchive(id, archived, purge = false) {
   if (!fs.existsSync(OPENCODE_DB)) throw new Error(`OpenCode database not found: ${OPENCODE_DB}`);
   const db = new DatabaseSync(OPENCODE_DB);
   try {
     db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; BEGIN IMMEDIATE');
-    const row = db.prepare('SELECT time_archived FROM session WHERE id = ?').get(id);
+    const row = hasTable(db, 'session_v2') ? db.prepare('SELECT time_archived FROM session_v2 WHERE id = ?').get(id) : null;
     if (!row && !purge) throw new Error(`OpenCode session not found: ${id}`);
     if (purge) {
-      db.prepare('DELETE FROM part WHERE session_id = ?').run(id);
-      db.prepare('DELETE FROM message WHERE session_id = ?').run(id);
-      db.prepare('DELETE FROM session WHERE id = ?').run(id);
+      // messages, parts, attachments and instructions cascade from session_v2
+      if (row) db.prepare('DELETE FROM session_v2 WHERE id = ?').run(id);
+      if (hasTable(db, 'session')) { // OpenCode 1's copy of a migrated session
+        db.prepare('DELETE FROM part WHERE session_id = ?').run(id);
+        db.prepare('DELETE FROM message WHERE session_id = ?').run(id);
+        db.prepare('DELETE FROM session WHERE id = ?').run(id);
+      }
     } else {
-      db.prepare('UPDATE session SET time_archived = ? WHERE id = ?').run(archived, id);
+      db.prepare('UPDATE session_v2 SET time_archived = ? WHERE id = ?').run(archived, id);
     }
     db.exec('COMMIT');
     cache.delete(DB_PREFIX + id);
@@ -55,75 +62,50 @@ function withDb(fn, fallback) {
   try { db = new DatabaseSync(OPENCODE_DB, { readOnly: true }); } catch { return fallback; }
   try { return fn(db); } catch { return fallback; } finally { try { db.close(); } catch { /* ignore */ } }
 }
-const parseData = (row) => { try { return { id: row.id, ...JSON.parse(row.data) }; } catch { return { id: row.id }; } };
-const dbMessages = (db, sessionId) => db.prepare('SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created, id').all(sessionId).map(parseData);
-const dbParts = (db, messageId) => db.prepare('SELECT id, data FROM part WHERE message_id = ? ORDER BY time_created, id').all(messageId).map(parseData);
 
-const readJson = async (p) => { try { return JSON.parse(await fsp.readFile(p, 'utf8')); } catch { return null; } };
-async function jsonDir(dir) {
-  let names = [];
-  try { names = (await fsp.readdir(dir)).filter((n) => n.endsWith('.json')).sort(); } catch { return []; }
-  const out = [];
-  for (const n of names) { const j = await readJson(path.join(dir, n)); if (j) out.push(j); }
-  return out;
-}
+const parseEntry = (row) => { let d = {}; try { d = JSON.parse(row.data) || {}; } catch { /* keep the type */ } return { ...d, type: row.type }; };
+const dbRows = (db, sessionId) => db.prepare('SELECT type, data FROM session_message WHERE session_id = ? ORDER BY seq').all(sessionId);
+const dbEntries = (db, sessionId) => dbRows(db, sessionId).map(parseEntry);
+const transcript = (file) => withDb((db) => dbEntries(db, opencodeSessionId(file)), []);
 
-async function fileMessages(sessionId) {
-  const msgs = await jsonDir(path.join(OPENCODE_STORAGE, 'message', sessionId));
-  msgs.sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0) || String(a.id).localeCompare(String(b.id)));
-  return msgs;
-}
-const fileParts = (messageId) => jsonDir(path.join(OPENCODE_STORAGE, 'part', messageId));
-
-/** [{ ...message, parts: [...] }] for a session, from either backend. */
-async function transcript(file) {
-  if (isOpencodeDbRef(file)) {
-    const id = opencodeSessionId(file);
-    return withDb((db) => dbMessages(db, id).map((m) => ({ ...m, parts: dbParts(db, m.id) })), []);
-  }
-  const s = await readJson(file);
-  if (!s?.id) return [];
-  const out = [];
-  for (const m of await fileMessages(s.id)) out.push({ ...m, parts: await fileParts(m.id) });
-  return out;
-}
-const textOfParts = (parts) => parts.filter((p) => p.type === 'text' && !p.synthetic && p.text).map((p) => p.text).join('\n').trim();
+const content = (e) => (Array.isArray(e.content) ? e.content : []);
+const replyText = (e) => content(e).filter((c) => c?.type === 'text' && c.text).map((c) => c.text).join('\n').trim();
+const modelName = (m) => (m?.id ? `${m.providerID ? `${m.providerID}/` : ''}${m.id}` : null);
 
 const cache = new Map(); // session file -> { stamp, row }
 
-function rowFor({ s, msgs, file, updated, size, batonIds }) {
-  const users = msgs.filter((m) => m.role === 'user');
-  const lastAsst = [...msgs].reverse().find((m) => m.role === 'assistant');
-  const first = users[0] ? textOfParts(users[0].parts) : '';
-  const last = users.length > 1 ? textOfParts(users[users.length - 1].parts) : '';
-  const reply = lastAsst ? textOfParts(lastAsst.parts) : '';
-  const model = lastAsst?.modelID ? `${lastAsst.providerID ? lastAsst.providerID + '/' : ''}${lastAsst.modelID}` : null;
+function rowFor({ s, entries, file, batonIds }) {
+  const users = entries.filter((e) => e.type === 'user');
+  const replies = entries.filter((e) => e.type === 'assistant');
+  const lastAsst = [...replies].reverse().find((e) => replyText(e)) || replies[replies.length - 1];
+  const first = users[0] ? String(users[0].text || '') : '';
+  const last = users.length > 1 ? String(users[users.length - 1].text || '') : '';
+  const updated = s.time_updated || s.time_created || 0;
   return {
     tool: 'opencode', id: s.id,
     title: s.title && !/^New session/i.test(s.title) ? s.title : clip(oneLine(cleanPrompt(first)), 80) || '(untitled)',
     cwd: s.directory || null,
-    created: s.time?.created || updated,
+    created: s.time_created || updated,
     updated,
-    firstPrompt: clip(oneLine(cleanPrompt(first)), 240), lastPrompt: clip(oneLine(cleanPrompt(last)), 240), lastReply: clip(oneLine(reply), 400),
-    model, automated: !batonIds.has(s.id) && (Boolean(s.parentID) || Boolean(s.directory?.startsWith('/tmp'))), file, size, // same rule as Codex / Antigravity: a sub-session, or a throwaway /tmp run
+    firstPrompt: clip(oneLine(cleanPrompt(first)), 240), lastPrompt: clip(oneLine(cleanPrompt(last)), 240), lastReply: clip(oneLine(lastAsst ? replyText(lastAsst) : ''), 400),
+    model: modelName(lastAsst?.model),
+    // same rule as Codex / Antigravity: a sub-session, or a throwaway /tmp run
+    automated: !batonIds.has(s.id) && (Boolean(s.parent_id) || Boolean(s.directory?.startsWith('/tmp'))), file, size: s.size || 0,
   };
 }
 
-/** Sessions in opencode.db (OpenCode 1.x). */
-function listDbSessions(batonIds) {
+export async function listOpencode() {
+  const batonIds = new Set(getKV('baton_opencode_ids', []) || []);
   return withDb((db) => {
     const out = [];
-    const rows = db.prepare('SELECT id, parent_id, directory, title, time_created, time_updated, time_archived FROM session').all();
-    for (const r of rows) {
-      if (r.time_archived) continue;
-      const file = DB_PREFIX + r.id;
-      const stamp = String(r.time_updated);
+    const rows = db.prepare('SELECT id, parent_id, directory, title, time_created, time_updated, time_busy, time_idle FROM session_v2 WHERE time_archived IS NULL').all();
+    for (const s of rows) {
+      const file = DB_PREFIX + s.id;
+      const stamp = `${s.time_updated}:${s.time_busy}:${s.time_idle}:${s.title}`; // the closing idle entry lands after time_updated
       const c = cache.get(file);
       if (c && c.stamp === stamp) { out.push(c.row); continue; }
-      const msgs = dbMessages(db, r.id).map((m) => ({ ...m, parts: dbParts(db, m.id) }));
-      const s = { id: r.id, title: r.title, directory: r.directory, parentID: r.parent_id, time: { created: r.time_created, updated: r.time_updated } };
-      const size = msgs.reduce((n, m) => n + JSON.stringify(m).length, 0); // ~ what the old JSON files weighed
-      const row = rowFor({ s, msgs, file, updated: r.time_updated, size, batonIds });
+      const raw = dbRows(db, s.id);
+      const row = rowFor({ s: { ...s, size: raw.reduce((n, r) => n + String(r.data || '').length, 0) }, entries: raw.map(parseEntry), file, batonIds });
       cache.set(file, { stamp, row });
       out.push(row);
     }
@@ -131,99 +113,78 @@ function listDbSessions(batonIds) {
   }, []);
 }
 
-export async function listOpencode() {
-  const batonIds = new Set(getKV('baton_opencode_ids', []) || []);
-  const out = listDbSessions(batonIds);
-  const seen = opencodeDbSessionIds(); // archived DB sessions must not reappear through old JSON
-  const root = path.join(OPENCODE_STORAGE, 'session');
-  let projects = [];
-  try { projects = await fsp.readdir(root); } catch { return out; }
-  for (const proj of projects) {
-    let files = [];
-    try { files = (await fsp.readdir(path.join(root, proj))).filter((f) => f.endsWith('.json')); } catch { continue; }
-    for (const f of files) {
-      const file = path.join(root, proj, f);
-      const st = await statSafe(file);
-      if (!st) continue;
-      const s = await readJson(file);
-      if (!s?.id || seen.has(s.id)) continue; // already migrated into opencode.db
-      const mdir = await statSafe(path.join(OPENCODE_STORAGE, 'message', s.id));
-      const stamp = `${st.mtimeMs}:${mdir?.mtimeMs || 0}`;
-      const c = cache.get(file);
-      if (c && c.stamp === stamp) { out.push(c.row); continue; }
-      let msgs = [];
-      try { msgs = await transcript(file); } catch { /* partial */ }
-      const updated = Math.max(s.time?.updated || 0, mdir?.mtimeMs || 0) || st.mtimeMs;
-      const row = rowFor({ s: { ...s, time: { ...s.time, created: s.time?.created || st.birthtimeMs } }, msgs, file, updated, size: st.size, batonIds });
-      cache.set(file, { stamp, row });
-      out.push(row);
-    }
-  }
-  return out;
-}
+const toolOutput = (st) => (typeof st.output === 'string' ? st.output : st.content ? toolOutputText(st.content) : '') || undefined;
 
 export async function readOpencode(file) {
   const out = [];
-  for (const m of await transcript(file)) {
-    const ts = m.time?.created || null;
-    const parts = m.parts;
-    if (m.role === 'user') {
-      const text = cleanPrompt(textOfParts(parts));
-      const images = parts.filter((p) => p.type === 'file' && /^image\//.test(p.mime || '')).length;
+  for (const e of transcript(file)) {
+    const ts = e.time?.created || null;
+    if (e.type === 'user') {
+      const text = cleanPrompt(String(e.text || '')).trim();
+      const images = (Array.isArray(e.files) ? e.files : []).filter((f) => /^image\//.test(f?.mime || '')).length;
       if (text || images) out.push({ role: 'user', text, ts, ...(images ? { images } : {}) });
-      continue;
-    }
-    for (const p of parts) {
-      if (p.type === 'reasoning' && p.text?.trim()) out.push({ role: 'thinking', text: p.text, ts });
-      else if (p.type === 'text' && p.text?.trim() && !p.synthetic) out.push({ role: 'assistant', text: p.text, ts, model: m.modelID });
-      else if (p.type === 'tool') {
-        const st = p.state || {};
-        out.push({ role: 'tool', ts, tool: { name: p.tool, summary: summarizeTool(p.tool, st.input || {}) || st.title || '', input: st.input, output: typeof st.output === 'string' ? st.output : st.error || undefined, error: st.status === 'error' } });
+    } else if (e.type === 'assistant') {
+      for (const c of content(e)) {
+        if (c?.type === 'reasoning' && c.text?.trim()) out.push({ role: 'thinking', text: c.text, ts });
+        else if (c?.type === 'text' && c.text?.trim()) out.push({ role: 'assistant', text: c.text, ts, model: e.model?.id });
+        else if (c?.type === 'tool') {
+          const st = c.state || {};
+          const input = st.input || {};
+          const failed = st.status === 'error';
+          out.push({ role: 'tool', ts, tool: { name: c.name, summary: summarizeTool(c.name, input) || st.title || '', input, output: failed ? (st.error?.message || toolOutput(st)) : toolOutput(st), error: failed } });
+        }
       }
+      if (e.error) out.push({ role: 'system', text: String(e.error.message || e.error.data?.message || e.error.type || e.error.name || 'error'), ts });
+    } else if (e.type === 'idle' && e.outcome === 'failed' && e.error) {
+      out.push({ role: 'system', text: String(e.error.message || e.error.type || 'error'), ts });
     }
-    if (m.error) out.push({ role: 'system', text: String(m.error.data?.message || m.error.name || 'error'), ts });
   }
   return out;
 }
 
-/** Token usage per assistant message: [{ ts, model, input, output, cacheRead, cacheWrite }]. */
+/** Token usage per model step: [{ ts, model, input, output, cacheRead, cacheWrite }]. */
 export async function opencodeUsage(file) {
-  return (await transcript(file)).filter((m) => m.role === 'assistant' && m.tokens).map((m) => ({
-    ts: m.time?.created || 0, model: m.modelID ? `${m.providerID ? m.providerID + '/' : ''}${m.modelID}` : 'unknown',
-    input: m.tokens.input || 0, output: (m.tokens.output || 0) + (m.tokens.reasoning || 0), cacheRead: m.tokens.cache?.read || 0, cacheWrite: m.tokens.cache?.write || 0,
+  return transcript(file).filter((e) => e.type === 'assistant' && e.tokens).map((e) => ({
+    ts: e.time?.created || 0, model: modelName(e.model) || 'unknown',
+    input: e.tokens.input || 0, output: (e.tokens.output || 0) + (e.tokens.reasoning || 0), cacheRead: e.tokens.cache?.read || 0, cacheWrite: e.tokens.cache?.write || 0,
   }));
 }
 
 /**
- * Sessions whose newest message is an assistant reply that hasn't finished (no `time.completed`), from opencode.db:
- * Map id -> { directory, activity } where activity is the last time the db was touched for it. OpenCode only
- * writes at step boundaries (the streamed text is not in the db until the step ends), so a quiet db is normal
- * mid-reply; callers pair this with a process check and only use `activity` as a fallback. A crashed run leaves
- * the message unfinished forever, hence the window on the session's own timestamp.
+ * Sessions with a run in progress (time_busy after the last time_idle), from opencode.db:
+ * Map id -> { directory, activity } where activity is the last time the db was touched for it. OpenCode writes at
+ * step boundaries, so a quiet db is normal mid-reply; callers pair this with a process check and only use
+ * `activity` as a fallback. A run whose process was killed hard never writes its idle entry, hence the window.
  */
 export function opencodeInflight(windowMs = 12 * 3600_000) {
   return withDb((db) => {
     const out = new Map();
-    const rows = db.prepare(`SELECT s.id, s.directory, m.data, m.time_updated AS mu,
-        (SELECT MAX(time_updated) FROM part WHERE session_id = s.id) AS pu
-      FROM session s JOIN message m ON m.id = (SELECT id FROM message WHERE session_id = s.id ORDER BY time_created DESC, id DESC LIMIT 1)
-      WHERE s.time_archived IS NULL AND s.time_updated >= ?`).all(Date.now() - windowMs);
-    for (const r of rows) {
-      let m; try { m = JSON.parse(r.data); } catch { continue; }
-      if (m.role !== 'assistant' || m.time?.completed || m.error) continue;
-      out.set(r.id, { directory: r.directory, activity: Math.max(r.mu || 0, r.pu || 0) });
-    }
+    const rows = db.prepare(`SELECT s.id, s.directory, s.time_updated AS su, s.time_busy AS sb,
+        (SELECT MAX(time_updated) FROM session_message WHERE session_id = s.id) AS mu
+      FROM session_v2 s
+      WHERE s.time_archived IS NULL AND s.time_busy IS NOT NULL AND s.time_busy > COALESCE(s.time_idle, 0) AND s.time_busy >= ?`).all(Date.now() - windowMs);
+    for (const r of rows) out.set(r.id, { directory: r.directory, activity: Math.max(r.su || 0, r.sb || 0, r.mu || 0) });
     return out;
   }, new Map());
 }
 
-/** Every session id in opencode.db (legacy JSON copies of these must not be counted again). */
-export function opencodeDbSessionIds() {
-  return new Set(withDb((db) => db.prepare('SELECT id FROM session').all().map((r) => r.id), []));
+/** Sessions changed since minMtime for the usage scanner: [{ p, st: { mtimeMs, size } }]. */
+export function opencodeDbSessions(minMtime) {
+  return withDb((db) => db.prepare('SELECT id, time_updated FROM session_v2 WHERE time_updated >= ?').all(minMtime)
+    .map((r) => ({ p: DB_PREFIX + r.id, st: { mtimeMs: r.time_updated, size: 0 } })), []);
 }
 
-/** Sessions changed since minMtime for the usage scanner: [{ p, st: { mtimeMs, size } }] (db sessions only). */
-export function opencodeDbSessions(minMtime) {
-  return withDb((db) => db.prepare('SELECT id, time_updated FROM session WHERE time_updated >= ?').all(minMtime)
-    .map((r) => ({ p: DB_PREFIX + r.id, st: { mtimeMs: r.time_updated, size: 0 } })), []);
+/** Signed in to any provider: OpenCode 2 keeps credentials in the db (`opencode auth login`), older installs in auth.json. */
+export function opencodeSignedIn() {
+  if (fs.existsSync(path.join(DATA, 'opencode', 'auth.json'))) return true;
+  return withDb((db) => (hasTable(db, 'credential') ? db.prepare('SELECT COUNT(*) AS n FROM credential').get().n > 0 : false), false);
+}
+
+/** Changes whenever a credential is added, removed or refreshed (the model list depends on them). Never reads secrets. */
+export function opencodeCredentialStamp() {
+  return withDb((db) => {
+    if (!hasTable(db, 'credential')) return '';
+    const r = db.prepare('SELECT COUNT(*) AS n, MAX(time_updated) AS t FROM credential').get();
+    return `${r.n}:${r.t || 0}`;
+  }, '');
 }

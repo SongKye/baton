@@ -12,7 +12,7 @@ was verified with** for each CLI. The source of truth is `server/compat.json`. T
 | Claude Code | Supported | **2.1.318** (2026-11-12) | — | — |
 | Codex | Supported | **0.171.0** (2026-11-21) | — | — |
 | Antigravity | Supported | **1.5.13** (2026-11-21) | — | — |
-| OpenCode | Supported | **1.19.6** (2026-11-21) | — | — |
+| OpenCode | Supported | **2.3.2** (2026-11-21) | — | — |
 | Cursor | Unverified | — | — | — |
 <!-- /compat-table -->
 
@@ -95,14 +95,21 @@ numbers without notice.
 
 ### OpenCode
 
+Baton supports **OpenCode 2** (npm `@opencode/cli`, installer `https://opencode.ai/v2/install`). OpenCode 1
+(`opencode-ai`) is not supported: Baton's chat says so and Settings → Get started offers the update, which runs
+OpenCode 1's own `opencode upgrade --major` (it swaps the package for every install method and moves the
+sessions into OpenCode 2's tables on the next start).
+
 | Surface | Used for | Code |
 |---|---|---|
-| `run --format json --session --model --variant --agent plan\|build --file --auto` | Chat, continue a session; `--auto` for the "full" permission level | `server/runner.js` `opencodeCmd`, `opencodeParser`, `server/permissions.js` |
-| Events `text`, `reasoning`, `tool_use`/`tool` (`part.state`), `step_finish` (`part.tokens`, `part.cost`), `error`; `sessionID` on every event | Live chat view, tokens | `server/runner.js` |
-| `<data>/opencode/opencode.db` (1.x, tables `session` / `message` / `part`) or the older `storage/*.json` | Session list, transcripts, token usage | `server/sources/opencode.js`, `server/usage.js` |
-| `run --format json` one-shot: `sessionID` in the output events (the session OpenCode keeps for the call is hidden; there is no "don't save" flag) | Briefs, drafts, connection check | `server/runner.js` `oneShot`, `oneShotSessionId` |
-| `models --verbose` | Model picker | `server/models.js` |
-| `<data>/opencode/auth.json`, `~/.config/opencode/opencode.json` (`provider`, `mcp`) | Sign-in, own servers, MCP | `server/tools.js`, `server/connect.js`, `server/mcp*.js` |
+| `run --format json --standalone --session --model provider/model#variant --agent plan\|build --file --auto` | Chat, continue a session; the variant is the reasoning level; `--auto` for the "full" permission level | `server/runner.js` `opencodeCmd`, `opencodeParser`, `server/permissions.js` |
+| `--standalone` on every call | Each run gets a private OpenCode server that ends with it. Without it the first run would start OpenCode's shared background service inside Baton's own service, where every Baton restart would stop it (and the user's terminal sessions with it) | `server/runner.js`, `server/models.js` |
+| Events `text`, `reasoning`, `tool_use` (`part.tool`, `part.state`), `step_finish` (`part.tokens`, `part.cost`), `error` (`error.message`); `sessionID` on every event | Live chat view, tokens | `server/runner.js` |
+| `<data>/opencode/opencode.db`: `session_v2` (incl. `time_busy` / `time_idle` / `time_archived`) and `session_message` (`user` / `assistant` / `idle` entries) | Session list, transcripts, token usage, "working" state, trash (archives in place) | `server/sources/opencode.js`, `server/usage.js`, `server/live.js`, `server/trash.js` |
+| `run --format json --archived` one-shot: `sessionID` in the output events (archived, so it stays out of OpenCode's own lists; there is no "don't save" flag) | Briefs, drafts, connection check | `server/runner.js` `oneShot`, `oneShotSessionId` |
+| `api --standalone model.list` (JSON: name, cost, `variants`) | Model picker; falls back to `models --standalone` | `server/models.js` |
+| `credential` table in opencode.db (count only), `~/.config/opencode/opencode.json` (`provider`, `mcp` / `mcp.servers`) | Sign-in, own servers, MCP | `server/sources/opencode.js`, `server/connect.js`, `server/mcp*.js` |
+| `upgrade <version>`; on OpenCode 1 `upgrade --major` | "Update" in Settings | `server/compat.js` `cliUpdatePlan` |
 
 Verified with the free models (no sign-in). OpenCode has no subscription limits, so there is no limits step.
 
