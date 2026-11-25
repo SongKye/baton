@@ -367,6 +367,7 @@
  "내 프로세스만 멈출 수 있어요": "You can only stop your own processes",
  "JSON을 찾지 못했어요": "Couldn't find JSON",
  "{name}가 설치되어 있지 않아요. 설정 → 시작하기에서 설치할 수 있어요": "{name} isn't installed. Install it from Settings → Get started",
+ "OpenCode 1은 더 이상 지원하지 않아요. 설정 → 시작하기에서 OpenCode를 업데이트해주세요": "OpenCode 1 is no longer supported. Update OpenCode from Settings → Get started",
  "이 세션은 이미 응답 중이에요": "This session is already responding",
  "{bin} 실행 실패: {msg}": "Failed to start {bin}: {msg}",
  "사용자가 중지했어요": "Stopped by you",

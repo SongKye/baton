@@ -69,7 +69,8 @@ if (!process.argv.includes('--child')) {
       const run = start(tool, 'tools', { argsFile }, { perm, sessionId: `${tool}-test`, model: 'fixture-model', effort: 'low' });
       assert((await finished(run)).ok);
       const args = JSON.parse(await fs.readFile(argsFile, 'utf8'));
-      assert(args.includes('fixture-model') && args.includes(`${tool}-test`));
+      // OpenCode 2 takes the reasoning level as part of the model: "provider/model#variant"
+      assert(args.includes(tool === 'opencode' ? 'fixture-model#low' : 'fixture-model') && args.includes(`${tool}-test`), `${tool} args: ${JSON.stringify(args)}`);
       const has = (...xs) => xs.every((x) => args.some((a) => a.includes(x)));
       const lacks = (...xs) => xs.every((x) => !args.some((a) => a.includes(x)));
       // the same meaning for every CLI: plan = read only, auto = everyday project work, full = no limits
@@ -85,7 +86,11 @@ if (!process.argv.includes('--child')) {
           auto: () => { const i = args.indexOf('--settings'); const allow = i > 0 ? JSON.parse(args[i + 1]).permissions.allow : []; return has('accept-edits') && ['command(git)', 'command(npm)', 'command(node)'].every((r) => allow.includes(r)) && !allow.includes('command(rm)') && !allow.includes('command(*)') && lacks('--dangerously'); },
           full: () => has('--dangerously-skip-permissions') && lacks('accept-edits'),
         },
-        opencode: { plan: () => has('plan') && lacks('--auto'), auto: () => has('build') && lacks('--auto'), full: () => has('build', '--auto') },
+        opencode: {
+          plan: () => has('plan', '--standalone') && lacks('--auto', '--variant'),
+          auto: () => has('build', '--standalone') && lacks('--auto', '--variant'),
+          full: () => has('build', '--auto', '--standalone') && lacks('--variant'),
+        },
       };
       assert(ok[tool][perm](), `${tool}/${perm} args: ${JSON.stringify(args)}`);
     }
@@ -149,8 +154,14 @@ if (!process.argv.includes('--child')) {
     const oneShotArgs = path.join(os.homedir(), `oneshot-${tool}.json`);
     await assert.rejects(runner.oneShot({ tool, model: 'fixture-model', effort: 'low', prompt: JSON.stringify({ name: 'error', argsFile: oneShotArgs }) }));
     const args = JSON.parse(await fs.readFile(oneShotArgs, 'utf8'));
-    assert(args.includes('fixture-model'));
-    assert(args.includes(tool === 'codex' ? 'model_reasoning_effort="low"' : 'low'));
+    if (tool === 'opencode') {
+      // own short-lived server, kept out of OpenCode's session lists, effort as the model's variant
+      for (const a of ['fixture-model#low', '--standalone', '--archived', 'plan']) assert(args.includes(a), `opencode one-shot args: ${JSON.stringify(args)}`);
+      assert(!args.includes('--variant'));
+    } else {
+      assert(args.includes('fixture-model'));
+      assert(args.includes(tool === 'codex' ? 'model_reasoning_effort="low"' : 'low'));
+    }
 
     // One-shot calls always run in Baton's own folder, outside every project (CLIs that keep one-shot sessions
     // would otherwise file them under whatever folder the caller passed, e.g. ~/baton/data -> the "baton" project)
@@ -159,6 +170,15 @@ if (!process.argv.includes('--child')) {
     const loc = JSON.parse(await fs.readFile(where, 'utf8'));
     assert.equal(await fs.realpath(loc.cwd), await fs.realpath(util.ONESHOT_DIR), `${tool}: one-shot ran in ${loc.cwd}`);
     assert.equal(path.resolve(loc.pwd), path.resolve(util.ONESHOT_DIR), `${tool}: one-shot $PWD`);
+  }
+  {
+    // OpenCode 1 rejects OpenCode 2's flags with its usage text: say what to do instead of showing that text
+    const end = await finished(start('opencode', 'opencode-v1'));
+    assert.equal(end.ok, false);
+    assert.match(end.error, /OpenCode 1/, end.error);
+    await assert.rejects(runner.oneShot({ tool: 'opencode', prompt: JSON.stringify({ name: 'opencode-v1' }) }), /OpenCode 1/);
+    // any other failure keeps its own message
+    assert.doesNotMatch((await finished(start('opencode', 'nonzero'))).error || '', /OpenCode 1/);
   }
   // The session a one-shot call leaves behind is found from the CLI's JSON output, however the event is named
   assert.equal(runner.oneShotSessionId('opencode', '{"type":"step_start","sessionID":"ses_a","part":{}}\n{"type":"text","sessionID":"ses_a"}'), 'ses_a');

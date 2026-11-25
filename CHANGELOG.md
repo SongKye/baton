@@ -8,6 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Fixed
 - **Scrolling no longer snaps back to the top after coming back to the app.** The "reset the displaced viewport" step could fire on every scroll when the browser kept a leftover viewport offset, so each scroll down jumped straight back up until the app was restarted. The reset now waits while you are scrolling and runs at most once every 5 seconds.
 
+## [0.13.0] - 2026-11-21
+
+### Changed
+- Verified on Linux with Claude Code 2.1.318, Codex 0.171.0, Antigravity 1.5.13 and OpenCode 2.3.2.
+- The weekly compatibility check now says which CLIs it skipped and why (maintainer-only).
+- **OpenCode 2 is now the version Baton supports (verified with 2.3.2 on Linux).** OpenCode 2 is a new package (`@opencode/cli`) that keeps sessions in new tables, takes the reasoning level as part of the model name and runs a shared background server. Baton now reads OpenCode 2's sessions (including the ones it carries over from OpenCode 1), shows its models with their reasoning levels, and gives every run its own short-lived OpenCode server, so restarting Baton never stops the OpenCode you use in a terminal. Briefs and drafts made with OpenCode no longer show up in OpenCode's own session list. New installs from Settings get OpenCode 2.
+
+### Removed
+- **OpenCode 1 is no longer supported.** If you still have it, chatting with OpenCode in Baton tells you to update, and Settings → Get started has an Update button. It runs OpenCode's own `opencode upgrade --major`, which replaces OpenCode 1 with the newest OpenCode 2 however you installed it. Your sessions are moved over the first time OpenCode 2 starts.
+
 ## [0.12.0] - 2026-11-14
 
 ### Added

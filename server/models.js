@@ -12,6 +12,7 @@ import { runCli } from './platform.js';
 import { tr } from './i18n.js';
 import { claudeProviderCached, codexProvider } from './providers.js';
 import { CLAUDE_HOME, CODEX_HOME } from './env.js';
+import { opencodeCredentialStamp } from './sources/opencode.js';
 
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
 
@@ -232,7 +233,7 @@ function refreshList(tool) {
   if (!bin) return;
   if (bin === c.bin && Date.now() - c.at < (c.models.length ? 6 * 3600 * 1000 : 60 * 1000)) return;
   c.at = Date.now(); c.bin = bin;
-  runCli(bin, ['models'], { timeout: 30000 }).then(({ stdout }) => {
+  runCli(bin, tool === 'opencode' ? ['models', '--standalone'] : ['models'], { timeout: 30000 }).then(({ stdout }) => {
     const models = [];
     for (const raw of stdout.split(/\r?\n/)) {
       const line = raw.replace(/\x1b\[[0-9;]*m/g, '').trim();
@@ -252,9 +253,11 @@ function simpleCatalog(tool, note) {
   };
 }
 
-// OpenCode: `opencode models --verbose` prints "<provider>/<id>" then that model's JSON (name, cost,
-// variants = the reasoning levels `opencode run --variant` accepts). Use it for readable names, a
-// free-models-first order and per-model effort; fall back to the plain list if it can't be parsed.
+// OpenCode 2: `opencode api model.list` returns every connected provider's models as JSON:
+// { data: [{ id, providerID, name, type, cost: [{ input, output }], variants: [{ id }], status, enabled, settings }] }.
+// A variant is a reasoning level, passed as "provider/model#variant" (server/runner.js). Only id, name, cost and
+// variants are kept: `settings` can hold a provider's API key. --standalone so listing never starts OpenCode's
+// background service. Falls back to the plain `opencode models` list if this can't be parsed.
 const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const effortRank = (e) => (e === '' ? -1 : EFFORT_ORDER.includes(e) ? EFFORT_ORDER.indexOf(e) : 99);
 const ocList = { at: 0, ok: false, models: null, sig: '' };
@@ -263,11 +266,10 @@ let ocBusy = false;
 // login` in the user's own terminal, or Baton's "connect a server" writing opencode.json). Any change
 // there refetches the list on the next poll instead of waiting out the cache.
 const mtime = (p) => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } };
-const XDG_DATA = process.env.XDG_DATA_HOME || path.join(HOME, '.local', 'share');
 const XDG_CONFIG = process.platform !== 'win32' && process.env.XDG_CONFIG_HOME ? process.env.XDG_CONFIG_HOME : path.join(HOME, '.config');
 function opencodeSig(bin) {
   const cfg = path.join(XDG_CONFIG, 'opencode');
-  return [bin, mtime(path.join(XDG_DATA, 'opencode', 'auth.json')), mtime(path.join(cfg, 'opencode.json')), mtime(path.join(cfg, 'opencode.jsonc'))].join('|');
+  return [bin, opencodeCredentialStamp(), mtime(path.join(cfg, 'opencode.json')), mtime(path.join(cfg, 'opencode.jsonc'))].join('|');
 }
 /** Forget cached model lists (after an install / sign-in job) so the next /api/state refetches them. */
 export function invalidateModels() {
@@ -276,22 +278,23 @@ export function invalidateModels() {
   codexList.at = 0;
   refreshOpencodeModels(); // start now so the list is usually ready by the UI's next poll
 }
-export function parseOpencodeVerbose(text) {
-  const lines = String(text).replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/); // Windows prints CRLF
+export function parseOpencodeModels(text) {
+  let j = null;
+  try { j = JSON.parse(String(text).trim()); } catch { return []; }
+  const list = Array.isArray(j) ? j : Array.isArray(j?.data) ? j.data : [];
   const out = [];
-  for (let i = 0; i < lines.length; i++) {
-    const id = lines[i].trim();
-    if (!/^[\w.@-]+\/[\w./:@-]+$/.test(id) || lines[i + 1]?.trim() !== '{') continue;
-    let j = i + 1;
-    while (j < lines.length && lines[j].trimEnd() !== '}') j++;
-    let meta = null;
-    try { meta = JSON.parse(lines.slice(i + 1, j + 1).join('\n')); } catch { /* skip */ }
-    i = j;
-    if (!meta || meta.status === 'deprecated') continue;
-    const c = meta.cost || {};
-    const free = !c.input && !c.output;
-    const efforts = Object.keys(meta.variants || {}).sort((a, b) => effortRank(a) - effortRank(b));
-    const name = String(meta.name || id).replace(free ? /[\s(-]*free\)?$/i : /$^/, '').trim() || id; // "Beam Free" -> "Beam" + our own tag
+  const seen = new Set();
+  for (const m of list) {
+    if (!m || typeof m.id !== 'string' || typeof m.providerID !== 'string' || !m.id || !m.providerID) continue;
+    if (m.status === 'deprecated' || m.enabled === false || (m.type && m.type !== 'chat')) continue;
+    const id = `${m.providerID}/${m.id}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const costs = Array.isArray(m.cost) ? m.cost : m.cost && typeof m.cost === 'object' ? [m.cost] : [];
+    const free = !costs.some((c) => c && (c.input || c.output));
+    const variants = Array.isArray(m.variants) ? m.variants.map((v) => (typeof v === 'string' ? v : v?.id)) : Object.keys(m.variants || {});
+    const efforts = [...new Set(variants.filter((v) => typeof v === 'string' && /^[\w.-]+$/.test(v)))].sort((a, b) => effortRank(a) - effortRank(b));
+    const name = String(m.name || id).replace(free ? /[\s(-]*free\)?$/i : /$^/, '').trim() || id; // "Beam Free" -> "Beam" + our own tag
     out.push({ id, name, free, efforts });
   }
   return out;
@@ -302,9 +305,9 @@ function refreshOpencodeModels() {
   const sig = opencodeSig(bin);
   if (sig === ocList.sig && Date.now() - ocList.at < (ocList.ok ? 6 * 3600 * 1000 : 30 * 1000)) return;
   ocList.at = Date.now(); ocList.sig = sig; ocBusy = true;
-  runCli(bin, ['models', '--verbose'], { timeout: 60000 }).then(({ stdout, code }) => {
+  runCli(bin, ['api', '--standalone', 'model.list'], { timeout: 60000 }).then(({ stdout, code }) => {
     if (code !== 0) { ocList.ok = false; return; }
-    const models = parseOpencodeVerbose(stdout);
+    const models = parseOpencodeModels(stdout);
     ocList.ok = models.length > 0;
     if (ocList.ok) ocList.models = models;
   }).catch(() => { ocList.ok = false; }).finally(() => { ocBusy = false; });

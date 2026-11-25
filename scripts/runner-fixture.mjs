@@ -39,6 +39,10 @@ function run(input) {
   scenario = JSON.parse(input);
   if (scenario.argsFile) fs.writeFileSync(scenario.argsFile, JSON.stringify(args));
   if (scenario.cwdFile) fs.writeFileSync(scenario.cwdFile, JSON.stringify({ cwd: process.cwd(), pwd: process.env.PWD }));
+  if (scenario.name === 'opencode-v1') { // OpenCode 1 refusing OpenCode 2's flags: yargs usage on stderr, exit 1
+    process.stderr.write('opencode run [message..]\n\nrun opencode with a message\n\nPositionals:\n  message  message to send\n');
+    process.exit(1);
+  }
   init();
   if (scenario.name === 'delayed-tool') {
     emit({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'slow-tool', name: 'Bash', input: { command: 'fixture' } }] } });

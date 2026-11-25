@@ -1,6 +1,6 @@
 // Detect which sessions are currently open in a terminal (outside Baton).
 // Claude: ~/.claude/sessions/<pid>.json registry. Codex/agy: scan /proc for processes holding the
-// rollout file / conversation db open. OpenCode: an unfinished reply in opencode.db plus a live `opencode` process.
+// rollout file / conversation db open. OpenCode: a run in progress in opencode.db plus a live `opencode` process.
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { liveClaude } from './sources/claude.js';
@@ -10,7 +10,7 @@ import { childPids } from './runner.js';
 import { pidAlive } from './util.js';
 
 let cached = { at: 0, value: null };
-const OPENCODE_FRESH_MS = 60_000; // no process to match (e.g. `opencode serve`): trust a db touched this recently
+const OPENCODE_FRESH_MS = 60_000; // no process to match (a run inside OpenCode's background service): trust a db touched this recently
 
 /** Running OpenCode processes: [{ pid, cwd, run }]. `run` = `opencode run ...` (a one-shot, as scripts use), not the TUI. */
 async function opencodeProcs() {
@@ -27,7 +27,7 @@ async function opencodeProcs() {
   return out;
 }
 
-/** OpenCode keeps no per-session registry: a reply still unfinished in the db is "working" if a process is there to finish it. */
+/** OpenCode keeps no per-session registry: a run still in progress in the db is "working" if a process is there to finish it. */
 async function liveOpencode() {
   const out = new Map();
   const inflight = opencodeInflight();

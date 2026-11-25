@@ -295,8 +295,9 @@ async function createJob(action, tool, t) {
   if (action === 'cli-update') {
     const bin = binFor(tool);
     if (!bin) throw new Error(tr('먼저 설치해주세요'));
-    const info = compatInfo(tool, await version(bin), { latestBaton: updateCached().latest });
-    const plan = info.action === 'cli-update' && cliUpdatePlan(tool, bin, info.target);
+    const installed = await version(bin);
+    const info = compatInfo(tool, installed, { latestBaton: updateCached().latest });
+    const plan = info.action === 'cli-update' && cliUpdatePlan(tool, bin, info.target, installed);
     if (!plan) throw new Error(tr('지금 버전에서 올릴 검증된 버전이 없어요'));
     const job = newJob(`${t.name} ${tr('업데이트')} → v${info.target}`);
     job.emit({ t: 'line', stream: 'cmd', text: `$ ${path.basename(plan.bin)} ${plan.args.join(' ')}` });
