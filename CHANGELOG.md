@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- **Scrolling no longer snaps back to the top after coming back to the app.** The "reset the displaced viewport" step could fire on every scroll when the browser kept a leftover viewport offset, so each scroll down jumped straight back up until the app was restarted. The reset now waits while you are scrolling and runs at most once every 5 seconds.
+
 ## [0.13.0] - 2026-11-21
 
 ### Changed

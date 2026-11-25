@@ -445,7 +445,8 @@ function repaint(tries = 0) {
  * ride along with every scroll. With no field focused there is nothing to keep it for — reset the scroll
  * and repaint, again after iOS has settled (it restores late).
  */
-function settleViewport() {
+let viewportResetAt = 0;
+function settleViewport(fromScroll = false) {
   const fix = () => {
     const f = document.activeElement;
     if (f && f !== document.body && f.matches?.('input, textarea, select, [contenteditable]')) return; // keyboard really is up
@@ -453,7 +454,15 @@ function settleViewport() {
     // Only a visual viewport that is displaced from the layout viewport (what the keyboard leaves behind) needs a reset.
     // Not pageTop (that is simply how far the page is scrolled) and not a height difference (pinch-zoom):
     // those made every focus / app-switch throw a scrolled tab back to the top.
-    if (vv && vv.offsetTop > 1 && vv.scale <= 1.01) window.scrollTo(0, 0);
+    // Never while the user is scrolling. And when triggered by the visualViewport 'scroll' listener below, at most
+    // once per 5s: if the offset is one scrollTo can't clear, every scroll would fire that listener and snap the
+    // page back to the top forever ("scroll down, jump up") until the app is restarted. The return-to-app
+    // retries (0 / 350 / 1200ms) are not throttled: iOS restores late and they need to run.
+    if (vv && vv.offsetTop > 1 && vv.scale <= 1.01 && !scrolling() && !(fromScroll && Date.now() - viewportResetAt < 5000)) {
+      viewportResetAt = Date.now();
+      userMove.selfUntil = Date.now() + 120;
+      window.scrollTo(0, 0);
+    }
     repaint();
   };
   fix();
@@ -466,7 +475,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.visualViewport?.addEventListener('scroll', () => {
   // fixed bars follow a visual viewport that is scrolled away from the top while no field is focused
   const vv = window.visualViewport, f = document.activeElement;
-  if (vv.offsetTop > 1 && !(f && f.matches?.('input, textarea, select, [contenteditable]'))) settleViewport();
+  if (vv.offsetTop > 1 && !(f && f.matches?.('input, textarea, select, [contenteditable]'))) settleViewport(true);
 });
 
 // ---------------------------------------------------------------- back keeps your place
