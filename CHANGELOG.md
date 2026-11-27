@@ -5,17 +5,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-28
+
 ### Added
 - **Project shared memory across AI CLIs.** Conversations in Baton chat now share decisions, conventions, gotchas, active state, recent cross-CLI activity, and live dev servers within the same project without repeating context. Uses a 3-speed lifecycle (instant zero-token activity bridge + session reference logs, debounced lightweight AI extraction, and periodic "Dream" consolidation), Korean+English smart recall, delta-only injection after turn 1 (preserving prompt caches), a single **Save to shared memory** action in the chat `⋯` menu for on-demand summarization, per-project toggles, and Settings controls for the extractor tool/model.
 
 ### Changed
-- Verified with Claude Code 2.1.326, Codex 0.172.0 on Linux (weekly automatic check).
+- Verified on Linux with Claude Code 2.1.326, Codex 0.172.0, Antigravity 1.5.13 and OpenCode 2.3.2.
 - **Desktop notifications now use the system notification center.** On PC, Baton shows notifications through the browser's Notification API (Windows taskbar corner, Ubuntu/GNOME banner, macOS banner) instead of in-page cards; allow notifications via Settings → Notifications → Push. The white "Response complete" in-app toast is gone (phones keep their push notification).
 
 ### Fixed
 - **Antigravity plans show up in the chat again.** In plan mode Antigravity now writes the plan to a file (`implementation_plan.md`) and replies with only a `file://` link, which can't be opened from a phone. Baton now shows those plan files inline after the reply, live and when reopening the conversation.
 - Compatibility checks keep pinned CLI versions from updating themselves mid-check (Antigravity replaced its pinned test binary, so checks silently tested a newer version), and the weekly job restores or re-downloads a test copy that already did (maintainer-only).
 - **Phone: the bottom tab bar stays anchored at the bottom while scrolling, and opening a chat from a notification no longer leaves a large blank gap.** On phones (`<= 759px`), Baton now uses a locked flex app shell with inner scrolling (`main.view`) instead of a `position: fixed` tab bar over a scrolling document, and chat views fill `100%` of the shell whenever no keyboard is open while re-syncing and flushing the viewport on notification launch/resume.
+- **Shared memory skips temporary folders on Windows too.** `/tmp` paths were not recognized as temporary on Windows.
 - **Scrolling no longer snaps back to the top after coming back to the app.** The "reset the displaced viewport" step could fire on every scroll when the browser kept a leftover viewport offset, so each scroll down jumped straight back up until the app was restarted. The reset now waits while you are scrolling and runs at most once every 5 seconds.
 
 ## [0.13.0] - 2026-11-21
@@ -321,7 +324,7 @@ First public preview.
 ### Security
 - Listens on `127.0.0.1` only. Other devices need a password once (default `0000` — change it) and are remembered for 30 days; failed attempts are rate-limited.
 
-[Unreleased]: https://github.com/SongKye/baton/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/SongKye/baton/compare/v0.14.0...HEAD
 [0.6.0]: https://github.com/SongKye/baton/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/SongKye/baton/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/SongKye/baton/compare/v0.3.0...v0.4.0
