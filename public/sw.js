@@ -1,6 +1,6 @@
 // Baton service worker: app-shell cache + web push.
-const CACHE = 'baton-v30';
-const SHELL = ['/', '/style.css?v=26', '/app.js?v=41', '/theme.js?v=5', '/palettes.css?v=3', '/studio.css?v=5', '/studio.js?v=5', '/vendor/marked.js', '/vendor/purify.js', '/icon.svg?v=2', '/baton-mark.svg', '/icon-handoff-180-v1.png', '/icon-handoff-192-v1.png', '/icon-handoff-512-v1.png', '/manifest.webmanifest'];
+const CACHE = 'baton-v32';
+const SHELL = ['/', '/style.css?v=27', '/app.js?v=43', '/theme.js?v=5', '/palettes.css?v=3', '/studio.css?v=5', '/studio.js?v=5', '/vendor/marked.js', '/vendor/purify.js', '/icon.svg?v=2', '/baton-mark.svg', '/icon-handoff-180-v1.png', '/icon-handoff-192-v1.png', '/icon-handoff-512-v1.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -24,7 +24,7 @@ self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data.json(); } catch { d = { title: 'Baton', body: e.data?.text() }; }
   e.waitUntil((async () => {
-    // A focused desktop Baton tab shows its own bottom-right card — skip the duplicate OS notification.
+    // A focused desktop Baton tab shows the system notification itself — skip the duplicate.
     // Phones never show those cards, so don't ask: on iOS a locked/suspended PWA can still look
     // "focused + visible", and any push that ends without a notification counts against the subscription.
     if (!IS_MOBILE && await focusedTabShowsCards().catch(() => false)) return;

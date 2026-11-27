@@ -45,6 +45,7 @@ import { pageMessages, slimMessage } from './sources/common.js';
 import { usageReport, startUsageScheduler } from './usage.js';
 import { observeRun, seedDefaults } from './observe.js';
 import { readClaudeImage } from './sources/claude-images.js';
+import * as memory from './memory.js';
 
 import { PORT, setPort } from './runtime.js';
 import { listenerConfig, listen } from './listener.js';
@@ -290,6 +291,11 @@ route('POST', '/api/sessions/:tool/:id/meta', async (req, url, { tool, id }) => 
   return store.patchSessionMeta(`${tool}:${decodeURIComponent(id)}`, patch);
 });
 
+route('POST', '/api/sessions/:tool/:id/memory', async (req, url, { tool, id }) => {
+  try { return await memory.saveSessionToMemory(tool, decodeURIComponent(id)); }
+  catch (e) { return [e.code === 'NOT_FOUND' ? 404 : 400, { error: e.message }]; }
+});
+
 // Images from the composer: claude/codex take them as files/blocks from Baton's data dir;
 // agy can only read files inside its workspace, so those go to <cwd>/.baton-uploads (git-ignored).
 const IMG_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
@@ -332,7 +338,18 @@ route('POST', '/api/run', async (req) => {
   try { images = await saveImages(b.tool, cwd, b.images); } catch (e) { return [400, { error: e.message }]; }
   try {
     const prompt0 = String(b.prompt || '');
-    const run = startRun({ tool: b.tool, sessionId: b.sessionId || null, cwd, prompt: b.sessionId ? consumeMoveNote(`${b.tool}:${b.sessionId}`, prompt0) : prompt0, model: b.model || null, effort: b.effort || null, perm: b.perm || store.getSettings().defaultPerm, title, images });
+    const prompt1 = b.sessionId ? consumeMoveNote(`${b.tool}:${b.sessionId}`, prompt0) : prompt0;
+    const mem = await memory.withMemory({ tool: b.tool, sessionId: b.sessionId || null, cwd, prompt: prompt1 });
+    const run = startRun({
+      tool: b.tool, sessionId: b.sessionId || null, cwd, prompt: prompt0, wirePrompt: mem.wirePrompt,
+      model: b.model || null, effort: b.effort || null, perm: b.perm || store.getSettings().defaultPerm,
+      title, images, initialEvents: mem.memoryEvent ? [mem.memoryEvent] : null,
+    });
+    if (run.sessionId) mem.markSeen(run.sessionId);
+    else {
+      const listener = (ev) => { if (ev.t === 'session') { mem.markSeen(ev.id); run.listeners.delete(listener); } };
+      run.listeners.add(listener);
+    }
     return { run: publicRun(run) };
   } catch (e) {
     return [e.code === 'BUSY' ? 409 : 400, { error: e.message, runId: e.runId }];
@@ -370,9 +387,48 @@ route('POST', '/api/projects/:pid/meta', async (req, url, { pid }) => {
   if ('pinned' in b) patch.pinned = Boolean(b.pinned);
   if ('note' in b) patch.note = b.note ? String(b.note).slice(0, 2000) : null;
   if ('muted' in b) patch.muted = Boolean(b.muted);
+  if ('memoryOff' in b) patch.memory_off = Boolean(b.memoryOff);
   if ('snoozeDays' in b) patch.snooze_until = b.snoozeDays ? Date.now() + Number(b.snoozeDays) * DAY : null;
   if (b.status === 'active') patch.snooze_until = patch.snooze_until ?? null;
   return store.patchProjectMeta(id, patch);
+});
+
+route('GET', '/api/projects/:pid/memory', async (req, url, { pid }) => {
+  const id = decodeURIComponent(pid);
+  return memory.listMemory(id, { query: url.searchParams.get('q') || '' });
+});
+route('POST', '/api/projects/:pid/memory', async (req, url, { pid }) => {
+  const id = decodeURIComponent(pid);
+  const b = await body(req);
+  try {
+    const item = await memory.addMemoryItem(id, {
+      kind: b.kind || 'decision',
+      text: b.text,
+      tags: b.tags || null,
+      pinned: b.pinned !== false && b.pinned !== undefined ? Boolean(b.pinned) : false,
+      sourceKey: b.sourceKey || 'user',
+      branch: b.branch || null,
+    });
+    return { item };
+  } catch (e) { return [400, { error: e.message }]; }
+});
+route('PATCH', '/api/projects/:pid/memory/:id', async (req, url, { pid, id }) => {
+  const project = decodeURIComponent(pid);
+  const b = await body(req);
+  try {
+    const item = await memory.updateMemoryItem(project, Number(id), b);
+    return item ? { item } : [404, { error: tr('메모리 항목을 찾을 수 없어요') }];
+  } catch (e) { return [400, { error: e.message }]; }
+});
+route('DELETE', '/api/projects/:pid/memory/:id', async (req, url, { pid, id }) => {
+  const project = decodeURIComponent(pid);
+  const ok = await memory.deleteMemoryItem(project, Number(id));
+  return ok ? { ok: true } : [404, { error: tr('메모리 항목을 찾을 수 없어요') }];
+});
+route('POST', '/api/projects/:pid/memory/dream', async (req, url, { pid }) => {
+  const project = decodeURIComponent(pid);
+  try { return await memory.runDream(project); }
+  catch (e) { return [500, { error: e.message }]; }
 });
 
 route('GET', '/api/projects/:pid/skills', async (req, url, { pid }) => {
@@ -728,6 +784,7 @@ bus.on('run_end', (run) => {
   else store.addEvent(ok ? 'run_done' : 'run_error', title, bodyText, url, { quiet: !watching }); // muted / alerts off: inbox only
   forceRefresh().catch(() => {});
   observeRun(run);
+  memory.recordTurn(run);
 });
 
 // ---------- static ----------

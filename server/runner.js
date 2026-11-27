@@ -318,7 +318,7 @@ const BUILDERS = { claude: claudeCmd, codex: codexCmd, agy: agyCmd, opencode: op
 const PARSERS = { claude: claudeParser, codex: codexParser, agy: agyParser, opencode: opencodeParser, cursor: cursorParser };
 
 // ---------- run lifecycle ----------
-export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, title, images }) {
+export function startRun({ tool, sessionId, cwd, prompt, wirePrompt = null, model, effort, perm, title, images, initialEvents = null }) {
   if (!TOOL_IDS.includes(tool)) throw new Error('unknown tool');
   if (!prompt || !prompt.trim()) throw new Error('empty prompt');
   if (!binFor(tool)) throw new Error(tr('{name}가 설치되어 있지 않아요. 설정 → 시작하기에서 설치할 수 있어요', { name: tool }));
@@ -326,7 +326,7 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
     const existing = activeRunFor(`${tool}:${sessionId}`);
     if (existing) throw Object.assign(new Error(tr('이 세션은 이미 응답 중이에요')), { code: 'BUSY', runId: existing.id });
   }
-  const opts = { sessionId, model, effort, perm, prompt, images, cwd };
+  const opts = { sessionId, model, effort, perm, prompt: wirePrompt || prompt, images, cwd };
   const cmd = BUILDERS[tool](opts);
   const eventLog = createRunEvents();
 
@@ -339,6 +339,9 @@ export function startRun({ tool, sessionId, cwd, prompt, model, effort, perm, ti
     eventLog.append(ev);
     for (const l of run.listeners) { try { l(ev); } catch { /* ignore */ } }
   };
+  if (Array.isArray(initialEvents)) {
+    for (const ev of initialEvents) if (ev) run.emit(ev);
+  }
   run.setSession = (id) => {
     if (!id || run.sessionId === id) return;
     const isNew = !run.sessionId;

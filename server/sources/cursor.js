@@ -86,7 +86,7 @@ export async function listCursor() {
         tool: 'cursor', id, // the chat folder name is what `cursor-agent --resume` takes
         title: meta.name && meta.name !== 'New Agent' ? meta.name : clip(oneLine(cleanPrompt(users[0] || '')), 80) || '(untitled)',
         cwd, created: meta.createdAt || st.birthtimeMs, updated: Math.max(st.mtimeMs, wal?.mtimeMs || 0),
-        firstPrompt: clip(oneLine(users[0] || ''), 240), lastPrompt: clip(oneLine(users.length > 1 ? users[users.length - 1] : ''), 240),
+        firstPrompt: clip(oneLine(cleanPrompt(users[0] || '')), 240), lastPrompt: clip(oneLine(cleanPrompt(users.length > 1 ? users[users.length - 1] : '')), 240),
         lastReply: clip(oneLine(lastAsst ? textOf(lastAsst.content) : ''), 400),
         model: meta.lastUsedModel || null, automated: !batonIds.has(id) && users.length === 0, file, size: st.size,
       };

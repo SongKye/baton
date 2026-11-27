@@ -10,6 +10,7 @@ import { allLimits } from './limits.js';
 import { notify } from './push.js';
 import { clip } from './util.js';
 import { tr } from './i18n.js';
+import { withMemory } from './memory.js';
 import fs from 'node:fs';
 
 db.exec(`CREATE TABLE IF NOT EXISTS scheduled (
@@ -82,7 +83,12 @@ async function fire(r) {
   if (!s) { set(r.id, { status: 'failed', error: tr('세션을 찾을 수 없어요') }); return; }
   const cwd = s.cwd && fs.existsSync(s.cwd) ? s.cwd : s.project;
   try {
-    const run = startRun({ tool: r.tool, sessionId: r.session_id, cwd, prompt: r.prompt, model: r.model, effort: r.effort, perm: r.perm, title: s.title });
+    const mem = await withMemory({ tool: r.tool, sessionId: r.session_id, cwd, prompt: r.prompt });
+    const run = startRun({
+      tool: r.tool, sessionId: r.session_id, cwd, prompt: r.prompt, wirePrompt: mem.wirePrompt,
+      model: r.model, effort: r.effort, perm: r.perm, title: s.title, initialEvents: mem.memoryEvent ? [mem.memoryEvent] : null,
+    });
+    mem.markSeen(r.session_id);
     set(r.id, { status: 'sent', run_id: run.id, attempts: r.attempts + 1 });
     notify({ kind: 'scheduled', title: tr('⏰ 예약 메시지를 보냈어요'), body: `${clip(s.title || '', 40)} · ${clip(r.prompt, 80)}`, url: `/#/s/${r.tool}/${encodeURIComponent(r.session_id)}`, tag: `sched-${r.id}` }).catch(() => {});
   } catch (e) {
