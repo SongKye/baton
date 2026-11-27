@@ -1,16 +1,31 @@
 {
- "version": "2.1.318",
+ "version": "2.1.326",
  "stream": [
   "assistant message",
   "assistant message.container",
   "assistant message.content",
+  "assistant message.content[].caller",
+  "assistant message.content[].caller.type",
+  "assistant message.content[].id",
+  "assistant message.content[].input",
+  "assistant message.content[].input.command",
+  "assistant message.content[].input.content",
+  "assistant message.content[].input.description",
+  "assistant message.content[].input.file_path",
+  "assistant message.content[].input.questions",
+  "assistant message.content[].input.questions[].header",
+  "assistant message.content[].input.questions[].multiSelect",
+  "assistant message.content[].input.questions[].options",
+  "assistant message.content[].input.questions[].options[].description",
+  "assistant message.content[].input.questions[].options[].label",
+  "assistant message.content[].input.questions[].question",
+  "assistant message.content[].name",
+  "assistant message.content[].signature",
   "assistant message.content[].text",
+  "assistant message.content[].thinking",
   "assistant message.content[].type",
   "assistant message.context_management",
   "assistant message.diagnostics",
-  "assistant message.diagnostics.cache_miss_reason",
-  "assistant message.diagnostics.cache_miss_reason.cache_missed_input_tokens",
-  "assistant message.diagnostics.cache_miss_reason.type",
   "assistant message.id",
   "assistant message.input_transformations",
   "assistant message.model",
@@ -32,9 +47,40 @@
   "assistant parent_tool_use_id",
   "assistant request_id",
   "assistant session_id",
+  "assistant thinking_display",
+  "assistant thinking_duration_ms",
   "assistant timestamp",
   "assistant type",
   "assistant uuid",
+  "assistant wire_tool_inputs",
+  "assistant wire_tool_inputs.*",
+  "assistant wire_tool_inputs.*.command",
+  "assistant wire_tool_inputs.*.content",
+  "assistant wire_tool_inputs.*.description",
+  "assistant wire_tool_inputs.*.file_path",
+  "assistant wire_tool_inputs.*.questions",
+  "assistant wire_tool_inputs.*.questions[].header",
+  "assistant wire_tool_inputs.*.questions[].multiSelect",
+  "assistant wire_tool_inputs.*.questions[].options",
+  "assistant wire_tool_inputs.*.questions[].options[].description",
+  "assistant wire_tool_inputs.*.questions[].options[].label",
+  "assistant wire_tool_inputs.*.questions[].question",
+  "control_request request",
+  "control_request request.display_name",
+  "control_request request.input",
+  "control_request request.input.questions",
+  "control_request request.input.questions[].header",
+  "control_request request.input.questions[].multiSelect",
+  "control_request request.input.questions[].options",
+  "control_request request.input.questions[].options[].description",
+  "control_request request.input.questions[].options[].label",
+  "control_request request.input.questions[].question",
+  "control_request request.requires_user_interaction",
+  "control_request request.subtype",
+  "control_request request.tool_name",
+  "control_request request.tool_use_id",
+  "control_request request_id",
+  "control_request type",
   "control_response response",
   "control_response response.pending_permission_requests",
   "control_response response.pending_user_dialog_requests",
@@ -65,6 +111,7 @@
   "control_response response.response.feedback_mode",
   "control_response response.response.feedback_mode.kind",
   "control_response response.response.hook_on_failure_supported",
+  "control_response response.response.hooks_when_unanswered_kept",
   "control_response response.response.ide_rc_auto_enable_gate",
   "control_response response.response.models",
   "control_response response.response.models[].description",
@@ -77,6 +124,7 @@
   "control_response response.response.models[].supportsFastMode",
   "control_response response.response.models[].supportsThinkingOff",
   "control_response response.response.models[].value",
+  "control_response response.response.other_hook_ask_outranks_host",
   "control_response response.response.output_style",
   "control_response response.response.pid",
   "control_response response.response.remote_control_auto_connect_default",
@@ -209,23 +257,36 @@
   "stream_event/content_block_delta api_message_id",
   "stream_event/content_block_delta event",
   "stream_event/content_block_delta event.delta",
+  "stream_event/content_block_delta event.delta.estimated_tokens",
+  "stream_event/content_block_delta event.delta.partial_json",
+  "stream_event/content_block_delta event.delta.signature",
   "stream_event/content_block_delta event.delta.text",
+  "stream_event/content_block_delta event.delta.thinking",
   "stream_event/content_block_delta event.delta.type",
   "stream_event/content_block_delta event.index",
   "stream_event/content_block_delta event.type",
   "stream_event/content_block_delta parent_tool_use_id",
   "stream_event/content_block_delta session_id",
+  "stream_event/content_block_delta thinking_display",
   "stream_event/content_block_delta type",
   "stream_event/content_block_delta uuid",
   "stream_event/content_block_start api_message_id",
   "stream_event/content_block_start event",
   "stream_event/content_block_start event.content_block",
+  "stream_event/content_block_start event.content_block.caller",
+  "stream_event/content_block_start event.content_block.caller.type",
+  "stream_event/content_block_start event.content_block.id",
+  "stream_event/content_block_start event.content_block.input",
+  "stream_event/content_block_start event.content_block.name",
+  "stream_event/content_block_start event.content_block.signature",
   "stream_event/content_block_start event.content_block.text",
+  "stream_event/content_block_start event.content_block.thinking",
   "stream_event/content_block_start event.content_block.type",
   "stream_event/content_block_start event.index",
   "stream_event/content_block_start event.type",
   "stream_event/content_block_start parent_tool_use_id",
   "stream_event/content_block_start session_id",
+  "stream_event/content_block_start thinking_display",
   "stream_event/content_block_start type",
   "stream_event/content_block_start uuid",
   "stream_event/content_block_stop api_message_id",
@@ -244,6 +305,12 @@
   "stream_event/message_delta event.delta.container",
   "stream_event/message_delta event.delta.safeguard_results",
   "stream_event/message_delta event.delta.safeguard_results[].status",
+  "stream_event/message_delta event.delta.safeguard_results[].status.tool_uses",
+  "stream_event/message_delta event.delta.safeguard_results[].status.tool_uses.*",
+  "stream_event/message_delta event.delta.safeguard_results[].status.tool_uses.*.cited_rule",
+  "stream_event/message_delta event.delta.safeguard_results[].status.tool_uses.*.outcome",
+  "stream_event/message_delta event.delta.safeguard_results[].status.tool_uses.*.type",
+  "stream_event/message_delta event.delta.safeguard_results[].status.type",
   "stream_event/message_delta event.delta.safeguard_results[].type",
   "stream_event/message_delta event.delta.stop_details",
   "stream_event/message_delta event.delta.stop_reason",
@@ -255,6 +322,7 @@
   "stream_event/message_delta event.usage.input_tokens",
   "stream_event/message_delta event.usage.iterations",
   "stream_event/message_delta event.usage.iterations[].cache_creation",
+  "stream_event/message_delta event.usage.iterations[].cache_creation.*",
   "stream_event/message_delta event.usage.iterations[].cache_creation_input_tokens",
   "stream_event/message_delta event.usage.iterations[].cache_read_input_tokens",
   "stream_event/message_delta event.usage.iterations[].input_tokens",
@@ -274,9 +342,6 @@
   "stream_event/message_start event.message.content",
   "stream_event/message_start event.message.context_management",
   "stream_event/message_start event.message.diagnostics",
-  "stream_event/message_start event.message.diagnostics.cache_miss_reason",
-  "stream_event/message_start event.message.diagnostics.cache_miss_reason.cache_missed_input_tokens",
-  "stream_event/message_start event.message.diagnostics.cache_miss_reason.type",
   "stream_event/message_start event.message.id",
   "stream_event/message_start event.message.input_transformations",
   "stream_event/message_start event.message.model",
@@ -309,16 +374,6 @@
   "stream_event/message_stop session_id",
   "stream_event/message_stop type",
   "stream_event/message_stop uuid",
-  "system/commands_changed commands",
-  "system/commands_changed commands[].aliases",
-  "system/commands_changed commands[].argumentHint",
-  "system/commands_changed commands[].builtin",
-  "system/commands_changed commands[].description",
-  "system/commands_changed commands[].name",
-  "system/commands_changed session_id",
-  "system/commands_changed subtype",
-  "system/commands_changed type",
-  "system/commands_changed uuid",
   "system/init additional_directories",
   "system/init agents",
   "system/init analytics_disabled",
@@ -360,7 +415,63 @@
   "system/status status",
   "system/status subtype",
   "system/status type",
-  "system/status uuid"
+  "system/status uuid",
+  "system/thinking_tokens estimated_tokens",
+  "system/thinking_tokens estimated_tokens_delta",
+  "system/thinking_tokens session_id",
+  "system/thinking_tokens subtype",
+  "system/thinking_tokens type",
+  "system/thinking_tokens uuid",
+  "user message",
+  "user message.content",
+  "user message.content[].content",
+  "user message.content[].is_error",
+  "user message.content[].tool_use_id",
+  "user message.content[].type",
+  "user message.role",
+  "user parent_tool_use_id",
+  "user session_id",
+  "user timestamp",
+  "user tool_result_meta",
+  "user tool_result_meta[].id",
+  "user tool_result_meta[].permission_decision",
+  "user tool_result_meta[].permission_decision.decision",
+  "user tool_result_meta[].permission_decision.reason_type",
+  "user tool_result_meta[].permission_decision.source",
+  "user tool_use_result",
+  "user tool_use_result.answers",
+  "user tool_use_result.answers.Which option do you want: BATONANSWER or OTHER?",
+  "user tool_use_result.content",
+  "user tool_use_result.file",
+  "user tool_use_result.file.content",
+  "user tool_use_result.file.filePath",
+  "user tool_use_result.file.numLines",
+  "user tool_use_result.file.startLine",
+  "user tool_use_result.file.totalLines",
+  "user tool_use_result.filePath",
+  "user tool_use_result.interrupted",
+  "user tool_use_result.isImage",
+  "user tool_use_result.noOutputExpected",
+  "user tool_use_result.originalFile",
+  "user tool_use_result.questions",
+  "user tool_use_result.questions[].header",
+  "user tool_use_result.questions[].multiSelect",
+  "user tool_use_result.questions[].options",
+  "user tool_use_result.questions[].options[].description",
+  "user tool_use_result.questions[].options[].label",
+  "user tool_use_result.questions[].question",
+  "user tool_use_result.stderr",
+  "user tool_use_result.stdout",
+  "user tool_use_result.structuredPatch",
+  "user tool_use_result.structuredPatch[].lines",
+  "user tool_use_result.structuredPatch[].newLines",
+  "user tool_use_result.structuredPatch[].newStart",
+  "user tool_use_result.structuredPatch[].oldLines",
+  "user tool_use_result.structuredPatch[].oldStart",
+  "user tool_use_result.type",
+  "user tool_use_result.userModified",
+  "user type",
+  "user uuid"
  ],
  "file": [
   "file:api-request cacheControl",
@@ -415,6 +526,165 @@
   "file:api-request-shape shape.tools[].input_schema.$schema",
   "file:api-request-shape shape.tools[].input_schema.additionalProperties",
   "file:api-request-shape shape.tools[].input_schema.properties",
+  "file:api-request-shape shape.tools[].input_schema.properties.allow_large",
+  "file:api-request-shape shape.tools[].input_schema.properties.allow_large.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.allow_large.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations",
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.additionalProperties",
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.additionalProperties.additionalProperties",
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.additionalProperties.properties",
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.additionalProperties.properties.notes",
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.additionalProperties.properties.preview",
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.additionalProperties.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.propertyNames",
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.propertyNames.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.answers",
+  "file:api-request-shape shape.tools[].input_schema.properties.answers.additionalProperties",
+  "file:api-request-shape shape.tools[].input_schema.properties.answers.additionalProperties.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.answers.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.answers.propertyNames",
+  "file:api-request-shape shape.tools[].input_schema.properties.answers.propertyNames.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.answers.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.args",
+  "file:api-request-shape shape.tools[].input_schema.properties.args.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.args.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.channel",
+  "file:api-request-shape shape.tools[].input_schema.properties.channel.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.channel.maxLength",
+  "file:api-request-shape shape.tools[].input_schema.properties.channel.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.command",
+  "file:api-request-shape shape.tools[].input_schema.properties.command.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.command.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.content",
+  "file:api-request-shape shape.tools[].input_schema.properties.content.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.content.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.dangerouslyDisableSandbox",
+  "file:api-request-shape shape.tools[].input_schema.properties.dangerouslyDisableSandbox.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.dangerouslyDisableSandbox.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.delaySeconds",
+  "file:api-request-shape shape.tools[].input_schema.properties.delaySeconds.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.delaySeconds.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.description.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.description.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.effort",
+  "file:api-request-shape shape.tools[].input_schema.properties.effort.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.effort.enum",
+  "file:api-request-shape shape.tools[].input_schema.properties.effort.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.file_path",
+  "file:api-request-shape shape.tools[].input_schema.properties.file_path.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.file_path.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.additionalProperties",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.category",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.failure_scenario",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.file",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.line",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.outcome",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.short_summary",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.summary",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.verdict",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.required",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.maxItems",
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.isolation",
+  "file:api-request-shape shape.tools[].input_schema.properties.isolation.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.isolation.enum",
+  "file:api-request-shape shape.tools[].input_schema.properties.isolation.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.level",
+  "file:api-request-shape shape.tools[].input_schema.properties.level.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.level.enum",
+  "file:api-request-shape shape.tools[].input_schema.properties.level.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.limit",
+  "file:api-request-shape shape.tools[].input_schema.properties.limit.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.limit.exclusiveMinimum",
+  "file:api-request-shape shape.tools[].input_schema.properties.limit.maximum",
+  "file:api-request-shape shape.tools[].input_schema.properties.limit.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.max_results",
+  "file:api-request-shape shape.tools[].input_schema.properties.max_results.default",
+  "file:api-request-shape shape.tools[].input_schema.properties.max_results.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.max_results.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata",
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.additionalProperties",
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.properties",
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.properties.source",
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.properties.source.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.properties.source.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.model",
+  "file:api-request-shape shape.tools[].input_schema.properties.model.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.model.enum",
+  "file:api-request-shape shape.tools[].input_schema.properties.model.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.new_string",
+  "file:api-request-shape shape.tools[].input_schema.properties.new_string.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.new_string.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.noop",
+  "file:api-request-shape shape.tools[].input_schema.properties.noop.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.noop.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.offset",
+  "file:api-request-shape shape.tools[].input_schema.properties.offset.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.offset.maximum",
+  "file:api-request-shape shape.tools[].input_schema.properties.offset.minimum",
+  "file:api-request-shape shape.tools[].input_schema.properties.offset.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.old_string",
+  "file:api-request-shape shape.tools[].input_schema.properties.old_string.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.old_string.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.pages",
+  "file:api-request-shape shape.tools[].input_schema.properties.pages.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.pages.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.prompt",
+  "file:api-request-shape shape.tools[].input_schema.properties.prompt.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.prompt.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.q",
+  "file:api-request-shape shape.tools[].input_schema.properties.q.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.q.maxLength",
+  "file:api-request-shape shape.tools[].input_schema.properties.q.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.query",
+  "file:api-request-shape shape.tools[].input_schema.properties.query.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.query.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.additionalProperties",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.properties",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.properties.header",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.properties.multiSelect",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.properties.options",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.properties.question",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.required",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.maxItems",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.minItems",
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.reason",
+  "file:api-request-shape shape.tools[].input_schema.properties.reason.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.reason.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.replace_all",
+  "file:api-request-shape shape.tools[].input_schema.properties.replace_all.default",
+  "file:api-request-shape shape.tools[].input_schema.properties.replace_all.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.replace_all.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.run_in_background",
+  "file:api-request-shape shape.tools[].input_schema.properties.run_in_background.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.run_in_background.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.skill",
+  "file:api-request-shape shape.tools[].input_schema.properties.skill.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.skill.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.stop",
+  "file:api-request-shape shape.tools[].input_schema.properties.stop.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.stop.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.subagent_type",
+  "file:api-request-shape shape.tools[].input_schema.properties.subagent_type.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.subagent_type.type",
+  "file:api-request-shape shape.tools[].input_schema.properties.timeout",
+  "file:api-request-shape shape.tools[].input_schema.properties.timeout.description",
+  "file:api-request-shape shape.tools[].input_schema.properties.timeout.type",
   "file:api-request-shape shape.tools[].input_schema.required",
   "file:api-request-shape shape.tools[].input_schema.type",
   "file:api-request-shape shape.tools[].model",
@@ -431,16 +701,16 @@
   "file:assistant entrypoint",
   "file:assistant gitBranch",
   "file:assistant isSidechain",
+  "file:assistant madeBy",
   "file:assistant message",
   "file:assistant message.container",
   "file:assistant message.content",
+  "file:assistant message.content[].signature",
   "file:assistant message.content[].text",
+  "file:assistant message.content[].thinking",
   "file:assistant message.content[].type",
   "file:assistant message.context_management",
   "file:assistant message.diagnostics",
-  "file:assistant message.diagnostics.cache_miss_reason",
-  "file:assistant message.diagnostics.cache_miss_reason.cache_missed_input_tokens",
-  "file:assistant message.diagnostics.cache_miss_reason.type",
   "file:assistant message.id",
   "file:assistant message.input_transformations",
   "file:assistant message.model",
@@ -459,6 +729,7 @@
   "file:assistant message.usage.input_tokens",
   "file:assistant message.usage.iterations",
   "file:assistant message.usage.iterations[].cache_creation",
+  "file:assistant message.usage.iterations[].cache_creation.*",
   "file:assistant message.usage.iterations[].cache_creation_input_tokens",
   "file:assistant message.usage.iterations[].cache_read_input_tokens",
   "file:assistant message.usage.iterations[].input_tokens",
@@ -481,6 +752,8 @@
   "file:assistant serverClassifierRequest",
   "file:assistant sessionId",
   "file:assistant slug",
+  "file:assistant thinkingDisplay",
+  "file:assistant thinkingDurationMs",
   "file:assistant timestamp",
   "file:assistant type",
   "file:assistant userType",
@@ -549,6 +822,154 @@
   "file:attachment attachment.tools[].schema.description",
   "file:attachment attachment.tools[].schema.eager_input_streaming",
   "file:attachment attachment.tools[].schema.input_schema",
+  "file:attachment attachment.tools[].schema.input_schema.$schema",
+  "file:attachment attachment.tools[].schema.input_schema.additionalProperties",
+  "file:attachment attachment.tools[].schema.input_schema.properties",
+  "file:attachment attachment.tools[].schema.input_schema.properties.allow_large",
+  "file:attachment attachment.tools[].schema.input_schema.properties.allow_large.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.allow_large.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations",
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.additionalProperties",
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.additionalProperties.additionalProperties",
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.additionalProperties.properties",
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.additionalProperties.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.propertyNames",
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.propertyNames.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers",
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers.additionalProperties",
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers.additionalProperties.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers.propertyNames",
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers.propertyNames.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.args",
+  "file:attachment attachment.tools[].schema.input_schema.properties.args.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.args.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.channel",
+  "file:attachment attachment.tools[].schema.input_schema.properties.channel.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.channel.maxLength",
+  "file:attachment attachment.tools[].schema.input_schema.properties.channel.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.command",
+  "file:attachment attachment.tools[].schema.input_schema.properties.command.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.command.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.content",
+  "file:attachment attachment.tools[].schema.input_schema.properties.content.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.content.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.dangerouslyDisableSandbox",
+  "file:attachment attachment.tools[].schema.input_schema.properties.dangerouslyDisableSandbox.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.dangerouslyDisableSandbox.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.delaySeconds",
+  "file:attachment attachment.tools[].schema.input_schema.properties.delaySeconds.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.delaySeconds.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.description.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.description.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.effort",
+  "file:attachment attachment.tools[].schema.input_schema.properties.effort.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.effort.enum",
+  "file:attachment attachment.tools[].schema.input_schema.properties.effort.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.file_path",
+  "file:attachment attachment.tools[].schema.input_schema.properties.file_path.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.file_path.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings",
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.items",
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.items.additionalProperties",
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.items.properties",
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.items.required",
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.items.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.maxItems",
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.isolation",
+  "file:attachment attachment.tools[].schema.input_schema.properties.isolation.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.isolation.enum",
+  "file:attachment attachment.tools[].schema.input_schema.properties.isolation.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.level",
+  "file:attachment attachment.tools[].schema.input_schema.properties.level.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.level.enum",
+  "file:attachment attachment.tools[].schema.input_schema.properties.level.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.limit",
+  "file:attachment attachment.tools[].schema.input_schema.properties.limit.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.limit.exclusiveMinimum",
+  "file:attachment attachment.tools[].schema.input_schema.properties.limit.maximum",
+  "file:attachment attachment.tools[].schema.input_schema.properties.limit.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.max_results",
+  "file:attachment attachment.tools[].schema.input_schema.properties.max_results.default",
+  "file:attachment attachment.tools[].schema.input_schema.properties.max_results.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.max_results.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.metadata",
+  "file:attachment attachment.tools[].schema.input_schema.properties.metadata.additionalProperties",
+  "file:attachment attachment.tools[].schema.input_schema.properties.metadata.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.metadata.properties",
+  "file:attachment attachment.tools[].schema.input_schema.properties.metadata.properties.source",
+  "file:attachment attachment.tools[].schema.input_schema.properties.metadata.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.model",
+  "file:attachment attachment.tools[].schema.input_schema.properties.model.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.model.enum",
+  "file:attachment attachment.tools[].schema.input_schema.properties.model.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.new_string",
+  "file:attachment attachment.tools[].schema.input_schema.properties.new_string.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.new_string.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.noop",
+  "file:attachment attachment.tools[].schema.input_schema.properties.noop.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.noop.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.offset",
+  "file:attachment attachment.tools[].schema.input_schema.properties.offset.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.offset.maximum",
+  "file:attachment attachment.tools[].schema.input_schema.properties.offset.minimum",
+  "file:attachment attachment.tools[].schema.input_schema.properties.offset.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.old_string",
+  "file:attachment attachment.tools[].schema.input_schema.properties.old_string.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.old_string.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.pages",
+  "file:attachment attachment.tools[].schema.input_schema.properties.pages.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.pages.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.prompt",
+  "file:attachment attachment.tools[].schema.input_schema.properties.prompt.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.prompt.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.q",
+  "file:attachment attachment.tools[].schema.input_schema.properties.q.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.q.maxLength",
+  "file:attachment attachment.tools[].schema.input_schema.properties.q.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.query",
+  "file:attachment attachment.tools[].schema.input_schema.properties.query.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.query.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions",
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.items",
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.items.additionalProperties",
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.items.properties",
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.items.required",
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.items.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.maxItems",
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.minItems",
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.reason",
+  "file:attachment attachment.tools[].schema.input_schema.properties.reason.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.reason.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.replace_all",
+  "file:attachment attachment.tools[].schema.input_schema.properties.replace_all.default",
+  "file:attachment attachment.tools[].schema.input_schema.properties.replace_all.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.replace_all.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.run_in_background",
+  "file:attachment attachment.tools[].schema.input_schema.properties.run_in_background.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.run_in_background.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.skill",
+  "file:attachment attachment.tools[].schema.input_schema.properties.skill.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.skill.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.stop",
+  "file:attachment attachment.tools[].schema.input_schema.properties.stop.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.stop.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.subagent_type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.subagent_type.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.subagent_type.type",
+  "file:attachment attachment.tools[].schema.input_schema.properties.timeout",
+  "file:attachment attachment.tools[].schema.input_schema.properties.timeout.description",
+  "file:attachment attachment.tools[].schema.input_schema.properties.timeout.type",
+  "file:attachment attachment.tools[].schema.input_schema.required",
+  "file:attachment attachment.tools[].schema.input_schema.type",
   "file:attachment attachment.tools[].schema.name",
   "file:attachment attachment.type",
   "file:attachment attachment.url",
@@ -626,9 +1047,3161 @@
   "file:user turnPosition",
   "file:user turnPosition.promptIndex",
   "file:user turnPosition.turnIndex",
+  "file:user turnPromptId",
   "file:user type",
   "file:user userType",
   "file:user uuid",
   "file:user version"
- ]
+ ],
+ "types": {
+  "control_response type": [
+   "string"
+  ],
+  "control_response response": [
+   "object"
+  ],
+  "control_response response.subtype": [
+   "string"
+  ],
+  "control_response response.request_id": [
+   "string"
+  ],
+  "control_response response.response": [
+   "object"
+  ],
+  "control_response response.response.commands": [
+   "array"
+  ],
+  "control_response response.response.commands[].name": [
+   "string"
+  ],
+  "control_response response.response.commands[].description": [
+   "string"
+  ],
+  "control_response response.response.commands[].argumentHint": [
+   "string"
+  ],
+  "control_response response.response.commands[].builtin": [
+   "boolean"
+  ],
+  "control_response response.response.commands[].aliases": [
+   "array"
+  ],
+  "control_response response.response.agents": [
+   "array"
+  ],
+  "control_response response.response.agents[].name": [
+   "string"
+  ],
+  "control_response response.response.agents[].description": [
+   "string"
+  ],
+  "control_response response.response.agents[].model": [
+   "string"
+  ],
+  "control_response response.response.output_style": [
+   "string"
+  ],
+  "control_response response.response.available_output_styles": [
+   "array"
+  ],
+  "control_response response.response.user_output_styles_dir": [
+   "string"
+  ],
+  "control_response response.response.models": [
+   "array"
+  ],
+  "control_response response.response.models[].value": [
+   "string"
+  ],
+  "control_response response.response.models[].resolvedModel": [
+   "string"
+  ],
+  "control_response response.response.models[].displayName": [
+   "string"
+  ],
+  "control_response response.response.models[].description": [
+   "string"
+  ],
+  "control_response response.response.models[].supportsEffort": [
+   "boolean"
+  ],
+  "control_response response.response.models[].supportedEffortLevels": [
+   "array"
+  ],
+  "control_response response.response.models[].supportsAdaptiveThinking": [
+   "boolean"
+  ],
+  "control_response response.response.models[].supportsFastMode": [
+   "boolean"
+  ],
+  "control_response response.response.models[].supportsAutoMode": [
+   "boolean"
+  ],
+  "control_response response.response.models[].supportsThinkingOff": [
+   "boolean"
+  ],
+  "control_response response.response.account": [
+   "object"
+  ],
+  "control_response response.response.account.email": [
+   "string"
+  ],
+  "control_response response.response.account.organization": [
+   "string"
+  ],
+  "control_response response.response.account.subscriptionType": [
+   "string"
+  ],
+  "control_response response.response.account.apiProvider": [
+   "string"
+  ],
+  "control_response response.response.pid": [
+   "number"
+  ],
+  "control_response response.response.claude_code_version": [
+   "string"
+  ],
+  "control_response response.response.current_permission_mode": [
+   "string"
+  ],
+  "control_response response.response.hook_on_failure_supported": [
+   "boolean"
+  ],
+  "control_response response.response.hooks_when_unanswered_kept": [
+   "number"
+  ],
+  "control_response response.response.other_hook_ask_outranks_host": [
+   "boolean"
+  ],
+  "control_response response.response.feedback_mode": [
+   "object"
+  ],
+  "control_response response.response.feedback_mode.kind": [
+   "string"
+  ],
+  "control_response response.response.analytics_disabled": [
+   "boolean"
+  ],
+  "control_response response.response.remote_control_auto_enable": [
+   "boolean"
+  ],
+  "control_response response.response.remote_control_auto_connect_default": [
+   "boolean"
+  ],
+  "control_response response.response.remote_control_available": [
+   "boolean"
+  ],
+  "control_response response.response.remote_control_auto_on_by_default": [
+   "boolean"
+  ],
+  "control_response response.response.ide_rc_auto_enable_gate": [
+   "boolean"
+  ],
+  "control_response response.response.fast_mode_state": [
+   "string"
+  ],
+  "control_response response.response.fast_mode_disabled_reason": [
+   "string"
+  ],
+  "control_response response.response.session_state": [
+   "string"
+  ],
+  "control_response response.response.capabilities": [
+   "array"
+  ],
+  "control_response response.pending_permission_requests": [
+   "array"
+  ],
+  "control_response response.pending_user_dialog_requests": [
+   "array"
+  ],
+  "system/init type": [
+   "string"
+  ],
+  "system/init subtype": [
+   "string"
+  ],
+  "system/init cwd": [
+   "string"
+  ],
+  "system/init session_id": [
+   "string"
+  ],
+  "system/init tools": [
+   "array"
+  ],
+  "system/init mcp_servers": [
+   "array"
+  ],
+  "system/init mcp_servers[].name": [
+   "string"
+  ],
+  "system/init mcp_servers[].status": [
+   "string"
+  ],
+  "system/init mcp_servers[].source": [
+   "string"
+  ],
+  "system/init model": [
+   "string"
+  ],
+  "system/init permissionMode": [
+   "string"
+  ],
+  "system/init slash_commands": [
+   "array"
+  ],
+  "system/init terminal_slash_commands": [
+   "array"
+  ],
+  "system/init apiKeySource": [
+   "string"
+  ],
+  "system/init claude_code_version": [
+   "string"
+  ],
+  "system/init output_style": [
+   "string"
+  ],
+  "system/init agents": [
+   "array"
+  ],
+  "system/init skills": [
+   "array"
+  ],
+  "system/init plugins": [
+   "array"
+  ],
+  "system/init plugins[].name": [
+   "string"
+  ],
+  "system/init plugins[].path": [
+   "string"
+  ],
+  "system/init plugins[].source": [
+   "string"
+  ],
+  "system/init capabilities": [
+   "array"
+  ],
+  "system/init analytics_disabled": [
+   "boolean"
+  ],
+  "system/init product_feedback_disabled": [
+   "boolean"
+  ],
+  "system/init uuid": [
+   "string"
+  ],
+  "system/init memory_paths": [
+   "object"
+  ],
+  "system/init memory_paths.auto": [
+   "string"
+  ],
+  "system/init original_cwd": [
+   "string"
+  ],
+  "system/init additional_directories": [
+   "array"
+  ],
+  "system/init messaging_socket_path": [
+   "string"
+  ],
+  "system/init fast_mode_state": [
+   "string"
+  ],
+  "system/init fast_mode_disabled_reason": [
+   "string"
+  ],
+  "system/init per_turn_effort_active": [
+   "boolean"
+  ],
+  "system/init ultrathink_available": [
+   "boolean"
+  ],
+  "system/init ultrathink_typed_raises": [
+   "boolean"
+  ],
+  "system/init view_mode": [
+   "string"
+  ],
+  "system/status type": [
+   "string"
+  ],
+  "system/status subtype": [
+   "string"
+  ],
+  "system/status status": [
+   "string"
+  ],
+  "system/status session_id": [
+   "string"
+  ],
+  "system/status uuid": [
+   "string"
+  ],
+  "stream_event/message_start type": [
+   "string"
+  ],
+  "stream_event/message_start event": [
+   "object"
+  ],
+  "stream_event/message_start event.type": [
+   "string"
+  ],
+  "stream_event/message_start event.message": [
+   "object"
+  ],
+  "stream_event/message_start event.message.model": [
+   "string"
+  ],
+  "stream_event/message_start event.message.id": [
+   "string"
+  ],
+  "stream_event/message_start event.message.type": [
+   "string"
+  ],
+  "stream_event/message_start event.message.role": [
+   "string"
+  ],
+  "stream_event/message_start event.message.content": [
+   "array"
+  ],
+  "stream_event/message_start event.message.container": [
+   "null"
+  ],
+  "stream_event/message_start event.message.stop_reason": [
+   "null"
+  ],
+  "stream_event/message_start event.message.stop_sequence": [
+   "null"
+  ],
+  "stream_event/message_start event.message.stop_details": [
+   "null"
+  ],
+  "stream_event/message_start event.message.usage": [
+   "object"
+  ],
+  "stream_event/message_start event.message.usage.input_tokens": [
+   "number"
+  ],
+  "stream_event/message_start event.message.usage.cache_creation_input_tokens": [
+   "number"
+  ],
+  "stream_event/message_start event.message.usage.cache_read_input_tokens": [
+   "number"
+  ],
+  "stream_event/message_start event.message.usage.cache_creation": [
+   "object"
+  ],
+  "stream_event/message_start event.message.usage.cache_creation.*": [
+   "number"
+  ],
+  "stream_event/message_start event.message.usage.output_tokens": [
+   "number"
+  ],
+  "stream_event/message_start event.message.usage.service_tier": [
+   "string"
+  ],
+  "stream_event/message_start event.message.usage.inference_geo": [
+   "string"
+  ],
+  "stream_event/message_start event.message.usage.speed": [
+   "string"
+  ],
+  "stream_event/message_start event.message.input_transformations": [
+   "array"
+  ],
+  "stream_event/message_start event.message.diagnostics": [
+   "null"
+  ],
+  "stream_event/message_start event.message.context_management": [
+   "null"
+  ],
+  "stream_event/message_start session_id": [
+   "string"
+  ],
+  "stream_event/message_start parent_tool_use_id": [
+   "null"
+  ],
+  "stream_event/message_start uuid": [
+   "string"
+  ],
+  "stream_event/message_start ttft_ms": [
+   "number"
+  ],
+  "stream_event/message_start thinking_display": [
+   "string"
+  ],
+  "stream_event/message_start api_message_id": [
+   "string"
+  ],
+  "stream_event/content_block_start type": [
+   "string"
+  ],
+  "stream_event/content_block_start event": [
+   "object"
+  ],
+  "stream_event/content_block_start event.type": [
+   "string"
+  ],
+  "stream_event/content_block_start event.index": [
+   "number"
+  ],
+  "stream_event/content_block_start event.content_block": [
+   "object"
+  ],
+  "stream_event/content_block_start event.content_block.type": [
+   "string"
+  ],
+  "stream_event/content_block_start event.content_block.thinking": [
+   "string"
+  ],
+  "stream_event/content_block_start event.content_block.signature": [
+   "string"
+  ],
+  "stream_event/content_block_start session_id": [
+   "string"
+  ],
+  "stream_event/content_block_start parent_tool_use_id": [
+   "null"
+  ],
+  "stream_event/content_block_start uuid": [
+   "string"
+  ],
+  "stream_event/content_block_start thinking_display": [
+   "string"
+  ],
+  "stream_event/content_block_start api_message_id": [
+   "string"
+  ],
+  "system/thinking_tokens type": [
+   "string"
+  ],
+  "system/thinking_tokens subtype": [
+   "string"
+  ],
+  "system/thinking_tokens estimated_tokens": [
+   "number"
+  ],
+  "system/thinking_tokens estimated_tokens_delta": [
+   "number"
+  ],
+  "system/thinking_tokens session_id": [
+   "string"
+  ],
+  "system/thinking_tokens uuid": [
+   "string"
+  ],
+  "stream_event/content_block_delta type": [
+   "string"
+  ],
+  "stream_event/content_block_delta event": [
+   "object"
+  ],
+  "stream_event/content_block_delta event.type": [
+   "string"
+  ],
+  "stream_event/content_block_delta event.index": [
+   "number"
+  ],
+  "stream_event/content_block_delta event.delta": [
+   "object"
+  ],
+  "stream_event/content_block_delta event.delta.type": [
+   "string"
+  ],
+  "stream_event/content_block_delta event.delta.thinking": [
+   "string"
+  ],
+  "stream_event/content_block_delta event.delta.estimated_tokens": [
+   "null",
+   "number"
+  ],
+  "stream_event/content_block_delta session_id": [
+   "string"
+  ],
+  "stream_event/content_block_delta parent_tool_use_id": [
+   "null"
+  ],
+  "stream_event/content_block_delta uuid": [
+   "string"
+  ],
+  "stream_event/content_block_delta thinking_display": [
+   "string"
+  ],
+  "stream_event/content_block_delta api_message_id": [
+   "string"
+  ],
+  "stream_event/content_block_delta event.delta.signature": [
+   "string"
+  ],
+  "assistant type": [
+   "string"
+  ],
+  "assistant message": [
+   "object"
+  ],
+  "assistant message.model": [
+   "string"
+  ],
+  "assistant message.id": [
+   "string"
+  ],
+  "assistant message.type": [
+   "string"
+  ],
+  "assistant message.role": [
+   "string"
+  ],
+  "assistant message.content": [
+   "array"
+  ],
+  "assistant message.content[].type": [
+   "string"
+  ],
+  "assistant message.content[].thinking": [
+   "string"
+  ],
+  "assistant message.content[].signature": [
+   "string"
+  ],
+  "assistant message.container": [
+   "null"
+  ],
+  "assistant message.stop_reason": [
+   "null"
+  ],
+  "assistant message.stop_sequence": [
+   "null"
+  ],
+  "assistant message.stop_details": [
+   "null"
+  ],
+  "assistant message.usage": [
+   "object"
+  ],
+  "assistant message.usage.input_tokens": [
+   "number"
+  ],
+  "assistant message.usage.cache_creation_input_tokens": [
+   "number"
+  ],
+  "assistant message.usage.cache_read_input_tokens": [
+   "number"
+  ],
+  "assistant message.usage.cache_creation": [
+   "object"
+  ],
+  "assistant message.usage.cache_creation.*": [
+   "number"
+  ],
+  "assistant message.usage.output_tokens": [
+   "number"
+  ],
+  "assistant message.usage.service_tier": [
+   "string"
+  ],
+  "assistant message.usage.inference_geo": [
+   "string"
+  ],
+  "assistant message.usage.speed": [
+   "string"
+  ],
+  "assistant message.input_transformations": [
+   "array"
+  ],
+  "assistant message.diagnostics": [
+   "null"
+  ],
+  "assistant message.context_management": [
+   "null"
+  ],
+  "assistant parent_tool_use_id": [
+   "null"
+  ],
+  "assistant session_id": [
+   "string"
+  ],
+  "assistant uuid": [
+   "string"
+  ],
+  "assistant timestamp": [
+   "string"
+  ],
+  "assistant request_id": [
+   "string"
+  ],
+  "assistant thinking_duration_ms": [
+   "number"
+  ],
+  "assistant thinking_display": [
+   "string"
+  ],
+  "stream_event/content_block_stop type": [
+   "string"
+  ],
+  "stream_event/content_block_stop event": [
+   "object"
+  ],
+  "stream_event/content_block_stop event.type": [
+   "string"
+  ],
+  "stream_event/content_block_stop event.index": [
+   "number"
+  ],
+  "stream_event/content_block_stop session_id": [
+   "string"
+  ],
+  "stream_event/content_block_stop parent_tool_use_id": [
+   "null"
+  ],
+  "stream_event/content_block_stop uuid": [
+   "string"
+  ],
+  "stream_event/content_block_stop api_message_id": [
+   "string"
+  ],
+  "stream_event/content_block_start event.content_block.text": [
+   "string"
+  ],
+  "stream_event/content_block_delta event.delta.text": [
+   "string"
+  ],
+  "assistant message.content[].text": [
+   "string"
+  ],
+  "stream_event/message_delta type": [
+   "string"
+  ],
+  "stream_event/message_delta event": [
+   "object"
+  ],
+  "stream_event/message_delta event.type": [
+   "string"
+  ],
+  "stream_event/message_delta event.delta": [
+   "object"
+  ],
+  "stream_event/message_delta event.delta.stop_reason": [
+   "string"
+  ],
+  "stream_event/message_delta event.delta.stop_sequence": [
+   "null"
+  ],
+  "stream_event/message_delta event.delta.stop_details": [
+   "null"
+  ],
+  "stream_event/message_delta event.delta.container": [
+   "null"
+  ],
+  "stream_event/message_delta event.delta.safeguard_results": [
+   "array"
+  ],
+  "stream_event/message_delta event.delta.safeguard_results[].type": [
+   "string"
+  ],
+  "stream_event/message_delta event.delta.safeguard_results[].status": [
+   "object"
+  ],
+  "stream_event/message_delta event.delta.safeguard_results[].status.type": [
+   "string"
+  ],
+  "stream_event/message_delta event.delta.safeguard_results[].status.tool_uses": [
+   "object"
+  ],
+  "stream_event/message_delta event.usage": [
+   "object"
+  ],
+  "stream_event/message_delta event.usage.input_tokens": [
+   "number"
+  ],
+  "stream_event/message_delta event.usage.cache_creation_input_tokens": [
+   "number"
+  ],
+  "stream_event/message_delta event.usage.cache_read_input_tokens": [
+   "number"
+  ],
+  "stream_event/message_delta event.usage.output_tokens": [
+   "number"
+  ],
+  "stream_event/message_delta event.usage.output_tokens_details": [
+   "object"
+  ],
+  "stream_event/message_delta event.usage.output_tokens_details.thinking_tokens": [
+   "number"
+  ],
+  "stream_event/message_delta event.usage.iterations": [
+   "array"
+  ],
+  "stream_event/message_delta event.usage.iterations[].input_tokens": [
+   "number"
+  ],
+  "stream_event/message_delta event.usage.iterations[].output_tokens": [
+   "number"
+  ],
+  "stream_event/message_delta event.usage.iterations[].cache_read_input_tokens": [
+   "number"
+  ],
+  "stream_event/message_delta event.usage.iterations[].cache_creation_input_tokens": [
+   "number"
+  ],
+  "stream_event/message_delta event.usage.iterations[].cache_creation": [
+   "object"
+  ],
+  "stream_event/message_delta event.usage.iterations[].cache_creation.*": [
+   "number"
+  ],
+  "stream_event/message_delta event.usage.iterations[].type": [
+   "string"
+  ],
+  "stream_event/message_delta event.context_management": [
+   "object"
+  ],
+  "stream_event/message_delta event.context_management.applied_edits": [
+   "array"
+  ],
+  "stream_event/message_delta session_id": [
+   "string"
+  ],
+  "stream_event/message_delta parent_tool_use_id": [
+   "null"
+  ],
+  "stream_event/message_delta uuid": [
+   "string"
+  ],
+  "stream_event/message_delta api_message_id": [
+   "string"
+  ],
+  "stream_event/message_stop type": [
+   "string"
+  ],
+  "stream_event/message_stop event": [
+   "object"
+  ],
+  "stream_event/message_stop event.type": [
+   "string"
+  ],
+  "stream_event/message_stop session_id": [
+   "string"
+  ],
+  "stream_event/message_stop parent_tool_use_id": [
+   "null"
+  ],
+  "stream_event/message_stop uuid": [
+   "string"
+  ],
+  "stream_event/message_stop api_message_id": [
+   "string"
+  ],
+  "rate_limit_event type": [
+   "string"
+  ],
+  "rate_limit_event rate_limit_info": [
+   "object"
+  ],
+  "rate_limit_event rate_limit_info.status": [
+   "string"
+  ],
+  "rate_limit_event rate_limit_info.resetsAt": [
+   "number"
+  ],
+  "rate_limit_event rate_limit_info.rateLimitType": [
+   "string"
+  ],
+  "rate_limit_event rate_limit_info.overageStatus": [
+   "string"
+  ],
+  "rate_limit_event rate_limit_info.overageDisabledReason": [
+   "string"
+  ],
+  "rate_limit_event rate_limit_info.isUsingOverage": [
+   "boolean"
+  ],
+  "rate_limit_event rate_limit_info.unifiedWindows": [
+   "object"
+  ],
+  "rate_limit_event rate_limit_info.unifiedWindows.five_hour": [
+   "object"
+  ],
+  "rate_limit_event rate_limit_info.unifiedWindows.five_hour.utilization": [
+   "number"
+  ],
+  "rate_limit_event rate_limit_info.unifiedWindows.five_hour.resetsAt": [
+   "number"
+  ],
+  "rate_limit_event rate_limit_info.unifiedWindows.five_hour.status": [
+   "string"
+  ],
+  "rate_limit_event rate_limit_info.unifiedWindows.seven_day": [
+   "object"
+  ],
+  "rate_limit_event rate_limit_info.unifiedWindows.seven_day.utilization": [
+   "number"
+  ],
+  "rate_limit_event rate_limit_info.unifiedWindows.seven_day.resetsAt": [
+   "number"
+  ],
+  "rate_limit_event rate_limit_info.unifiedWindows.seven_day.status": [
+   "string"
+  ],
+  "rate_limit_event uuid": [
+   "string"
+  ],
+  "rate_limit_event session_id": [
+   "string"
+  ],
+  "result/success duration_api_ms": [
+   "number"
+  ],
+  "result/success stop_reason": [
+   "string"
+  ],
+  "result/success session_id": [
+   "string"
+  ],
+  "result/success total_cost_usd": [
+   "number"
+  ],
+  "result/success usage": [
+   "object"
+  ],
+  "result/success usage.input_tokens": [
+   "number"
+  ],
+  "result/success usage.cache_creation_input_tokens": [
+   "number"
+  ],
+  "result/success usage.cache_read_input_tokens": [
+   "number"
+  ],
+  "result/success usage.output_tokens": [
+   "number"
+  ],
+  "result/success usage.output_tokens_details": [
+   "object"
+  ],
+  "result/success usage.output_tokens_details.thinking_tokens": [
+   "number"
+  ],
+  "result/success usage.server_tool_use": [
+   "object"
+  ],
+  "result/success usage.server_tool_use.web_search_requests": [
+   "number"
+  ],
+  "result/success usage.server_tool_use.web_fetch_requests": [
+   "number"
+  ],
+  "result/success usage.service_tier": [
+   "string"
+  ],
+  "result/success usage.cache_creation": [
+   "object"
+  ],
+  "result/success usage.cache_creation.*": [
+   "number"
+  ],
+  "result/success usage.inference_geo": [
+   "string"
+  ],
+  "result/success usage.iterations": [
+   "array"
+  ],
+  "result/success usage.iterations[].input_tokens": [
+   "number"
+  ],
+  "result/success usage.iterations[].output_tokens": [
+   "number"
+  ],
+  "result/success usage.iterations[].cache_read_input_tokens": [
+   "number"
+  ],
+  "result/success usage.iterations[].cache_creation_input_tokens": [
+   "number"
+  ],
+  "result/success usage.iterations[].cache_creation": [
+   "object"
+  ],
+  "result/success usage.iterations[].cache_creation.*": [
+   "number"
+  ],
+  "result/success usage.iterations[].type": [
+   "string"
+  ],
+  "result/success usage.speed": [
+   "string"
+  ],
+  "result/success usage.fallback_credit": [
+   "null"
+  ],
+  "result/success modelUsage": [
+   "object"
+  ],
+  "result/success modelUsage.*": [
+   "object"
+  ],
+  "result/success modelUsage.*.inputTokens": [
+   "number"
+  ],
+  "result/success modelUsage.*.outputTokens": [
+   "number"
+  ],
+  "result/success modelUsage.*.cacheReadInputTokens": [
+   "number"
+  ],
+  "result/success modelUsage.*.cacheCreationInputTokens": [
+   "number"
+  ],
+  "result/success modelUsage.*.webSearchRequests": [
+   "number"
+  ],
+  "result/success modelUsage.*.costUSD": [
+   "number"
+  ],
+  "result/success modelUsage.*.contextWindow": [
+   "number"
+  ],
+  "result/success modelUsage.*.maxOutputTokens": [
+   "number"
+  ],
+  "result/success modelUsage.*.thinkingTokens": [
+   "number"
+  ],
+  "result/success modelUsage.*.cacheCreationEphemeral5mInputTokens": [
+   "number"
+  ],
+  "result/success modelUsage.*.cacheCreationEphemeral1hInputTokens": [
+   "number"
+  ],
+  "result/success modelUsage.*.canonicalModel": [
+   "string"
+  ],
+  "result/success modelUsage.*.provider": [
+   "string"
+  ],
+  "result/success modelUsage.*.costBasis": [
+   "string"
+  ],
+  "result/success permission_denials": [
+   "array"
+  ],
+  "result/success terminal_reason": [
+   "string"
+  ],
+  "result/success fast_mode_state": [
+   "string"
+  ],
+  "result/success fast_mode_disabled_reason": [
+   "string"
+  ],
+  "result/success subagent_stats": [
+   "object"
+  ],
+  "result/success subagent_stats.spawned": [
+   "number"
+  ],
+  "result/success subagent_stats.requested": [
+   "object"
+  ],
+  "result/success subagent_stats.requested.background": [
+   "number"
+  ],
+  "result/success subagent_stats.requested.foreground": [
+   "number"
+  ],
+  "result/success subagent_stats.requested.unset": [
+   "number"
+  ],
+  "result/success subagent_stats.started_in_background": [
+   "number"
+  ],
+  "result/success subagent_stats.max_depth": [
+   "number"
+  ],
+  "result/success subagent_stats.spawned_by_subagents": [
+   "number"
+  ],
+  "result/success subagent_stats.completed": [
+   "number"
+  ],
+  "result/success subagent_stats.failed": [
+   "number"
+  ],
+  "result/success subagent_stats.killed": [
+   "object"
+  ],
+  "result/success subagent_stats.killed.parent": [
+   "number"
+  ],
+  "result/success subagent_stats.killed.user": [
+   "number"
+  ],
+  "result/success subagent_stats.killed.system": [
+   "number"
+  ],
+  "result/success subagent_stats.refused": [
+   "object"
+  ],
+  "result/success subagent_stats.refused.depth_limit": [
+   "number"
+  ],
+  "result/success subagent_stats.refused.concurrency_limit": [
+   "number"
+  ],
+  "result/success subagent_stats.refused.budget": [
+   "number"
+  ],
+  "result/success subagent_stats.by_type": [
+   "object"
+  ],
+  "result/success safety_stops": [
+   "number"
+  ],
+  "result/success is_error": [
+   "boolean"
+  ],
+  "result/success num_turns": [
+   "number"
+  ],
+  "result/success subtype": [
+   "string"
+  ],
+  "result/success api_error_status": [
+   "null"
+  ],
+  "result/success result": [
+   "string"
+  ],
+  "result/success ttft_ms": [
+   "number"
+  ],
+  "result/success type": [
+   "string"
+  ],
+  "result/success duration_ms": [
+   "number"
+  ],
+  "result/success uuid": [
+   "string"
+  ],
+  "result/success ttft_stream_ms": [
+   "number"
+  ],
+  "result/success time_to_request_ms": [
+   "number"
+  ],
+  "result/success first_content_frame_ms": [
+   "number"
+  ],
+  "result/success queued_turn_count": [
+   "number"
+  ],
+  "result/success result_index": [
+   "number"
+  ],
+  "result/success model_usage_since_last_result": [
+   "object"
+  ],
+  "result/success model_usage_since_last_result.*": [
+   "object"
+  ],
+  "result/success model_usage_since_last_result.*.inputTokens": [
+   "number"
+  ],
+  "result/success model_usage_since_last_result.*.outputTokens": [
+   "number"
+  ],
+  "result/success model_usage_since_last_result.*.cacheReadInputTokens": [
+   "number"
+  ],
+  "result/success model_usage_since_last_result.*.cacheCreationInputTokens": [
+   "number"
+  ],
+  "result/success model_usage_since_last_result.*.webSearchRequests": [
+   "number"
+  ],
+  "result/success model_usage_since_last_result.*.costUSD": [
+   "number"
+  ],
+  "result/success model_usage_since_last_result.*.contextWindow": [
+   "number"
+  ],
+  "result/success model_usage_since_last_result.*.maxOutputTokens": [
+   "number"
+  ],
+  "result/success model_usage_since_last_result.*.thinkingTokens": [
+   "number"
+  ],
+  "result/success model_usage_since_last_result.*.cacheCreationEphemeral5mInputTokens": [
+   "number"
+  ],
+  "result/success model_usage_since_last_result.*.cacheCreationEphemeral1hInputTokens": [
+   "number"
+  ],
+  "result/success model_usage_since_last_result.*.canonicalModel": [
+   "string"
+  ],
+  "result/success model_usage_since_last_result.*.provider": [
+   "string"
+  ],
+  "result/success model_usage_since_last_result.*.costBasis": [
+   "string"
+  ],
+  "result/success credential_expires_at": [
+   "string"
+  ],
+  "file:session-owner type": [
+   "string"
+  ],
+  "file:session-owner accountUuid": [
+   "string"
+  ],
+  "file:session-owner organizationUuid": [
+   "string"
+  ],
+  "file:session-owner sessionId": [
+   "string"
+  ],
+  "file:queue-operation type": [
+   "string"
+  ],
+  "file:queue-operation operation": [
+   "string"
+  ],
+  "file:queue-operation timestamp": [
+   "string"
+  ],
+  "file:queue-operation sessionId": [
+   "string"
+  ],
+  "file:user parentUuid": [
+   "null",
+   "string"
+  ],
+  "file:user isSidechain": [
+   "boolean"
+  ],
+  "file:user promptId": [
+   "string"
+  ],
+  "file:user type": [
+   "string"
+  ],
+  "file:user message": [
+   "object"
+  ],
+  "file:user message.role": [
+   "string"
+  ],
+  "file:user message.content": [
+   "array"
+  ],
+  "file:user message.content[].type": [
+   "string"
+  ],
+  "file:user message.content[].text": [
+   "string"
+  ],
+  "file:user uuid": [
+   "string"
+  ],
+  "file:user timestamp": [
+   "string"
+  ],
+  "file:user permissionMode": [
+   "string"
+  ],
+  "file:user promptSource": [
+   "string"
+  ],
+  "file:user turnOrigin": [
+   "string"
+  ],
+  "file:user turnPromptId": [
+   "string"
+  ],
+  "file:user turnPosition": [
+   "object"
+  ],
+  "file:user turnPosition.promptIndex": [
+   "number"
+  ],
+  "file:user turnPosition.turnIndex": [
+   "number"
+  ],
+  "file:user userType": [
+   "string"
+  ],
+  "file:user entrypoint": [
+   "string"
+  ],
+  "file:user cwd": [
+   "string"
+  ],
+  "file:user sessionId": [
+   "string"
+  ],
+  "file:user version": [
+   "string"
+  ],
+  "file:user gitBranch": [
+   "string"
+  ],
+  "file:user slug": [
+   "string"
+  ],
+  "file:attachment parentUuid": [
+   "string"
+  ],
+  "file:attachment isSidechain": [
+   "boolean"
+  ],
+  "file:attachment attachment": [
+   "object"
+  ],
+  "file:attachment attachment.type": [
+   "string"
+  ],
+  "file:attachment attachment.snapshot": [
+   "object"
+  ],
+  "file:attachment attachment.snapshot.workingDirectory": [
+   "string"
+  ],
+  "file:attachment attachment.snapshot.isWorktree": [
+   "boolean"
+  ],
+  "file:attachment attachment.snapshot.isGitRepo": [
+   "boolean"
+  ],
+  "file:attachment attachment.snapshot.additionalWorkingDirectories": [
+   "array"
+  ],
+  "file:attachment attachment.snapshot.platform": [
+   "string"
+  ],
+  "file:attachment attachment.snapshot.shell": [
+   "string"
+  ],
+  "file:attachment attachment.snapshot.osVersion": [
+   "string"
+  ],
+  "file:attachment type": [
+   "string"
+  ],
+  "file:attachment uuid": [
+   "string"
+  ],
+  "file:attachment timestamp": [
+   "string"
+  ],
+  "file:attachment rendered": [
+   "array"
+  ],
+  "file:attachment rendered[].content": [
+   "string"
+  ],
+  "file:attachment renderedRole": [
+   "string"
+  ],
+  "file:attachment userType": [
+   "string"
+  ],
+  "file:attachment entrypoint": [
+   "string"
+  ],
+  "file:attachment cwd": [
+   "string"
+  ],
+  "file:attachment sessionId": [
+   "string"
+  ],
+  "file:attachment version": [
+   "string"
+  ],
+  "file:attachment gitBranch": [
+   "string"
+  ],
+  "file:attachment slug": [
+   "string"
+  ],
+  "file:attachment attachment.identity": [
+   "object"
+  ],
+  "file:attachment attachment.identity.modelId": [
+   "string"
+  ],
+  "file:attachment attachment.identity.marketingName": [
+   "string"
+  ],
+  "file:attachment attachment.identity.knowledgeCutoff": [
+   "string"
+  ],
+  "file:attachment attachment.text": [
+   "string"
+  ],
+  "file:attachment attachment.addedNames": [
+   "array"
+  ],
+  "file:attachment attachment.addedLines": [
+   "array"
+  ],
+  "file:attachment attachment.removedNames": [
+   "array"
+  ],
+  "file:attachment attachment.wireHiddenNames": [
+   "array"
+  ],
+  "file:attachment attachment.readdedNames": [
+   "array"
+  ],
+  "file:attachment attachment.pendingMcpServers": [
+   "array"
+  ],
+  "file:attachment attachment.needsAuthMcpServers": [
+   "array"
+  ],
+  "file:attachment attachment.failedMcpServers": [
+   "array"
+  ],
+  "file:attachment attachment.addedTypes": [
+   "array"
+  ],
+  "file:attachment attachment.builtInTypes": [
+   "array"
+  ],
+  "file:attachment attachment.builtInPluginTypes": [
+   "array"
+  ],
+  "file:attachment attachment.removedTypes": [
+   "array"
+  ],
+  "file:attachment attachment.isInitial": [
+   "boolean"
+  ],
+  "file:attachment attachment.showConcurrencyNote": [
+   "boolean"
+  ],
+  "file:attachment attachment.content": [
+   "string"
+  ],
+  "file:attachment attachment.skillCount": [
+   "number"
+  ],
+  "file:attachment attachment.names": [
+   "array"
+  ],
+  "file:attachment attachment.digests": [
+   "array"
+  ],
+  "file:attachment attachment.reminderType": [
+   "string"
+  ],
+  "file:attachment attachment.isSubAgent": [
+   "boolean"
+  ],
+  "file:attachment attachment.planFilePath": [
+   "string"
+  ],
+  "file:attachment attachment.planExists": [
+   "boolean"
+  ],
+  "file:atis-latch type": [
+   "string"
+  ],
+  "file:atis-latch atis": [
+   "string"
+  ],
+  "file:atis-latch sessionId": [
+   "string"
+  ],
+  "file:attachment attachment.context": [
+   "object"
+  ],
+  "file:attachment attachment.context.userEmail": [
+   "string"
+  ],
+  "file:attachment attachment.date": [
+   "string"
+  ],
+  "file:attachment attachment.organizationUuid": [
+   "string"
+  ],
+  "file:attachment attachment.url": [
+   "null"
+  ],
+  "file:attachment attachment.commit": [
+   "string"
+  ],
+  "file:attachment attachment.pr": [
+   "string"
+  ],
+  "file:attachment attachment.sendUserFileHint": [
+   "boolean"
+  ],
+  "file:attachment attachment.managedCommit": [
+   "boolean"
+  ],
+  "file:attachment attachment.managedPr": [
+   "boolean"
+  ],
+  "file:attachment renderedBesideToolResult": [
+   "boolean"
+  ],
+  "file:attachment attachment.systemPrompt": [
+   "array"
+  ],
+  "file:attachment attachment.reminderFold": [
+   "boolean"
+  ],
+  "file:attachment attachment.echoWireToolInputs": [
+   "boolean"
+  ],
+  "file:attachment attachment.contextRendering": [
+   "string"
+  ],
+  "file:api-request-shape type": [
+   "string"
+  ],
+  "file:api-request-shape sessionId": [
+   "string"
+  ],
+  "file:api-request-shape shapeHash": [
+   "string"
+  ],
+  "file:api-request-shape timestamp": [
+   "string"
+  ],
+  "file:api-request-shape version": [
+   "string"
+  ],
+  "file:api-request-shape shape": [
+   "object"
+  ],
+  "file:api-request-shape shape.system": [
+   "array"
+  ],
+  "file:api-request-shape shape.system[].type": [
+   "string"
+  ],
+  "file:api-request-shape shape.system[].text": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools": [
+   "array"
+  ],
+  "file:api-request-shape shape.tools[].name": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.$schema": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.description": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.description.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.description.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.prompt": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.prompt.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.prompt.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.subagent_type": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.subagent_type.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.subagent_type.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.model": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.model.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.model.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.model.enum": [
+   "array"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.effort": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.effort.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.effort.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.effort.enum": [
+   "array"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.run_in_background": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.run_in_background.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.run_in_background.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.isolation": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.isolation.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.isolation.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.isolation.enum": [
+   "array"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.required": [
+   "array"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.additionalProperties": [
+   "boolean"
+  ],
+  "file:api-request-shape shape.tools[].eager_input_streaming": [
+   "boolean"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.minItems": [
+   "number"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.maxItems": [
+   "number"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.properties": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.properties.question": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.properties.header": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.properties.options": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.properties.multiSelect": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.required": [
+   "array"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.questions.items.additionalProperties": [
+   "boolean"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.answers": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.answers.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.answers.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.answers.propertyNames": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.answers.propertyNames.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.answers.additionalProperties": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.answers.additionalProperties.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.propertyNames": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.propertyNames.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.additionalProperties": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.additionalProperties.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.additionalProperties.properties": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.additionalProperties.properties.preview": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.additionalProperties.properties.notes": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.annotations.additionalProperties.additionalProperties": [
+   "boolean"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.properties": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.properties.source": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.properties.source.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.properties.source.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.metadata.additionalProperties": [
+   "boolean"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.command": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.command.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.command.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.timeout": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.timeout.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.timeout.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.dangerouslyDisableSandbox": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.dangerouslyDisableSandbox.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.dangerouslyDisableSandbox.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.file_path": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.file_path.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.file_path.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.old_string": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.old_string.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.old_string.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.new_string": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.new_string.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.new_string.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.replace_all": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.replace_all.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.replace_all.default": [
+   "boolean"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.replace_all.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.channel": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.channel.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.channel.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.channel.maxLength": [
+   "number"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.q": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.q.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.q.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.q.maxLength": [
+   "number"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.offset": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.offset.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.offset.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.offset.minimum": [
+   "number"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.offset.maximum": [
+   "number"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.limit": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.limit.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.limit.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.limit.exclusiveMinimum": [
+   "number"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.limit.maximum": [
+   "number"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.pages": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.pages.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.pages.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.allow_large": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.allow_large.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.allow_large.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.level": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.level.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.level.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.level.enum": [
+   "array"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.maxItems": [
+   "number"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.file": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.line": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.summary": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.short_summary": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.failure_scenario": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.category": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.verdict": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.properties.outcome": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.required": [
+   "array"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.findings.items.additionalProperties": [
+   "boolean"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.delaySeconds": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.delaySeconds.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.delaySeconds.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.reason": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.reason.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.reason.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.stop": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.stop.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.stop.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.noop": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.noop.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.noop.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.skill": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.skill.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.skill.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.args": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.args.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.args.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.query": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.query.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.query.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.max_results": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.max_results.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.max_results.default": [
+   "number"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.max_results.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].defer_loading": [
+   "boolean"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.content": [
+   "object"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.content.description": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].input_schema.properties.content.type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].type": [
+   "string"
+  ],
+  "file:api-request-shape shape.tools[].model": [
+   "string"
+  ],
+  "file:api-request-blob type": [
+   "string"
+  ],
+  "file:api-request-blob sessionId": [
+   "string"
+  ],
+  "file:api-request-blob hash": [
+   "string"
+  ],
+  "file:api-request-blob message": [
+   "object"
+  ],
+  "file:api-request-blob message.role": [
+   "string"
+  ],
+  "file:api-request-blob message.content": [
+   "array"
+  ],
+  "file:api-request-blob message.content[].type": [
+   "string"
+  ],
+  "file:api-request-blob message.content[].text": [
+   "string"
+  ],
+  "file:api-request-blob message.output_config": [
+   "object"
+  ],
+  "file:api-request-blob message.output_config.effort": [
+   "string"
+  ],
+  "file:api-request type": [
+   "string"
+  ],
+  "file:api-request sessionId": [
+   "string"
+  ],
+  "file:api-request id": [
+   "string"
+  ],
+  "file:api-request timestamp": [
+   "string"
+  ],
+  "file:api-request version": [
+   "string"
+  ],
+  "file:api-request querySource": [
+   "string"
+  ],
+  "file:api-request shapeHash": [
+   "string"
+  ],
+  "file:api-request params": [
+   "object"
+  ],
+  "file:api-request params.model": [
+   "string"
+  ],
+  "file:api-request params.betas": [
+   "array"
+  ],
+  "file:api-request params.max_tokens": [
+   "number"
+  ],
+  "file:api-request params.thinking": [
+   "object"
+  ],
+  "file:api-request params.thinking.type": [
+   "string"
+  ],
+  "file:api-request params.thinking.display": [
+   "string"
+  ],
+  "file:api-request params.context_management": [
+   "object"
+  ],
+  "file:api-request params.context_management.edits": [
+   "array"
+  ],
+  "file:api-request params.context_management.edits[].type": [
+   "string"
+  ],
+  "file:api-request params.context_management.edits[].keep": [
+   "string"
+  ],
+  "file:api-request params.output_config": [
+   "object"
+  ],
+  "file:api-request params.output_config.effort": [
+   "string"
+  ],
+  "file:api-request keep": [
+   "number"
+  ],
+  "file:api-request tail": [
+   "array"
+  ],
+  "file:api-request cacheControl": [
+   "array"
+  ],
+  "file:api-request cacheControl[].path": [
+   "array"
+  ],
+  "file:api-request cacheControl[].value": [
+   "object"
+  ],
+  "file:api-request cacheControl[].value.type": [
+   "string"
+  ],
+  "file:api-request cacheControl[].value.ttl": [
+   "string"
+  ],
+  "file:api-request cacheControl[].value.scope": [
+   "string"
+  ],
+  "file:api-request requestDigest": [
+   "string"
+  ],
+  "file:last-prompt type": [
+   "string"
+  ],
+  "file:last-prompt lastPrompt": [
+   "string"
+  ],
+  "file:last-prompt leafUuid": [
+   "string"
+  ],
+  "file:last-prompt sessionId": [
+   "string"
+  ],
+  "file:assistant parentUuid": [
+   "string"
+  ],
+  "file:assistant isSidechain": [
+   "boolean"
+  ],
+  "file:assistant message": [
+   "object"
+  ],
+  "file:assistant message.model": [
+   "string"
+  ],
+  "file:assistant message.id": [
+   "string"
+  ],
+  "file:assistant message.type": [
+   "string"
+  ],
+  "file:assistant message.role": [
+   "string"
+  ],
+  "file:assistant message.content": [
+   "array"
+  ],
+  "file:assistant message.content[].type": [
+   "string"
+  ],
+  "file:assistant message.content[].thinking": [
+   "string"
+  ],
+  "file:assistant message.content[].signature": [
+   "string"
+  ],
+  "file:assistant message.container": [
+   "null"
+  ],
+  "file:assistant message.stop_reason": [
+   "string"
+  ],
+  "file:assistant message.stop_sequence": [
+   "null"
+  ],
+  "file:assistant message.stop_details": [
+   "null"
+  ],
+  "file:assistant message.usage": [
+   "object"
+  ],
+  "file:assistant message.usage.input_tokens": [
+   "number"
+  ],
+  "file:assistant message.usage.cache_creation_input_tokens": [
+   "number"
+  ],
+  "file:assistant message.usage.cache_read_input_tokens": [
+   "number"
+  ],
+  "file:assistant message.usage.output_tokens": [
+   "number"
+  ],
+  "file:assistant message.usage.output_tokens_details": [
+   "object"
+  ],
+  "file:assistant message.usage.output_tokens_details.thinking_tokens": [
+   "number"
+  ],
+  "file:assistant message.usage.server_tool_use": [
+   "object"
+  ],
+  "file:assistant message.usage.server_tool_use.web_search_requests": [
+   "number"
+  ],
+  "file:assistant message.usage.server_tool_use.web_fetch_requests": [
+   "number"
+  ],
+  "file:assistant message.usage.service_tier": [
+   "string"
+  ],
+  "file:assistant message.usage.cache_creation": [
+   "object"
+  ],
+  "file:assistant message.usage.cache_creation.*": [
+   "number"
+  ],
+  "file:assistant message.usage.inference_geo": [
+   "string"
+  ],
+  "file:assistant message.usage.iterations": [
+   "array"
+  ],
+  "file:assistant message.usage.iterations[].input_tokens": [
+   "number"
+  ],
+  "file:assistant message.usage.iterations[].output_tokens": [
+   "number"
+  ],
+  "file:assistant message.usage.iterations[].cache_read_input_tokens": [
+   "number"
+  ],
+  "file:assistant message.usage.iterations[].cache_creation_input_tokens": [
+   "number"
+  ],
+  "file:assistant message.usage.iterations[].cache_creation": [
+   "object"
+  ],
+  "file:assistant message.usage.iterations[].cache_creation.*": [
+   "number"
+  ],
+  "file:assistant message.usage.iterations[].type": [
+   "string"
+  ],
+  "file:assistant message.usage.speed": [
+   "string"
+  ],
+  "file:assistant message.usage.fallback_credit": [
+   "null"
+  ],
+  "file:assistant message.input_transformations": [
+   "array"
+  ],
+  "file:assistant message.diagnostics": [
+   "null"
+  ],
+  "file:assistant message.context_management": [
+   "null"
+  ],
+  "file:assistant thinkingDurationMs": [
+   "number"
+  ],
+  "file:assistant thinkingDisplay": [
+   "string"
+  ],
+  "file:assistant serverClassifierRequest": [
+   "string"
+  ],
+  "file:assistant apiBlockIndex": [
+   "number"
+  ],
+  "file:assistant requestId": [
+   "string"
+  ],
+  "file:assistant requestRef": [
+   "string"
+  ],
+  "file:assistant requestedModel": [
+   "string"
+  ],
+  "file:assistant promptCacheRequested": [
+   "string"
+  ],
+  "file:assistant type": [
+   "string"
+  ],
+  "file:assistant uuid": [
+   "string"
+  ],
+  "file:assistant timestamp": [
+   "string"
+  ],
+  "file:assistant advisorModel": [
+   "string"
+  ],
+  "file:assistant effort": [
+   "string"
+  ],
+  "file:assistant perTurnEffort": [
+   "string"
+  ],
+  "file:assistant madeBy": [
+   "string"
+  ],
+  "file:assistant userType": [
+   "string"
+  ],
+  "file:assistant entrypoint": [
+   "string"
+  ],
+  "file:assistant cwd": [
+   "string"
+  ],
+  "file:assistant sessionId": [
+   "string"
+  ],
+  "file:assistant version": [
+   "string"
+  ],
+  "file:assistant gitBranch": [
+   "string"
+  ],
+  "file:assistant slug": [
+   "string"
+  ],
+  "file:assistant message.content[].text": [
+   "string"
+  ],
+  "file:attachment attachment.tools": [
+   "array"
+  ],
+  "file:attachment attachment.tools[].name": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.name": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.$schema": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.description": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.description.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.description.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.prompt": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.prompt.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.prompt.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.subagent_type": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.subagent_type.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.subagent_type.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.model": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.model.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.model.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.model.enum": [
+   "array"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.effort": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.effort.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.effort.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.effort.enum": [
+   "array"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.run_in_background": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.run_in_background.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.run_in_background.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.isolation": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.isolation.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.isolation.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.isolation.enum": [
+   "array"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.required": [
+   "array"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.additionalProperties": [
+   "boolean"
+  ],
+  "file:attachment attachment.tools[].schema.eager_input_streaming": [
+   "boolean"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.minItems": [
+   "number"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.maxItems": [
+   "number"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.items": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.items.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.items.properties": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.items.required": [
+   "array"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.questions.items.additionalProperties": [
+   "boolean"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers.propertyNames": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers.propertyNames.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers.additionalProperties": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.answers.additionalProperties.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.propertyNames": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.propertyNames.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.additionalProperties": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.additionalProperties.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.additionalProperties.properties": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.annotations.additionalProperties.additionalProperties": [
+   "boolean"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.metadata": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.metadata.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.metadata.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.metadata.properties": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.metadata.properties.source": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.metadata.additionalProperties": [
+   "boolean"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.command": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.command.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.command.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.timeout": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.timeout.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.timeout.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.dangerouslyDisableSandbox": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.dangerouslyDisableSandbox.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.dangerouslyDisableSandbox.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.file_path": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.file_path.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.file_path.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.old_string": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.old_string.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.old_string.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.new_string": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.new_string.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.new_string.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.replace_all": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.replace_all.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.replace_all.default": [
+   "boolean"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.replace_all.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.channel": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.channel.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.channel.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.channel.maxLength": [
+   "number"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.q": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.q.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.q.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.q.maxLength": [
+   "number"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.offset": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.offset.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.offset.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.offset.minimum": [
+   "number"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.offset.maximum": [
+   "number"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.limit": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.limit.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.limit.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.limit.exclusiveMinimum": [
+   "number"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.limit.maximum": [
+   "number"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.pages": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.pages.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.pages.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.allow_large": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.allow_large.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.allow_large.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.level": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.level.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.level.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.level.enum": [
+   "array"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.maxItems": [
+   "number"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.items": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.items.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.items.properties": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.items.required": [
+   "array"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.findings.items.additionalProperties": [
+   "boolean"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.delaySeconds": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.delaySeconds.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.delaySeconds.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.reason": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.reason.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.reason.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.stop": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.stop.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.stop.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.noop": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.noop.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.noop.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.skill": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.skill.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.skill.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.args": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.args.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.args.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.query": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.query.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.query.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.max_results": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.max_results.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.max_results.default": [
+   "number"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.max_results.type": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.content": [
+   "object"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.content.description": [
+   "string"
+  ],
+  "file:attachment attachment.tools[].schema.input_schema.properties.content.type": [
+   "string"
+  ],
+  "file:attachment attachment.cliPrefix": [
+   "string"
+  ],
+  "file:attachment attachment.systemTurns": [
+   "boolean"
+  ],
+  "file:attachment attachment.toolChangeHeader": [
+   "boolean"
+  ],
+  "file:attachment attachment.inlineTools": [
+   "boolean"
+  ],
+  "file:attachment attachment.keptReminders": [
+   "boolean"
+  ],
+  "file:cost-state type": [
+   "string"
+  ],
+  "file:cost-state sessionId": [
+   "string"
+  ],
+  "file:cost-state totalCostUSD": [
+   "number"
+  ],
+  "file:cost-state totalAPIDuration": [
+   "number"
+  ],
+  "file:cost-state totalAPIDurationWithoutRetries": [
+   "number"
+  ],
+  "file:cost-state totalToolDuration": [
+   "number"
+  ],
+  "file:cost-state totalLinesAdded": [
+   "number"
+  ],
+  "file:cost-state totalLinesRemoved": [
+   "number"
+  ],
+  "file:cost-state totalDuration": [
+   "number"
+  ],
+  "file:cost-state startTime": [
+   "number"
+  ],
+  "file:cost-state modelUsage": [
+   "object"
+  ],
+  "file:cost-state modelUsage.*": [
+   "object"
+  ],
+  "file:cost-state modelUsage.*.inputTokens": [
+   "number"
+  ],
+  "file:cost-state modelUsage.*.outputTokens": [
+   "number"
+  ],
+  "file:cost-state modelUsage.*.thinkingTokens": [
+   "number"
+  ],
+  "file:cost-state modelUsage.*.cacheReadInputTokens": [
+   "number"
+  ],
+  "file:cost-state modelUsage.*.cacheCreationInputTokens": [
+   "number"
+  ],
+  "file:cost-state modelUsage.*.cacheCreationEphemeral5mInputTokens": [
+   "number"
+  ],
+  "file:cost-state modelUsage.*.cacheCreationEphemeral1hInputTokens": [
+   "number"
+  ],
+  "file:cost-state modelUsage.*.webSearchRequests": [
+   "number"
+  ],
+  "file:cost-state modelUsage.*.costUSD": [
+   "number"
+  ],
+  "file:cost-state hasUnknownModelCost": [
+   "boolean"
+  ],
+  "file:mode type": [
+   "string"
+  ],
+  "file:mode mode": [
+   "string"
+  ],
+  "file:mode sessionId": [
+   "string"
+  ],
+  "stream_event/content_block_start event.content_block.id": [
+   "string"
+  ],
+  "stream_event/content_block_start event.content_block.name": [
+   "string"
+  ],
+  "stream_event/content_block_start event.content_block.input": [
+   "object"
+  ],
+  "stream_event/content_block_start event.content_block.caller": [
+   "object"
+  ],
+  "stream_event/content_block_start event.content_block.caller.type": [
+   "string"
+  ],
+  "stream_event/content_block_delta event.delta.partial_json": [
+   "string"
+  ],
+  "assistant message.content[].id": [
+   "string"
+  ],
+  "assistant message.content[].name": [
+   "string"
+  ],
+  "assistant message.content[].input": [
+   "object"
+  ],
+  "assistant message.content[].input.file_path": [
+   "string"
+  ],
+  "assistant message.content[].caller": [
+   "object"
+  ],
+  "assistant message.content[].caller.type": [
+   "string"
+  ],
+  "assistant wire_tool_inputs": [
+   "object"
+  ],
+  "assistant wire_tool_inputs.*": [
+   "object"
+  ],
+  "assistant wire_tool_inputs.*.file_path": [
+   "string"
+  ],
+  "user type": [
+   "string"
+  ],
+  "user message": [
+   "object"
+  ],
+  "user message.role": [
+   "string"
+  ],
+  "user message.content": [
+   "array"
+  ],
+  "user message.content[].tool_use_id": [
+   "string"
+  ],
+  "user message.content[].type": [
+   "string"
+  ],
+  "user message.content[].content": [
+   "string"
+  ],
+  "user parent_tool_use_id": [
+   "null"
+  ],
+  "user session_id": [
+   "string"
+  ],
+  "user uuid": [
+   "string"
+  ],
+  "user timestamp": [
+   "string"
+  ],
+  "user tool_use_result": [
+   "object"
+  ],
+  "user tool_use_result.type": [
+   "string"
+  ],
+  "user tool_use_result.file": [
+   "object"
+  ],
+  "user tool_use_result.file.filePath": [
+   "string"
+  ],
+  "user tool_use_result.file.content": [
+   "string"
+  ],
+  "user tool_use_result.file.numLines": [
+   "number"
+  ],
+  "user tool_use_result.file.startLine": [
+   "number"
+  ],
+  "user tool_use_result.file.totalLines": [
+   "number"
+  ],
+  "user tool_result_meta": [
+   "array"
+  ],
+  "user tool_result_meta[].id": [
+   "string"
+  ],
+  "user tool_result_meta[].permission_decision": [
+   "object"
+  ],
+  "user tool_result_meta[].permission_decision.decision": [
+   "string"
+  ],
+  "user tool_result_meta[].permission_decision.source": [
+   "string"
+  ],
+  "user tool_result_meta[].permission_decision.reason_type": [
+   "string"
+  ],
+  "assistant message.content[].input.content": [
+   "string"
+  ],
+  "assistant wire_tool_inputs.*.content": [
+   "string"
+  ],
+  "stream_event/message_delta event.delta.safeguard_results[].status.tool_uses.*": [
+   "object"
+  ],
+  "stream_event/message_delta event.delta.safeguard_results[].status.tool_uses.*.type": [
+   "string"
+  ],
+  "user tool_use_result.filePath": [
+   "string"
+  ],
+  "user tool_use_result.content": [
+   "string"
+  ],
+  "user tool_use_result.structuredPatch": [
+   "array"
+  ],
+  "user tool_use_result.structuredPatch[].oldStart": [
+   "number"
+  ],
+  "user tool_use_result.structuredPatch[].oldLines": [
+   "number"
+  ],
+  "user tool_use_result.structuredPatch[].newStart": [
+   "number"
+  ],
+  "user tool_use_result.structuredPatch[].newLines": [
+   "number"
+  ],
+  "user tool_use_result.structuredPatch[].lines": [
+   "array"
+  ],
+  "user tool_use_result.originalFile": [
+   "string"
+  ],
+  "user tool_use_result.userModified": [
+   "boolean"
+  ],
+  "assistant message.content[].input.command": [
+   "string"
+  ],
+  "assistant message.content[].input.description": [
+   "string"
+  ],
+  "assistant wire_tool_inputs.*.command": [
+   "string"
+  ],
+  "assistant wire_tool_inputs.*.description": [
+   "string"
+  ],
+  "user message.content[].is_error": [
+   "boolean"
+  ],
+  "user tool_use_result.stdout": [
+   "string"
+  ],
+  "user tool_use_result.stderr": [
+   "string"
+  ],
+  "user tool_use_result.interrupted": [
+   "boolean"
+  ],
+  "user tool_use_result.isImage": [
+   "boolean"
+  ],
+  "user tool_use_result.noOutputExpected": [
+   "boolean"
+  ],
+  "stream_event/message_delta event.delta.safeguard_results[].status.tool_uses.*.outcome": [
+   "string"
+  ],
+  "stream_event/message_delta event.delta.safeguard_results[].status.tool_uses.*.cited_rule": [
+   "null"
+  ],
+  "assistant message.content[].input.questions": [
+   "array"
+  ],
+  "assistant message.content[].input.questions[].question": [
+   "string"
+  ],
+  "assistant message.content[].input.questions[].header": [
+   "string"
+  ],
+  "assistant message.content[].input.questions[].multiSelect": [
+   "boolean"
+  ],
+  "assistant message.content[].input.questions[].options": [
+   "array"
+  ],
+  "assistant message.content[].input.questions[].options[].label": [
+   "string"
+  ],
+  "assistant message.content[].input.questions[].options[].description": [
+   "string"
+  ],
+  "assistant wire_tool_inputs.*.questions": [
+   "array"
+  ],
+  "assistant wire_tool_inputs.*.questions[].question": [
+   "string"
+  ],
+  "assistant wire_tool_inputs.*.questions[].header": [
+   "string"
+  ],
+  "assistant wire_tool_inputs.*.questions[].multiSelect": [
+   "boolean"
+  ],
+  "assistant wire_tool_inputs.*.questions[].options": [
+   "array"
+  ],
+  "assistant wire_tool_inputs.*.questions[].options[].label": [
+   "string"
+  ],
+  "assistant wire_tool_inputs.*.questions[].options[].description": [
+   "string"
+  ],
+  "control_request type": [
+   "string"
+  ],
+  "control_request request_id": [
+   "string"
+  ],
+  "control_request request": [
+   "object"
+  ],
+  "control_request request.subtype": [
+   "string"
+  ],
+  "control_request request.tool_name": [
+   "string"
+  ],
+  "control_request request.display_name": [
+   "string"
+  ],
+  "control_request request.input": [
+   "object"
+  ],
+  "control_request request.input.questions": [
+   "array"
+  ],
+  "control_request request.input.questions[].question": [
+   "string"
+  ],
+  "control_request request.input.questions[].header": [
+   "string"
+  ],
+  "control_request request.input.questions[].options": [
+   "array"
+  ],
+  "control_request request.input.questions[].options[].label": [
+   "string"
+  ],
+  "control_request request.input.questions[].options[].description": [
+   "string"
+  ],
+  "control_request request.input.questions[].multiSelect": [
+   "boolean"
+  ],
+  "control_request request.tool_use_id": [
+   "string"
+  ],
+  "control_request request.requires_user_interaction": [
+   "boolean"
+  ],
+  "user tool_use_result.questions": [
+   "array"
+  ],
+  "user tool_use_result.questions[].question": [
+   "string"
+  ],
+  "user tool_use_result.questions[].header": [
+   "string"
+  ],
+  "user tool_use_result.questions[].options": [
+   "array"
+  ],
+  "user tool_use_result.questions[].options[].label": [
+   "string"
+  ],
+  "user tool_use_result.questions[].options[].description": [
+   "string"
+  ],
+  "user tool_use_result.questions[].multiSelect": [
+   "boolean"
+  ],
+  "user tool_use_result.answers": [
+   "object"
+  ],
+  "user tool_use_result.answers.Which option do you want: BATONANSWER or OTHER?": [
+   "string"
+  ]
+ }
 }
