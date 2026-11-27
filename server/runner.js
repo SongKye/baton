@@ -17,6 +17,7 @@ import { tr } from './i18n.js';
 import { EventEmitter } from 'node:events';
 import crypto from 'node:crypto';
 import { summarizeTool } from './sources/common.js';
+import { agyArtifactsInArgs, agyArtifactBlock } from './sources/agy.js';
 import { getKV, setKV, patchSessionMeta } from './store.js';
 import { codexDefaultFallback } from './providers.js';
 import { clip, ONESHOT_DIR } from './util.js';
@@ -238,6 +239,7 @@ function codexParser(run) {
 
 function agyParser(run) {
   const seen = new Set();
+  const artifacts = new Set(); // plan/artifact files written this turn: shown inline once the turn ends
   return (e) => {
     if (e.event === 'init' && e.conversation_id) {
       run.setSession(e.conversation_id);
@@ -256,10 +258,13 @@ function agyParser(run) {
           run.emit({ t: 'tool', name, summary: summarizeTool(name, s.tool_info?.parameters || {}) });
         }
         if (s.state === 'DONE' || s.state === 'ERROR' || s.state === 'CANCELED') run.emit({ t: 'tool_done', error: s.state !== 'DONE' });
+        if (s.state === 'DONE') for (const a of agyArtifactsInArgs(s.tool_info?.parameters)) artifacts.add(a);
       }
     } else if (e.event === 'result') {
       const r = e.result || {};
       if (r.conversation_id) run.setSession(r.conversation_id);
+      for (const a of artifacts) { const text = agyArtifactBlock(a); if (text) { run.emit({ t: 'text', text }); run.emit({ t: 'text_end' }); } }
+      artifacts.clear();
       run.result = {
         ok: r.status === 'SUCCESS', result: r.response, usage: r.usage, error: r.status === 'SUCCESS' ? null : (r.error || r.status),
         denied: (r.denied_actions || []).map((d) => d.display_name || d.action),

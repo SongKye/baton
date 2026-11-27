@@ -5,6 +5,7 @@
 //   step_type 14 (user input):      field 19.2  -> user text
 //   step_type 15 (agent response):  field 20.1  -> reply text, 20.3 -> thinking, 20.7.{2,3} -> tool call name/args
 import { DatabaseSync } from 'node:sqlite';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HOME, clip, oneLine, statSafe, cleanPrompt, eachJsonl } from '../util.js';
@@ -16,6 +17,39 @@ const ROOT = path.join(HOME, '.gemini', 'antigravity-cli');
 const SUMMARY_DB = path.join(ROOT, 'conversation_summaries.db');
 const CONV_DIR = path.join(ROOT, 'conversations');
 const HISTORY = path.join(ROOT, 'history.jsonl');
+
+// Plan mode writes the plan into ~/.gemini/antigravity-cli/brain/<conversation>/*.md and the reply only
+// links to it — a file:// link nobody can open from a phone. Baton shows those artifact files inline.
+const BRAIN = path.join(ROOT, 'brain');
+const ARTIFACT_MAX = 64 * 1024;
+/** Absolute path if `p` (a path or file:// URL) is a markdown artifact inside agy's brain folder, else null. */
+export function agyArtifactPath(p) {
+  if (typeof p !== 'string' || !p) return null;
+  let abs;
+  try { abs = path.resolve(p.startsWith('file://') ? fileURLToPath(p) : p); } catch { return null; }
+  return abs.startsWith(BRAIN + path.sep) && /\.md$/i.test(abs) ? abs : null;
+}
+/** Artifact paths named in a tool call's arguments (object or JSON string). */
+export function agyArtifactsInArgs(args) {
+  let a = args;
+  if (typeof a === 'string') { try { a = JSON.parse(a); } catch { return []; } }
+  if (!a || typeof a !== 'object') return [];
+  return Object.values(a).map(agyArtifactPath).filter(Boolean);
+}
+/** Markdown block showing an artifact file's current contents, or '' if it can't be read. */
+export function agyArtifactBlock(abs) {
+  let body;
+  try {
+    const fd = fs.openSync(abs, 'r');
+    try {
+      const buf = Buffer.alloc(ARTIFACT_MAX + 1);
+      const n = fs.readSync(fd, buf, 0, buf.length, 0);
+      body = buf.subarray(0, Math.min(n, ARTIFACT_MAX)).toString('utf8') + (n > ARTIFACT_MAX ? '\n\n…' : '');
+    } finally { fs.closeSync(fd); }
+  } catch { return ''; }
+  if (!body.trim()) return '';
+  return `\n\n---\n\n**📋 ${path.basename(abs)}**\n\n${body.trim()}\n`;
+}
 
 // Conversations the user typed into interactively (headless `agy -p` runs never appear here).
 let histCache = { mtimeMs: 0, ids: new Set() };
@@ -176,6 +210,12 @@ function firstNum(lv, p) {
 
 export async function readAgy(file) {
   const msgs = [];
+  // artifact files (plans etc.) written during a turn are shown once, after that turn's last reply
+  const artifacts = new Set();
+  const flushArtifacts = () => {
+    for (const a of artifacts) { const text = agyArtifactBlock(a).trim(); if (text) msgs.push({ role: 'assistant', text }); }
+    artifacts.clear();
+  };
   let db;
   try { db = openRO(file); } catch { return msgs; }
   try {
@@ -186,6 +226,7 @@ export async function readAgy(file) {
       if (r.step_type !== 14 && r.step_type !== 15) continue;
       const lv = leaves(buf);
       if (r.step_type === 14) {
+        flushArtifacts();
         const t = first(lv, '19.2') || first(lv, '19.3.1');
         if (t) {
           // strip the attachment footer Baton adds for agy (see runner.agyCmd)
@@ -203,11 +244,13 @@ export async function readAgy(file) {
           if (k === '20.7.2') name = v;
           else if (k === '20.7.3' && name) {
             msgs.push({ role: 'tool', tool: { name, summary: summarizeTool(name, v), input: v } });
+            for (const a of agyArtifactsInArgs(v)) artifacts.add(a);
             name = null;
           }
         }
       }
     }
+    flushArtifacts();
   } finally {
     try { db.close(); } catch { /* ignore */ }
   }

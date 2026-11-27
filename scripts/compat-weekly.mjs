@@ -159,7 +159,22 @@ async function install(tool, rel) {
   }
   if (tool === 'agy') {
     const bin = path.join(dir, 'bin');
-    if (fs.existsSync(path.join(bin, 'agy'))) return bin;
+    if (fs.existsSync(path.join(bin, 'agy'))) {
+      // A copy that updated itself (before checks disabled that) is no longer this version. Its updater keeps
+      // the replaced binary as agy.<n>.old: put that back, or download the version again when we know where.
+      const versionOf = async (f) => (await sh(f, ['--version'], { timeout: 30_000, quiet: true })).out.trim().split('\n').pop();
+      if (await versionOf(path.join(bin, 'agy')) === rel.version) return bin;
+      for (const f of fs.readdirSync(bin).filter((n) => /^agy\..*\.old$/.test(n))) {
+        if (await versionOf(path.join(bin, f)) !== rel.version) continue;
+        await fsp.copyFile(path.join(bin, f), path.join(bin, 'agy'));
+        await fsp.chmod(path.join(bin, 'agy'), 0o755);
+        log(`  ↳ restored Antigravity ${rel.version} from ${f} (it had updated itself)`);
+        return bin;
+      }
+      if (!rel.url) throw new Error(`${bin}/agy updated itself and ${rel.version} can't be downloaded again`);
+      log(`  ↳ ${bin}/agy is not ${rel.version} any more; downloading it again`);
+      await fsp.rm(bin, { recursive: true, force: true });
+    }
     await fsp.mkdir(bin, { recursive: true });
     const res = await fetch(rel.url, { signal: AbortSignal.timeout(10 * 60_000) });
     if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);
