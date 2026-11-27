@@ -100,7 +100,8 @@ export function oneLine(s) {
 export function cleanPrompt(s) {
   if (!s) return '';
   return String(s)
-    .replace(/<(system-reminder|environment_context|user_instructions|command-message|command-args|local-command-stdout|local-command-caveat|INSTRUCTIONS|ide_opened_file|ide_selection)[^>]*>[\s\S]*?<\/\1>/g, '')
+    .replace(/<(system-reminder|environment_context|user_instructions|command-message|command-args|local-command-stdout|local-command-caveat|INSTRUCTIONS|ide_opened_file|ide_selection|baton-memory)[^>]*>[\s\S]*?<\/\1>/g, '')
+    .replace(/\s*<baton-memory[^>]*>[\s\S]*$/g, '')
     .replace(/<command-name>([\s\S]*?)<\/command-name>/g, '$1')
     .trim();
 }

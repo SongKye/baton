@@ -1131,6 +1131,7 @@ async function viewProject([id]) {
         ${p.note ? `<button class="card memo" id="pnotecard" title="${t('눌러서 고치기')}">${esc(p.note)}</button>`
           : `<button class="memo-empty" id="pnotecard">📝 ${t('메모 남기기')}<span>${t('다음에 돌아왔을 때 볼 메모')}</span></button>`}</div>
       ${srvHtml}
+      <div class="section" id="pmem"></div>
       ${servicesHtml(d.services)}
       <div class="section"><div class="section-h"><h2>${t('세션')}</h2><span class="count">${d.sessions.length}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span>
         ${d.sessions.length ? `<button class="more" id="pselbtn">${selecting ? t('완료') : t('선택')}</button>` : ''}</div>
@@ -1147,6 +1148,7 @@ async function viewProject([id]) {
       <div class="bulkbar" id="pbar" ${selecting ? '' : 'hidden'}><button class="btn sm ghost" id="pall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="pcount">0</b>' })}</span><button class="btn sm" id="phide">${t('숨기기')}</button><button class="btn primary danger-fill" id="ptrash">${t('휴지통으로')}</button></div>`;
     loadProjectSkills($('#pskills'), p);
     loadProjectMcp($('#pmcp'), p.path, p.id);
+    loadProjectMemory($('#pmem'), p);
     if ($('#psrv')) bindServers($('#psrv'), () => load());
     bindServices($('#psvc'), p.id, () => load());
     // memo: tap it to edit right there
@@ -1515,7 +1517,9 @@ async function sessionMenuFromHref(href) {
   await sessionMenu(d.session, () => render());
 }
 async function sessionMenu(s, after, { onTrashed } = {}) {
+  const canSaveMem = Boolean(s.project && G.state?.settings?.sharedMemory !== false);
   const act = await pick(s.title, [
+    ...(canSaveMem ? [{ value: 'saveMemory', icon: '🧠', label: t('공유 메모리에 저장'), desc: t('지금까지의 대화를 AI가 정리해 프로젝트 공유 메모리에 반영해요') }] : []),
     { value: 'notify', icon: glyph(s.notify < 0 ? 'bell' : 'bellOff'), label: s.notify < 0 ? t('이 세션 알림 다시 켜기') : t('이 세션 알림 끄기'), desc: s.notify < 0 ? t('응답이 끝날 때마다 다시 알려줘요') : t('응답이 끝나도 폰·PC로 알리지 않아요 (알림함에는 남아요)') },
     { value: 'schedule', icon: glyph('clock'), label: t('메시지 예약'), desc: t('한도가 풀리면 바로, 또는 정한 시각에 이 세션으로 보내요') },
     { value: 'newhere', icon: glyph('plus'), label: t('이 프로젝트에서 새 세션'), desc: t('같은 폴더에서 원하는 CLI로 새 작업을 시작해요 (맥락은 넘기지 않아요)') },
@@ -1529,7 +1533,16 @@ async function sessionMenu(s, after, { onTrashed } = {}) {
     { value: 'trash', icon: glyph('trash'), label: t('휴지통으로'), desc: t('세션 파일을 휴지통으로 옮겨요 (30일 안에 되살리기 가능)'), danger: true },
   ]);
   const meta = (body) => api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}/meta`, { body });
-  if (act === 'pin') { await meta({ pinned: !s.pinned }); toast(s.pinned ? t('고정을 풀었어요') : t('고정했어요')); }
+  if (act === 'saveMemory') {
+    toast(t('대화를 정리해 공유 메모리에 저장하는 중이에요…'));
+    try {
+      const r = await api(`/api/sessions/${s.tool}/${encodeURIComponent(s.id)}/memory`, { method: 'POST' });
+      toast(r.changed ? t('공유 메모리에 {n}건을 반영했어요', { n: r.changed }) : t('이미 모두 반영돼 있어요'));
+      memoryChip(s);
+    } catch (e) { toast(e.message, true); }
+    return;
+  }
+  else if (act === 'pin') { await meta({ pinned: !s.pinned }); toast(s.pinned ? t('고정을 풀었어요') : t('고정했어요')); }
   else if (act === 'hide') { await meta({ hidden: !s.hidden }); toast(s.hidden ? t('다시 보이게 했어요') : t('숨겼어요 (세션 탭 「숨긴 세션」에서 볼 수 있어요)')); }
   else if (act === 'rename') { const n = await promptSheet(t('세션 이름 (Baton에서만 보여요)'), s.title); if (n === undefined) return; await meta({ title: n || null }); }
   else if (act === 'project') { if (s.project) location.hash = `#/p/${encodeURIComponent(s.project)}`; return; }
@@ -1836,6 +1849,22 @@ function liveRun(container, runId, { onSession, onDone } = {}) {
       s.items.push({ role: 'tool', tool: { name: ev.name, summary: ev.summary } }); mark(s);
     } else if (ev.t === 'tool_done') {
       const s = lastSeg(); if (s?.type === 'tools') { const it = [...s.items].reverse().find((x) => x.tool && x.tool.done == null); if (it) { it.tool.done = true; it.tool.error = ev.error; mark(s); } }
+    } else if (ev.t === 'memory') {
+      const fromNames = (ev.from || []).map((x) => TOOL[x]?.name || x).join(' · ');
+      const bits = [];
+      if (ev.items) bits.push(t('기억 {n}', { n: ev.items }));
+      if (ev.activities) bits.push(t('활동 {n}', { n: ev.activities }));
+      if (ev.recalled) bits.push(t('회상 {n}', { n: ev.recalled }));
+      if (ev.servers) bits.push(t('서버 {n}', { n: ev.servers }));
+      const label = fromNames
+        ? t('{tools} 소식을 함께 전달했어요', { tools: fromNames })
+        : t('프로젝트 공유 메모리를 함께 전달했어요');
+      const n = document.createElement('button');
+      n.type = 'button';
+      n.className = 'mem-note';
+      n.innerHTML = `<span>🧠 ${esc(label)}${bits.length ? ` <i>(${esc(bits.join(' · '))})</i>` : ''}</span>`;
+      n.onclick = () => ev.project && openMemorySheet(ev.project);
+      el.insertBefore(n, status);
     } else if (ev.t === 'mcp') {
       // only speak up when something is wrong — a healthy MCP list would just be noise.
       // claude.ai connectors that were never authorized (Gmail/Calendar/Drive come attached to the
@@ -2284,8 +2313,9 @@ async function viewChat([tool, id]) {
     if (navCount !== G.navCount || !msgsEl.isConnected) return;
     session = d.session; start = d.start; links = d.links || links;
     $('#ctitle').textContent = session.title;
-    $('#csub').innerHTML = `<span class="tool-badge ${tool}">${TOOL[tool].name}</span><span>${esc(projectName(session.project || session.cwd))}</span>${session.model ? `<span>· ${esc(session.model)}</span>` : ''}${session.notify < 0 ? `<span class="flag bell">${t('🔕 알림 꺼짐')}</span>` : ''}<span id="cmcp"></span>`;
+    $('#csub').innerHTML = `<span class="tool-badge ${tool}">${TOOL[tool].name}</span><span>${esc(projectName(session.project || session.cwd))}</span>${session.model ? `<span>· ${esc(session.model)}</span>` : ''}${session.notify < 0 ? `<span class="flag bell">${t('🔕 알림 꺼짐')}</span>` : ''}<span id="cmcp"></span><span id="cmem"></span>`;
     mcpChip(session);
+    memoryChip(session);
     $('#back').setAttribute('href', session.project ? `#/p/${encodeURIComponent(session.project)}` : '#/sessions');
     outcome = d.outcome || null;
     msgsEl.innerHTML = `${start > 0 ? `<button class="btn sm ghost load-older" id="older">${t('이전 대화 더 보기')}</button>` : ''}<div id="hobanners">${(session.moved ? `<div class="banner">📁 ${t('작업 폴더: {p} (원래 {o})', { p: esc(session.cwd), o: esc(session.origCwd || '') })}</div>` : '') + handoffBanners(links)}</div>${msgsHtml(d.messages)}<div id="schedbanners"></div>`;
@@ -2393,6 +2423,174 @@ async function mcpChip(session) {
   } catch { /* optional */ }
 }
 
+// ---------------------------------------------------------------- PROJECT SHARED MEMORY UI
+function memSourceLabel(src) {
+  if (!src || src === 'user') return t('직접 추가');
+  if (src === 'dream') return t('자동 정리');
+  return TOOL[src]?.name || src;
+}
+
+async function memoryChip(session) {
+  const el = $('#cmem');
+  if (!el || !session?.project) return;
+  if (G.state?.settings?.sharedMemory === false) { el.innerHTML = ''; return; }
+  try {
+    const d = await api(`/api/projects/${encodeURIComponent(session.project)}/memory`);
+    const cur = $('#cmem');
+    if (!cur) return;
+    if (!d.enabled && !d.items.length) { cur.innerHTML = ''; return; }
+    const cls = d.enabled ? 'memchip' : 'memchip off';
+    const label = d.enabled
+      ? (d.items.length ? t('기억 {n}', { n: d.items.length }) : t('기억'))
+      : t('기억 꺼짐');
+    cur.outerHTML = `<button class="flag ${cls}" id="cmem" title="${t('프로젝트 공유 메모리')}">🧠 ${esc(label)}</button>`;
+    $('#cmem').onclick = () => openMemorySheet(session.project, () => memoryChip(session));
+  } catch { /* optional */ }
+}
+
+function memoryItemSheet(projectId, initial = {}, onSaved = null) {
+  const isEdit = Boolean(initial?.id);
+  const pinned = initial?.pinned !== undefined ? Boolean(initial.pinned) : !isEdit;
+  sheet({
+    title: isEdit ? t('공유 메모리 수정') : t('공유 메모리에 추가'),
+    body: `
+      <div class="mem-form">
+        <textarea id="mtxt" rows="4" maxlength="400" placeholder="${t('예) 로그인은 세션 쿠키 대신 JWT를 사용한다')}">${esc(initial?.text || '')}</textarea>
+        <label class="mem-pin-row"><input type="checkbox" id="mpin" ${pinned ? 'checked' : ''}><span>📌 <b>${t('항상 고정')}</b> · ${t('최우선으로 전달하고 자동 정리에서 보호해요')}</span></label>
+      </div>`,
+    footer: `${isEdit ? `<button class="btn danger-fill" id="mdel">${t('지우기')}</button>` : ''}<button class="btn ghost" id="mcancel">${t('취소')}</button><button class="btn primary" id="msave">${t('저장')}</button>`,
+    onMount(el, close) {
+      $('#mcancel', el).onclick = () => close();
+      $('#msave', el).onclick = async () => {
+        const text = $('#mtxt', el).value.trim();
+        if (!text) { toast(t('내용을 적어주세요'), true); return; }
+        const isPinned = $('#mpin', el).checked;
+        try {
+          if (isEdit) await api(`/api/projects/${encodeURIComponent(projectId)}/memory/${initial.id}`, { method: 'PATCH', body: { text, pinned: isPinned } });
+          else await api(`/api/projects/${encodeURIComponent(projectId)}/memory`, { method: 'POST', body: { text, pinned: isPinned, sourceKey: initial?.sourceKey || 'user' } });
+          toast(t('공유 메모리에 저장했어요'));
+          close(true);
+          onSaved?.();
+        } catch (e) { toast(e.message, true); }
+      };
+      $('#mdel', el) && ($('#mdel', el).onclick = async () => {
+        try {
+          await api(`/api/projects/${encodeURIComponent(projectId)}/memory/${initial.id}`, { method: 'DELETE' });
+          toast(t('메모리를 지웠어요'));
+          close(true);
+          onSaved?.();
+        } catch (e) { toast(e.message, true); }
+      });
+      setTimeout(() => $('#mtxt', el)?.focus(), 60);
+    },
+  });
+}
+
+function renderMemoryItems(items) {
+  if (!items.length) return `<div class="muted small mem-empty">${t('아직 저장된 프로젝트 기억이 없어요. Baton에서 대화하면 중요한 내용이 자동으로 쌓여요.')}</div>`;
+  return items.map((m) => `
+    <button type="button" class="mem-row" data-mid="${m.id}">
+      <div class="mem-top">
+        ${m.pinned ? '<span class="mem-pin" title="Pinned">📌</span>' : ''}
+        <span class="mem-src">${esc(memSourceLabel(m.sourceTool))}</span>
+        ${m.branch ? `<span class="mem-br">${esc(m.branch)}</span>` : ''}
+        <span class="mem-ts">${ago(m.updated)}</span>
+      </div>
+      <div class="mem-text">${esc(m.text)}</div>
+    </button>`).join('');
+}
+
+async function renderMemoryPanel(container, projectId, { onChanged = null, inSheet = false } = {}) {
+  if (!container) return;
+  let query = container.dataset.memQuery || '';
+  const draw = async () => {
+    const qs = query ? `?q=${encodeURIComponent(query)}` : '';
+    const d = await api(`/api/projects/${encodeURIComponent(projectId)}/memory${qs}`);
+    if (!container.isConnected) return;
+    const active = d.enabled;
+    const head = inSheet ? '' : `<div class="section-h"><h2>${t('공유 메모리')} 🧠</h2><span class="count">${d.items.length}</span>
+      <label class="switch sm" title="${t('이 프로젝트의 공유 메모리 켜기/끄기')}"><input type="checkbox" id="pmem-sw" ${!d.memoryOff ? 'checked' : ''}><i></i></label></div>`;
+    let body;
+    if (!d.globalEnabled) {
+      body = `<div class="card mem-card"><div class="muted small">${t('설정에서 프로젝트 공유 메모리가 꺼져 있어요.')} <a href="#/settings">${t('설정으로 이동 ›')}</a></div></div>`;
+    } else if (d.memoryOff) {
+      body = `<div class="card mem-card"><div class="muted small" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>${t('이 프로젝트에서는 공유 메모리가 꺼져 있어요.')}</span>${inSheet ? `<button class="btn sm" id="pmem-on">${t('다시 켜기')}</button>` : ''}</div></div>`;
+    } else {
+      const showSearch = d.items.length >= 5 || Boolean(query);
+      body = `<div class="card mem-card">
+        <div class="mem-bar">
+          ${showSearch ? `<input class="mem-search" id="pmem-q" placeholder="${t('기억 검색…')}" value="${esc(query)}">` : `<span class="small muted">${t('모든 AI CLI가 이 기억을 함께 참고해요')}</span>`}
+          <div class="mem-btns">
+            ${d.items.length >= 2 ? `<button class="btn sm ghost" id="pmem-dream" title="${t('중복·오래된 기억 통합 정리')}">✨ ${t('정리')}</button>` : ''}
+            <button class="btn sm" id="pmem-add">+ ${t('추가')}</button>
+          </div>
+        </div>
+        <div class="mem-list">${renderMemoryItems(d.items)}</div>
+        ${d.stats?.lastDreamAt ? `<div class="small muted mem-foot">${t('마지막 자동 정리: {ago}', { ago: ago(d.stats.lastDreamAt) })}</div>` : ''}
+      </div>`;
+    }
+    container.innerHTML = `${head}${body}`;
+    const sw = $('#pmem-sw', container);
+    if (sw) sw.onchange = async () => {
+      await api(`/api/projects/${encodeURIComponent(projectId)}/meta`, { body: { memoryOff: !sw.checked } });
+      toast(sw.checked ? t('이 프로젝트의 공유 메모리를 켰어요') : t('이 프로젝트의 공유 메모리를 껐어요'));
+      await draw();
+      onChanged?.();
+    };
+    const onBtn = $('#pmem-on', container);
+    if (onBtn) onBtn.onclick = async () => {
+      await api(`/api/projects/${encodeURIComponent(projectId)}/meta`, { body: { memoryOff: false } });
+      await draw();
+      onChanged?.();
+    };
+    const qInput = $('#pmem-q', container);
+    if (qInput) {
+      let tm;
+      qInput.oninput = () => {
+        query = qInput.value;
+        container.dataset.memQuery = query;
+        clearTimeout(tm);
+        tm = setTimeout(() => draw(), 180);
+      };
+    }
+    const addBtn = $('#pmem-add', container);
+    if (addBtn) addBtn.onclick = () => memoryItemSheet(projectId, { pinned: true }, async () => { await draw(); onChanged?.(); });
+    const dreamBtn = $('#pmem-dream', container);
+    if (dreamBtn) dreamBtn.onclick = async () => {
+      dreamBtn.disabled = true;
+      dreamBtn.textContent = `✨ ${t('정리 중…')}`;
+      try {
+        const r = await api(`/api/projects/${encodeURIComponent(projectId)}/memory/dream`, { method: 'POST' });
+        toast(r.changed ? t('기억 {n}건을 정리했어요', { n: r.changed }) : t('이미 깔끔한 상태예요'));
+        await draw();
+        onChanged?.();
+      } catch (e) { toast(e.message, true); }
+      if (dreamBtn.isConnected) { dreamBtn.disabled = false; dreamBtn.textContent = `✨ ${t('정리')}`; }
+    };
+    const byId = new Map(d.items.map((x) => [String(x.id), x]));
+    $$('[data-mid]', container).forEach((b) => (b.onclick = () => {
+      const it = byId.get(b.dataset.mid);
+      if (it) memoryItemSheet(projectId, it, async () => { await draw(); onChanged?.(); });
+    }));
+  };
+  await draw().catch(() => {});
+}
+
+function loadProjectMemory(box, project) {
+  if (!box || !project?.id) return;
+  renderMemoryPanel(box, project.id);
+}
+
+function openMemorySheet(projectId, onChanged = null) {
+  sheet({
+    title: `${t('프로젝트 공유 메모리')} 🧠`,
+    body: `<div id="msheet-body"><div class="skeleton" style="height:100px"></div></div>`,
+    onMount(el) {
+      renderMemoryPanel($('#msheet-body', el), projectId, { onChanged, inSheet: true });
+    },
+  });
+}
+
 async function viewNew(_, params) {
   const cleanVV = setupViewport();
   let tool = params.get('tool') || store.get('newtool', INSTALLED()[0] || 'claude');
@@ -2490,7 +2688,7 @@ function organizeSettings(view) {
     ['appearance', t('화면 · 언어'), t('색상 테마와 화면 밝기, 표시 언어'), ICON.image, ['appearance']],
     ['workspace', t('작업 · 세션'), t('기본 폴더, 실행 권한과 세션 관리'), ICON.folder, ['workspace', 'sessions']],
     ['notifications', t('알림 · 리마인더'), t('응답 알림과 잠자는 프로젝트 챙기기'), ICON.bell, ['notifications', 'reminders']],
-    ['ai', t('AI 브리핑'), t('요약에 사용할 도구와 모델'), ICON.send, ['ai']],
+    ['ai', t('AI 브리핑 · 공유 메모리'), t('브리핑과 프로젝트 공유 메모리에 쓸 도구와 모델'), ICON.send, ['ai', 'memory']],
     ['advanced', t('고급 · 회사 환경'), t('CLI 연결과 환경 변수'), ICON.more, ['advanced']],
     ['clis', t('AI 도구 지원 버전'), t('Baton이 검증한 CLI 버전과 설치된 버전'), ICON.check, ['clis']],
   ];
@@ -2527,6 +2725,7 @@ async function viewSettings() {
   const sw = (k) => `<label class="switch"><input type="checkbox" data-k="${k}" ${s[k] ? 'checked' : ''}><i></i></label>`;
   const hours = Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${s.nudgeHour === h ? 'selected' : ''}>${hourLabel(h)}</option>`).join('');
   const briefModels = (G.state?.catalogs?.[s.briefTool]?.models || []).map((m) => `<option value="${esc(m.id)}" ${m.id === s.briefModel ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
+  const memoryModels = (G.state?.catalogs?.[s.memoryTool]?.models || []).map((m) => `<option value="${esc(m.id)}" ${m.id === s.memoryModel ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
   v.innerHTML = `
     <div class="section" data-settings="general"><div class="card">
       <a class="setting" href="#/setup"><div class="l"><b>🚀 ${t('시작하기 · 도구 설치/연동')}</b><span>${t('Claude Code·Codex·Antigravity·OpenCode·Cursor 설치, 로그인, 폰 연결, 자동 시작')}</span></div><span class="muted">›</span></a>
@@ -2585,6 +2784,11 @@ async function viewSettings() {
       <div class="setting"><div class="l"><b>${t('요약에 쓸 도구')}</b><span>${t('가볍고 빠른 모델을 추천해요')}</span></div><select data-k="briefTool">${INSTALLED().map((k) => [k, TOOL[k]]).map(([k, tl]) => `<option value="${k}" ${s.briefTool === k ? 'selected' : ''}>${tl.name}</option>`).join('')}</select></div>
       <div class="setting"><div class="l"><b>${t('모델')}</b></div><select data-k="briefModel">${briefModels}</select></div>
     </div></div>
+    <div class="section" data-settings="memory"><div class="section-h"><h2>${t('프로젝트 공유 메모리 🧠')}</h2></div><div class="card">
+      <div class="setting"><div class="l"><b>${t('공유 메모리 사용')}</b><span>${t('같은 프로젝트의 AI CLI끼리 결정·규칙·진행 상태를 자동으로 공유해요. 프로젝트마다 따로 끌 수 있어요')}</span></div>${sw('sharedMemory')}</div>
+      <div class="setting"><div class="l"><b>${t('핵심 정리에 쓸 도구')}</b><span>${t('가볍고 빠른 모델을 추천해요')}</span></div><select data-k="memoryTool">${INSTALLED().map((k) => [k, TOOL[k]]).map(([k, tl]) => `<option value="${k}" ${s.memoryTool === k ? 'selected' : ''}>${tl.name}</option>`).join('')}</select></div>
+      <div class="setting"><div class="l"><b>${t('모델')}</b></div><select data-k="memoryModel">${memoryModels}</select></div>
+    </div></div>
     <div class="section" data-settings="sessions"><div class="section-h"><h2>${t('세션')}</h2></div><div class="card">
       <div class="setting"><div class="l"><b>${t('기본 권한')}</b></div><select data-k="defaultPerm">${Object.entries(PERM).map(([k, p]) => `<option value="${k}" ${s.defaultPerm === k ? 'selected' : ''}>${p.label}</option>`).join('')}</select></div>
       <a class="setting" href="#/usage"><div class="l"><b>${t('사용량 · 한도')}</b><span>${t('CLI별 남은 한도와 토큰 사용량')}</span></div><span class="muted">›</span></a>
@@ -2601,11 +2805,12 @@ async function viewSettings() {
     const val = el.type === 'checkbox' ? el.checked : el.dataset.num !== undefined ? Number(el.value) : el.value;
     const patch = { [k]: val };
     if (k === 'briefTool') patch.briefModel = '';
+    if (k === 'memoryTool') patch.memoryModel = '';
     await api('/api/settings', { body: patch });
     if (el.dataset.reload !== undefined) { location.reload(); return; }
     await loadState();
     toast(t('저장했어요'));
-    if (k === 'briefTool') viewSettings();
+    if (k === 'briefTool' || k === 'memoryTool') viewSettings();
   }));
   $$('[name="appearance"]', v).forEach(input => {
     input.onchange = () => window.BatonTheme.set(input.value);

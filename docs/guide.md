@@ -169,6 +169,14 @@ Baton listens on `127.0.0.1` only. **Get started → Phone** walks you through i
 
 There is no password: Baton trusts the Tailscale identity of the request. To allow only specific accounts, start Baton with `BATON_ALLOWED_LOGINS=me@example.com`. See [SECURITY.md](../SECURITY.md).
 
+## Project shared memory
+
+When you switch between Claude Code, Codex, Antigravity, OpenCode and Cursor on the same project in Baton chat, Baton shares project decisions, feedback/conventions, gotchas, active state, recent cross-CLI activity and running dev servers automatically:
+
+- **Automatic by default:** After each finished Baton chat turn, Baton records a zero-token activity bridge + neutral session reference log (`.baton/sessions/*.md`) right away, extracts durable memories with a lightweight AI after a short debounce, and periodically consolidates ("Dream") older or duplicate notes while keeping user-pinned rules untouched.
+- **Prompt-cache friendly:** New sessions receive compact working memory (up to 4,000 chars, including smart recall matched to your request); continuing sessions receive only changes from *other* sessions (0 extra tokens when nothing changed).
+- **Stay in control:** Baton organizes categories automatically behind the scenes. Tap **Save to shared memory** in the chat's `⋯` menu whenever you want AI to summarize the conversation so far immediately, or tap the `🧠` indicator / open the project page to view, search, edit, consolidate (`✨`), or turn shared memory off per project. Choose the extractor tool/model in **Settings → AI Briefing · Shared Memory**.
+
 ## Questions from the agent
 
 When an agent needs you to choose, you answer in the chat:
