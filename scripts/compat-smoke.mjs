@@ -137,8 +137,9 @@ async function runChild(tool, binDir, expectedVersion) {
       PATH: [binDir, path.dirname(process.execPath), process.env.PATH].filter(Boolean).join(path.delimiter),
       BATON_EXPECT_VERSION: expectedVersion || '', BATON_EXPECT_BIN_DIR: binDir ? path.resolve(binDir) : '',
       BATON_SMOKE_REPORT_FILE: path.join(tmp, 'report.json'),
-      // Pinned test installs must stay on the version under test: Antigravity otherwise replaces its own binary.
-      AGY_CLI_DISABLE_AUTO_UPDATE: '1', DISABLE_AUTOUPDATER: '1',
+      // Pinned test installs must stay on the version under test: Antigravity otherwise replaces its own binary
+      // (it only honors the exact value 'true').
+      AGY_CLI_DISABLE_AUTO_UPDATE: 'true', DISABLE_AUTOUPDATER: '1',
     };
     for (const k of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME']) delete env[k];
     const out = await new Promise((resolve) => {
