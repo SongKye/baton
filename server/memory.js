@@ -116,6 +116,8 @@ function normDir(p) {
 /** Resolve the project root eligible for shared memory, or null for HOME / workspace containers / worktrees / tmp. */
 export function memoryProject(cwd) {
   if (!cwd) return null;
+  // Check POSIX temp dirs before path.resolve: on Windows it turns `/tmp/x` into `D:\tmp\x`.
+  if (!cfg.projectRootFn && /^\/(?:var\/)?tmp(?:\/|$)/.test(String(cwd))) return null;
   const abs = normDir(cwd);
   if (/[\\/]\.claude[\\/]worktrees(?:[\\/]|$)|[\\/]\.codex(?:[\\/]|$)/.test(abs)) return null;
   const root = (cfg.projectRootFn || projectRoot)(abs);
