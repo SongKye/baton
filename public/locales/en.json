@@ -32,7 +32,6 @@
  "요청 실패 ({code})": "Request failed ({code})",
  "취소": "Cancel",
  "저장": "Save",
- "✅ 응답 완료:": "✅ Done:",
  "{n}개 응답 중": "{n} running",
  "응답 중": "Responding",
  "불러오지 못했어요": "Couldn't load",
@@ -355,7 +354,6 @@
  "이미지가 너무 커요": "Image is too large",
  "폴더가 없어요: {p}": "Folder doesn't exist: {p}",
  "프로젝트를 찾을 수 없어요": "Project not found",
- "🏃 Baton 알림 테스트": "🏃 Baton test notification",
  "알림이 잘 도착했어요!": "Notifications are working!",
  "{title}: 실행 중이라 건너뛰었어요": "{title}: skipped because it's running",
  "스킬을 찾을 수 없어요": "Skill not found",
@@ -680,9 +678,6 @@
  "브리핑과 프로젝트 공유 메모리에 쓸 도구와 모델": "Tools and models for briefings and shared memory",
  "고급 · 회사 환경": "Advanced & company setup",
  "CLI 연결과 환경 변수": "CLI connections and environment variables",
- "데스크톱 화면 알림": "Desktop pop-up notifications",
- "이 PC에서 Baton을 보고 있으면 화면 우측 하단에 알림 카드를 띄워요": "Show a notification card in the bottom-right corner while Baton is open on this computer",
- "이 위치에 알림이 떠요": "Notifications will appear here",
  "닫기": "Close",
  "추가": "Add",
  "다른 CLI에도 추가": "Add to other CLIs",
@@ -1364,5 +1359,8 @@
  "공유 메모리 사용": "Enable shared memory",
  "같은 프로젝트의 AI CLI끼리 결정·규칙·진행 상태를 자동으로 공유해요. 프로젝트마다 따로 끌 수 있어요": "Automatically share decisions, conventions, and progress across AI CLIs in the same project. Can be toggled per project.",
  "핵심 정리에 쓸 도구": "Tool for memory extraction",
- "메모리 항목을 찾을 수 없어요": "Memory item not found"
+ "메모리 항목을 찾을 수 없어요": "Memory item not found",
+ "이 브라우저에서 알림이 차단돼 있어요": "Notifications are blocked in this browser",
+ "주소창 왼쪽 자물쇠 → 알림 → 허용으로 바꾼 뒤 새로고침해주세요": "Click the lock icon left of the address bar → Notifications → Allow, then reload",
+ "🏃 Baton 알림 테스트": "🏃 Baton test notification"
 }
