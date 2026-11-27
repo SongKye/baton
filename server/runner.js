@@ -19,7 +19,7 @@ import crypto from 'node:crypto';
 import { summarizeTool } from './sources/common.js';
 import { getKV, setKV, patchSessionMeta } from './store.js';
 import { codexDefaultFallback } from './providers.js';
-import { clip, ONESHOT_DIR } from './util.js';
+import { clip, ONESHOT_DIR, HOME } from './util.js';
 import { noteMcpStatus } from './mcp.js';
 import { createRunEvents } from './run-events.js';
 import { claudePermArgs, codexPermArgs, agyPermArgs, opencodePermArgs, codexSandboxBlock } from './permissions.js';
@@ -236,8 +236,20 @@ function codexParser(run) {
   };
 }
 
+// Antigravity's plan mode writes the plan to an artifact (~/.gemini/antigravity-cli/brain/<conversation>/*.md)
+// and since 1.5.18 the reply usually only links to it — a file:// link on the Baton host the user can't open.
+const AGY_BRAIN = path.join(HOME, '.gemini', 'antigravity-cli', 'brain');
+function agyArtifactPath(params) {
+  const p = params?.Path || params?.TargetFile || params?.path || params?.file_path;
+  if (typeof p !== 'string' || !p.endsWith('.md')) return null;
+  const file = path.resolve(p.replace(/^file:\/\//, ''));
+  const rel = path.relative(AGY_BRAIN, file).split(path.sep);
+  return rel.length === 2 && rel[0] && rel[0] !== '..' ? file : null; // brain/<id>/<name>.md, not .system_generated/
+}
+
 function agyParser(run) {
   const seen = new Set();
+  const artifacts = new Set(); // plan artifacts written this run (plan mode only)
   return (e) => {
     if (e.event === 'init' && e.conversation_id) {
       run.setSession(e.conversation_id);
@@ -256,12 +268,26 @@ function agyParser(run) {
           run.emit({ t: 'tool', name, summary: summarizeTool(name, s.tool_info?.parameters || {}) });
         }
         if (s.state === 'DONE' || s.state === 'ERROR' || s.state === 'CANCELED') run.emit({ t: 'tool_done', error: s.state !== 'DONE' });
+        const artifact = run.perm === 'plan' && s.state === 'DONE' && agyArtifactPath(s.tool_info?.parameters);
+        if (artifact) artifacts.add(artifact);
       }
     } else if (e.event === 'result') {
       const r = e.result || {};
       if (r.conversation_id) run.setSession(r.conversation_id);
+      // show the plan itself (final version) after the reply; skip any the reply already quotes in full
+      let response = r.response;
+      for (const file of artifacts) {
+        let plan = '';
+        try { plan = fs.readFileSync(file, 'utf8').trim(); } catch { continue; }
+        if (!plan || String(response || '').includes(plan)) continue;
+        const block = `\n\n---\n\n${plan}\n`;
+        run.emit({ t: 'text_end' });
+        run.emit({ t: 'text', text: block });
+        run.emit({ t: 'text_end' });
+        response = (response || '') + block;
+      }
       run.result = {
-        ok: r.status === 'SUCCESS', result: r.response, usage: r.usage, error: r.status === 'SUCCESS' ? null : (r.error || r.status),
+        ok: r.status === 'SUCCESS', result: response, usage: r.usage, error: r.status === 'SUCCESS' ? null : (r.error || r.status),
         denied: (r.denied_actions || []).map((d) => d.display_name || d.action),
       };
     }
