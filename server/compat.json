@@ -1,23 +1,23 @@
 {
   "claude": {
     "level": "supported",
-    "verified": "2.1.318",
-    "verifiedAt": "2026-11-12",
+    "verified": "2.1.326",
+    "verifiedAt": "2026-11-28",
     "os": {
       "linux": {
-        "verified": "2.1.318",
-        "verifiedAt": "2026-11-12"
+        "verified": "2.1.326",
+        "verifiedAt": "2026-11-28"
       }
     }
   },
   "codex": {
     "level": "supported",
-    "verified": "0.171.0",
-    "verifiedAt": "2026-11-21",
+    "verified": "0.172.0",
+    "verifiedAt": "2026-11-28",
     "os": {
       "linux": {
-        "verified": "0.171.0",
-        "verifiedAt": "2026-11-21"
+        "verified": "0.172.0",
+        "verifiedAt": "2026-11-28"
       }
     }
   },

@@ -9,8 +9,8 @@ was verified with** for each CLI. The source of truth is `server/compat.json`. T
 <!-- compat-table -->
 | CLI | Support | Linux | Windows | macOS |
 |---|---|---|---|---|
-| Claude Code | Supported | **2.1.318** (2026-11-12) | — | — |
-| Codex | Supported | **0.171.0** (2026-11-21) | — | — |
+| Claude Code | Supported | **2.1.326** (2026-11-28) | — | — |
+| Codex | Supported | **0.172.0** (2026-11-28) | — | — |
 | Antigravity | Supported | **1.5.13** (2026-11-21) | — | — |
 | OpenCode | Supported | **2.3.2** (2026-11-21) | — | — |
 | Cursor | Unverified | — | — | — |

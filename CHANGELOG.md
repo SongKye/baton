@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Project shared memory across AI CLIs.** Conversations in Baton chat now share decisions, conventions, gotchas, active state, recent cross-CLI activity, and live dev servers within the same project without repeating context. Uses a 3-speed lifecycle (instant zero-token activity bridge + session reference logs, debounced lightweight AI extraction, and periodic "Dream" consolidation), Korean+English smart recall, delta-only injection after turn 1 (preserving prompt caches), a single **Save to shared memory** action in the chat `⋯` menu for on-demand summarization, per-project toggles, and Settings controls for the extractor tool/model.
 
 ### Changed
+- Verified with Claude Code 2.1.326, Codex 0.172.0 on Linux (weekly automatic check).
 - **Desktop notifications now use the system notification center.** On PC, Baton shows notifications through the browser's Notification API (Windows taskbar corner, Ubuntu/GNOME banner, macOS banner) instead of in-page cards; allow notifications via Settings → Notifications → Push. The white "Response complete" in-app toast is gone (phones keep their push notification).
 
 ### Fixed

@@ -1,5 +1,5 @@
 {
- "version": "0.171.0",
+ "version": "0.172.0",
  "stream": [
   "item.completed/agent_message item",
   "item.completed/agent_message item.id",
@@ -427,6 +427,7 @@
   "file:world_state payload.state.tools.mcp__codex_apps__pets",
   "file:world_state payload.state.tools.mcp__codex_apps__plugin_management",
   "file:world_state payload.state.tools.mcp__codex_apps__safety_settings",
+  "file:world_state payload.state.tools.mcp__codex_apps__search_service",
   "file:world_state payload.state.tools.mcp__codex_apps__sites",
   "file:world_state payload.state.top_level_tools",
   "file:world_state payload.state.top_level_tools.clock",
@@ -1076,6 +1077,9 @@
    "string"
   ],
   "file:world_state payload.state.tools.mcp__codex_apps__safety_settings": [
+   "string"
+  ],
+  "file:world_state payload.state.tools.mcp__codex_apps__search_service": [
    "string"
   ],
   "file:world_state payload.state.tools.mcp__codex_apps__sites": [
