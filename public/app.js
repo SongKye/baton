@@ -308,7 +308,7 @@ function promptSheet(title, value = '', { multiline = false, placeholder = '', o
 }
 
 // ---------------------------------------------------------------- global state
-const G = { state: null, runs: [], lastRunIds: new Set(), cleanup: null, skipHash: null };
+const G = { state: null, runs: [], cleanup: null, skipHash: null };
 
 async function loadState() {
   try {
@@ -316,65 +316,54 @@ async function loadState() {
     normalizeAgyCatalog(G.state.catalogs?.agy);
     for (const x of G.state.tools || []) if (TOOL[x.id]) TOOL[x.id].installed = x.installed;
     updateRunPill(G.state.runs);
-    deskCardsPoll(G.state.lastEventId);
+    deskNotifyPoll(G.state.lastEventId);
   } catch (e) { /* offline */ }
 }
 
-// ---------------------------------------------------------------- desktop notification cards (bottom-right)
-// Same breakpoint as the Studio desktop layout (studio.css, 760px).
-const DESK_MQ = matchMedia('(min-width: 760px) and (hover: hover) and (pointer: fine)');
-const deskCardsOn = () => DESK_MQ.matches && localStorage.getItem('baton.deskCards') !== '0';
-// With push on, the service worker shows an OS notification whenever no Baton tab is focused,
-// so cards only cover events that happened while this tab had focus (no duplicates).
+// ---------------------------------------------------------------- desktop system notifications
+// On a PC, pop-ups go to the OS notification center (Windows taskbar corner, GNOME/Ubuntu banner, macOS)
+// through the browser's Notification API. Phones rely on web push only.
+const IS_MOBILE_UA = /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+const osNotifySupported = () => 'Notification' in window && window.isSecureContext && 'serviceWorker' in navigator;
+const deskNotifyOn = () => !IS_MOBILE_UA && osNotifySupported() && Notification.permission === 'granted';
+// With push on, the service worker shows the notification whenever no Baton tab is focused,
+// so this tab only covers events that happened while it had focus (no duplicates).
 const desk = { floor: null, focusedSince: document.hasFocus() ? 0 : Infinity, pushOn: false, busy: false };
 addEventListener('focus', () => { desk.focusedSince = Date.now(); });
 addEventListener('blur', () => { desk.focusedSince = Infinity; });
-async function deskCardsPoll(lastId) {
+async function deskNotifyPoll(lastId) {
   if (lastId == null) return;
-  if (desk.floor == null || !deskCardsOn()) { desk.floor = lastId; return; }
+  if (desk.floor == null || !deskNotifyOn()) { desk.floor = lastId; return; }
   if (lastId <= desk.floor || desk.busy) return;
   desk.busy = true;
   try {
     const { items } = await api(`/api/events/after/${desk.floor}`);
     for (const ev of items) {
       desk.floor = Math.max(desk.floor, ev.id);
-      // Already looking at that session, or the OS notification covered it while this tab was in the background.
+      // Already looking at that session, or the service worker covered it while this tab was in the background.
       if (ev.url && ev.url !== '/#/' && location.hash && ev.url.endsWith(location.hash)) continue;
       if (desk.pushOn && ev.ts < desk.focusedSince) continue;
       if (Date.now() - ev.ts > 10 * 60 * 1000 || ev.quiet) continue; // muted session/project: inbox only
-      deskCard(ev);
+      deskNotify(ev);
     }
     desk.floor = Math.max(desk.floor, lastId);
   } catch { /* offline */ } finally { desk.busy = false; }
 }
-function deskCard(ev) {
-  let wrap = $('#deskcards');
-  if (!wrap) { wrap = document.createElement('div'); wrap.id = 'deskcards'; wrap.className = 'deskcards'; document.body.append(wrap); }
-  while (wrap.children.length >= 4) wrap.firstElementChild.remove();
-  const el = document.createElement('a');
-  el.className = `deskcard k-${esc(ev.kind || '')}`;
-  el.href = ev.url || '#/';
-  el.innerHTML = `<img src="/icon-handoff-192-v1.png" alt=""><div class="b"><div class="tt">${esc(ev.title || 'Baton')}</div>${ev.body ? `<div class="bd">${esc(ev.body)}</div>` : ''}</div><button class="x" aria-label="${t('닫기')}">${ICON.x}</button>`;
-  const close = () => { el.classList.add('out'); setTimeout(() => el.remove(), 220); };
-  el.querySelector('.x').onclick = (e) => { e.preventDefault(); e.stopPropagation(); close(); };
-  el.addEventListener('click', () => setTimeout(close, 50));
-  let timer = setTimeout(close, 8000);
-  el.onmouseenter = () => clearTimeout(timer);
-  el.onmouseleave = () => { timer = setTimeout(close, 4000); };
-  wrap.append(el);
+async function deskNotify(ev) {
+  const reg = await navigator.serviceWorker.ready;
+  // Same look and click handling (focus Baton + open the chat) as a web push from the service worker.
+  await reg.showNotification(ev.title || 'Baton', {
+    body: ev.body || '',
+    tag: ev.url ? `ev-${ev.url}` : undefined,
+    renotify: Boolean(ev.url),
+    icon: '/icon-handoff-192-v1.png',
+    badge: '/icon-handoff-192-v1.png',
+    data: { url: new URL(ev.url || '/#/', location.origin).href },
+  }).catch(() => {});
 }
 
 function updateRunPill(runs) {
-  const prev = G.lastRunIds;
-  const nowIds = new Set(runs.map((r) => r.id));
-  // A run disappeared from "running" -> it finished; tell the user if they're elsewhere.
-  for (const id of prev) {
-    if (!nowIds.has(id)) {
-      const r = G.runs.find((x) => x.id === id);
-      if (r && !deskCardsOn() && !(location.hash.includes(encodeURIComponent(r.sessionId || '__')))) toast(`${t('✅ 응답 완료:')} ${r.title || r.prompt || ''}`.slice(0, 60));
-    }
-  }
-  G.lastRunIds = nowIds;
+  // Finished runs are announced by push (phone) and desktop notifications (PC), not an in-app toast.
   G.runs = runs;
   drawRunPill();
 }
@@ -2770,7 +2759,7 @@ async function viewSettings() {
             ${ps.sub ? `<button class="btn sm" id="ptest">${t('테스트')}</button><button class="btn sm ghost" id="poff">${t('끄기')}</button>` : `<button class="btn sm primary" id="pon">${t('켜기')}</button>`}</div>`}
       <div class="setting"><div class="l"><b>${t('응답 완료 알림')}</b><span>${t('세션 응답이 끝날 때마다 알려줘요 (PC 터미널 포함). 세션·프로젝트 ⋯ 메뉴에서 따로 끌 수 있어요')}</span></div>${sw('notifyOnRunDone')}</div>
       <div class="setting"><div class="l"><b>${t('새 버전 알림')}</b><span>${t('새 버전 알림은 비활성화되어 있어요. 아래 버전 항목에서 직접 확인할 수 있어요.')}</span></div><label class="switch"><input type="checkbox" aria-label="${t('새 버전 알림')}" disabled><i></i></label></div>
-      ${DESK_MQ.matches ? `<div class="setting"><div class="l"><b>${t('데스크톱 화면 알림')}</b><span>${t('이 PC에서 Baton을 보고 있으면 화면 우측 하단에 알림 카드를 띄워요')}</span></div><label class="switch"><input type="checkbox" id="deskcards-sw" ${deskCardsOn() ? 'checked' : ''}><i></i></label></div>` : ''}
+      ${!IS_MOBILE_UA && osNotifySupported() && Notification.permission === 'denied' ? `<div class="setting"><div class="l"><b>${t('이 브라우저에서 알림이 차단돼 있어요')}</b><span style="color:var(--warn)">${t('주소창 왼쪽 자물쇠 → 알림 → 허용으로 바꾼 뒤 새로고침해주세요')}</span></div></div>` : ''}
     </div></div>
     <div class="section" data-settings="reminders"><div class="section-h"><h2>${t('잊혀가는 프로젝트 챙기기 💤')}</h2></div><div class="card">
       <div class="setting"><div class="l"><b>${t('하루 한 번 넛지')}</b><span>${t('멈춰 있는 프로젝트 하나를 골라 다음 할 일과 함께 알려줘요')}</span></div>${sw('nudgeEnabled')}</div>
@@ -2827,10 +2816,6 @@ async function viewSettings() {
   };
   $('#pon') && ($('#pon').onclick = async () => { try { await enablePush(); viewSettings(); } catch (e) { toast(e.message, true); } });
   $('#poff') && ($('#poff').onclick = async () => { const sub = ps.sub; await api('/api/push/unsubscribe', { body: { endpoint: sub.endpoint } }); await sub.unsubscribe(); toast(t('알림을 껐어요')); viewSettings(); });
-  $('#deskcards-sw') && ($('#deskcards-sw').onchange = (e) => {
-    localStorage.setItem('baton.deskCards', e.target.checked ? '1' : '0');
-    if (e.target.checked) deskCard({ kind: 'test', title: t('🏃 Baton 알림 테스트'), body: t('이 위치에 알림이 떠요'), url: '#/settings' });
-  });
   $('#ptest') && ($('#ptest').onclick = async () => { const r = await api('/api/push/test', { method: 'POST' }); toast(t('{n}개 기기로 보냈어요', { n: r.sent })); });
   $('#nudgenow').onclick = async (e) => {
     e.target.disabled = true; e.target.innerHTML = '<div class="spinner"></div>';
@@ -5059,7 +5044,7 @@ navigator.serviceWorker?.addEventListener('message', (e) => {
     else location.hash = u.hash || '#/';
     settleViewport({ force: true });
   }
-  if (e.data?.type === 'desk-cards?') e.ports[0]?.postMessage({ cards: deskCardsOn() && document.visibilityState === 'visible' });
+  if (e.data?.type === 'desk-cards?') e.ports[0]?.postMessage({ cards: deskNotifyOn() && document.visibilityState === 'visible' });
 });
 pushStatus().then((p) => { desk.pushOn = Boolean(p.sub); }).catch(() => {});
 (async () => {

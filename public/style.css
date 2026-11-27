@@ -464,22 +464,6 @@ body.kb-open .composer { padding-bottom: 8px; }
 .toast.err { background: var(--danger); color: #fff; }
 @keyframes tin { from { transform: translateY(-8px); opacity: 0; } }
 
-/* desktop notification cards (bottom-right) */
-.deskcards { position: fixed; right: 20px; bottom: 20px; z-index: 85; display: flex; flex-direction: column; gap: 10px; width: 360px; max-width: calc(100vw - 40px); pointer-events: none; }
-.deskcard { pointer-events: auto; display: flex; gap: 12px; align-items: flex-start; padding: 12px 12px 12px 14px; border-radius: 14px; background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: 0 10px 32px rgba(0,0,0,.18); text-decoration: none; animation: dcin .22s ease-out; transition: transform .2s, opacity .2s; }
-.deskcard:hover { border-color: var(--accent, var(--border)); }
-.deskcard.out { opacity: 0; transform: translateX(24px); }
-.deskcard img { width: 32px; height: 32px; border-radius: 8px; flex: none; }
-.deskcard .b { flex: 1; min-width: 0; }
-.deskcard .tt { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.deskcard .bd { margin-top: 3px; font-size: 13px; line-height: 1.4; color: var(--text-2, var(--text)); white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.deskcard.k-run_error { border-left: 3px solid var(--danger); }
-.deskcard .x { flex: none; width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: inherit; opacity: .55; cursor: pointer; display: grid; place-items: center; }
-.deskcard .x:hover { opacity: 1; background: var(--surface-2); }
-@keyframes dcin { from { transform: translateY(12px); opacity: 0; } }
-body.auth-mode .deskcards { display: none; }
-body.chat-mode .deskcards { bottom: 110px; }
-
 /* ---------- settings ---------- */
 .setting { display: flex; align-items: center; gap: 12px; padding: 14px; }
 .setting + .setting { border-top: 1px solid var(--border); }
