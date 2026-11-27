@@ -392,6 +392,27 @@ function drawRunPill() {
 
 setInterval(() => { if (document.visibilityState === 'visible') loadState(); }, 5000);
 
+const MOBILE_SHELL = window.matchMedia('(max-width: 759px)');
+/** Current page scroller on non-chat views: `main.view` inside the mobile app shell, `window` on desktop. */
+const pageScroller = () => (MOBILE_SHELL.matches ? $('#view') : null);
+const getPageScrollY = () => { const el = pageScroller(); return el ? el.scrollTop : window.scrollY; };
+const setPageScrollY = (y) => {
+  const el = pageScroller();
+  if (el) el.scrollTop = y;
+  else window.scrollTo(0, y);
+};
+const scrollPageBy = (dy) => {
+  const el = pageScroller();
+  if (el) el.scrollTop += dy;
+  else window.scrollBy(0, dy);
+};
+const isKeyboardField = (el) => {
+  if (!el || el === document.body) return false;
+  if (el.matches?.('textarea, [contenteditable]')) return true;
+  if (el.matches?.('input')) return !/^(checkbox|radio|button|submit|reset|file|hidden|range|color)$/i.test(el.type || 'text');
+  return false;
+};
+
 /**
  * Phone web views (iOS WebKit especially) sometimes stop painting after a big screen swap — chat → list —
  * or when the keyboard closes late, leaving only the app's dark window background until a finger drag
@@ -404,7 +425,6 @@ let repaintQueued = false;
 const userMove = { at: 0, selfUntil: 0 };
 const markMove = () => { userMove.at = Date.now(); };
 ['touchstart', 'touchmove', 'wheel', 'keydown', 'pointerdown'].forEach((ev) => window.addEventListener(ev, markMove, { passive: true, capture: true }));
-window.addEventListener('scroll', () => { if (Date.now() > userMove.selfUntil) markMove(); }, { passive: true });
 const scrolling = () => Date.now() - userMove.at < 700;
 function repaint(tries = 0) {
   if (repaintQueued && !tries) return;
@@ -414,69 +434,154 @@ function repaint(tries = 0) {
       if (tries < 12) setTimeout(() => repaint(tries + 1), 500); else repaintQueued = false;
       return;
     }
-    const se = document.scrollingElement || document.documentElement;
+    const sc = pageScroller();
+    const se = sc || document.scrollingElement || document.documentElement;
     const y = se.scrollTop, room = se.scrollHeight - se.clientHeight;
     const nudge = room > 0 ? (y > 0 ? y - 1 : 1) : null;
     userMove.selfUntil = Date.now() + 120;
-    if (nudge != null) window.scrollTo(0, nudge);
-    app.style.willChange = 'opacity'; // opacity, not transform: transform would re-anchor the fixed FAB
+    if (nudge != null) {
+      if (sc) sc.scrollTop = nudge;
+      else window.scrollTo(0, nudge);
+    }
+    app.style.willChange = 'opacity'; // opacity, not transform: transform would re-anchor fixed descendants
     requestAnimationFrame(() => {
-      if (nudge != null && Math.round(se.scrollTop) === nudge) { userMove.selfUntil = Date.now() + 120; window.scrollTo(0, y); }
+      if (nudge != null && Math.round(se.scrollTop) === nudge) {
+        userMove.selfUntil = Date.now() + 120;
+        if (sc) sc.scrollTop = y;
+        else window.scrollTo(0, y);
+      }
       app.style.willChange = '';
       repaintQueued = false;
     });
   }));
 }
-// The keyboard can finish closing after the chat is gone (its listeners are removed): repaint once it settles.
-(() => {
-  const vv = window.visualViewport;
-  let timer = null;
-  vv?.addEventListener('resize', () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => { if (window.innerHeight - vv.height <= 120) repaint(); }, 200); // keyboard down
-  });
-  window.addEventListener('pageshow', repaint);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') repaint(); });
-})();
 
 /**
- * Coming back to the app (notification tap, app switcher) iOS can keep the visual viewport the keyboard
- * left behind: the page is scrolled/offset, so position:fixed bars (the tab bar) float up the screen and
- * ride along with every scroll. With no field focused there is nothing to keep it for — reset the scroll
- * and repaint, again after iOS has settled (it restores late).
+ * Keep the mobile viewport, chat height, and keyboard insets in sync with what is actually visible.
+ * - With no keyboard open on mobile, chat fills `100%` of the fixed app shell (not a snapshot pixel
+ *   height from visualViewport), so a stale or mid-transition visualViewport after tapping a notification
+ *   or dismissing the keyboard can never leave a giant blank space below the chat.
+ * - While a text field IS focused and the keyboard shrinks visualViewport, chat pins to the exact visual
+ *   viewport rect (`--vvt`, `--vvh`) and non-chat views get bottom scroll room (`--kb-h`) while the flex
+ *   tab bar stays pinned at the bottom of the app shell.
+ */
+let kbScrollResetAt = 0;
+function syncViewport() {
+  const root = document.documentElement;
+  const vv = window.visualViewport;
+  const chatMode = document.body.classList.contains('chat-mode');
+  if (!MOBILE_SHELL.matches) {
+    root.style.setProperty('--vvh', '100dvh');
+    root.style.setProperty('--vvt', '0px');
+    root.style.setProperty('--kb-h', '0px');
+    document.body.classList.remove('kb-open');
+    return;
+  }
+  const fullH = Math.max(root.clientHeight || 0, window.innerHeight || 0);
+  const focused = isKeyboardField(document.activeElement);
+  const kbGap = vv ? Math.max(0, fullH - vv.height) : 0;
+  const kbOpen = Boolean(vv && focused && kbGap > 100);
+  document.body.classList.toggle('kb-open', kbOpen);
+  if (kbOpen) {
+    const vvt = Math.max(0, Math.round(vv.offsetTop));
+    const vvh = Math.max(200, Math.round(vv.height));
+    root.style.setProperty('--vvh', `${vvh}px`);
+    root.style.setProperty('--vvt', `${vvt}px`);
+    root.style.setProperty('--kb-h', `${Math.round(kbGap)}px`);
+    if (chatMode && vv.offsetTop > 1 && Date.now() - kbScrollResetAt > 120) {
+      kbScrollResetAt = Date.now();
+      userMove.selfUntil = Date.now() + 120;
+      window.scrollTo(0, 0);
+    }
+  } else {
+    root.style.setProperty('--vvh', '100%');
+    root.style.setProperty('--vvt', '0px');
+    root.style.setProperty('--kb-h', '0px');
+    // Mobile scrolls inside #view / #scroll, so clearing stray document scroll never snaps the user's place.
+    if (window.scrollY > 0 || (vv && vv.offsetTop > 1 && vv.scale <= 1.01)) {
+      userMove.selfUntil = Date.now() + 120;
+      window.scrollTo(0, 0);
+    }
+  }
+  if (chatMode) {
+    const sc = $('#scroll');
+    if (sc && sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80) sc.scrollTop = sc.scrollHeight;
+  }
+}
+
+/**
+ * iOS standalone PWAs can keep a stale/shrunk root layout viewport after waking from a notification or
+ * closing the keyboard. Nudging the fixed body inset synchronously within one turn (never hiding DOM)
+ * forces WebKit to recompute the full-screen rect with zero flash and without moving inner scroll positions.
+ */
+function flushViewportLayout() {
+  if (!MOBILE_SHELL.matches || isKeyboardField(document.activeElement)) return;
+  const b = document.body;
+  b.style.bottom = '-1px';
+  void b.offsetHeight;
+  b.style.bottom = '';
+}
+
+/**
+ * Coming back to the app (notification tap, app switcher) iOS can keep a shifted or shrunk viewport left
+ * behind by the keyboard or notification launch. Re-sync the viewport, clear stray document scroll, flush
+ * WebKit's fixed layout rect when needed, and repaint — again after iOS finishes animating in.
  */
 let viewportResetAt = 0;
-function settleViewport(fromScroll = false) {
-  const fix = () => {
-    const f = document.activeElement;
-    if (f && f !== document.body && f.matches?.('input, textarea, select, [contenteditable]')) return; // keyboard really is up
+let settleTimers = [];
+function settleViewport({ force = false, fromScroll = false } = {}) {
+  const fix = (allowFlush) => {
+    syncViewport();
+    if (isKeyboardField(document.activeElement)) return; // keyboard really is up
     const vv = window.visualViewport;
-    // Only a visual viewport that is displaced from the layout viewport (what the keyboard leaves behind) needs a reset.
-    // Not pageTop (that is simply how far the page is scrolled) and not a height difference (pinch-zoom):
-    // those made every focus / app-switch throw a scrolled tab back to the top.
-    // Never while the user is scrolling. And when triggered by the visualViewport 'scroll' listener below, at most
-    // once per 5s: if the offset is one scrollTo can't clear, every scroll would fire that listener and snap the
-    // page back to the top forever ("scroll down, jump up") until the app is restarted. The return-to-app
-    // retries (0 / 350 / 1200ms) are not throttled: iOS restores late and they need to run.
-    if (vv && vv.offsetTop > 1 && vv.scale <= 1.01 && !scrolling() && !(fromScroll && Date.now() - viewportResetAt < 5000)) {
+    if (MOBILE_SHELL.matches) {
+      const displaced = Boolean(window.scrollY > 0 || (vv && vv.offsetTop > 1 && vv.scale <= 1.01));
+      const shrunk = Boolean(vv && Math.abs(vv.height - window.innerHeight) > 40 && vv.scale <= 1.01);
+      if (displaced) {
+        userMove.selfUntil = Date.now() + 120;
+        window.scrollTo(0, 0);
+      }
+      if (allowFlush && (force || displaced || shrunk)) {
+        flushViewportLayout();
+        syncViewport();
+      }
+    } else if (vv && vv.offsetTop > 1 && vv.scale <= 1.01 && !scrolling() && !(fromScroll && Date.now() - viewportResetAt < 5000)) {
       viewportResetAt = Date.now();
       userMove.selfUntil = Date.now() + 120;
       window.scrollTo(0, 0);
     }
     repaint();
   };
-  fix();
-  setTimeout(fix, 350);
-  setTimeout(fix, 1200);
+  for (const id of settleTimers) clearTimeout(id);
+  settleTimers = [];
+  fix(true);
+  if (fromScroll) return;
+  for (const ms of [120, 350, 900]) settleTimers.push(setTimeout(() => fix(ms <= 350), ms));
 }
-window.addEventListener('pageshow', settleViewport);
-window.addEventListener('focus', settleViewport);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') settleViewport(); });
-window.visualViewport?.addEventListener('scroll', () => {
-  // fixed bars follow a visual viewport that is scrolled away from the top while no field is focused
-  const vv = window.visualViewport, f = document.activeElement;
-  if (vv.offsetTop > 1 && !(f && f.matches?.('input, textarea, select, [contenteditable]'))) settleViewport(true);
-});
+(() => {
+  const vv = window.visualViewport;
+  let kbDownTimer = null;
+  vv?.addEventListener('resize', () => {
+    syncViewport();
+    clearTimeout(kbDownTimer);
+    kbDownTimer = setTimeout(() => {
+      syncViewport();
+      if (!isKeyboardField(document.activeElement) && window.innerHeight - vv.height <= 120) repaint();
+    }, 200);
+  });
+  vv?.addEventListener('scroll', () => {
+    syncViewport();
+    if (vv.offsetTop > 1 && !isKeyboardField(document.activeElement)) settleViewport({ fromScroll: true });
+  });
+  window.addEventListener('resize', syncViewport);
+  window.addEventListener('orientationchange', () => settleViewport({ force: true }));
+  document.addEventListener('focusin', () => { syncViewport(); setTimeout(syncViewport, 250); });
+  document.addEventListener('focusout', () => { setTimeout(syncViewport, 50); setTimeout(() => settleViewport(), 320); });
+  MOBILE_SHELL.addEventListener?.('change', () => settleViewport({ force: true }));
+  window.addEventListener('pageshow', () => settleViewport({ force: true }));
+  window.addEventListener('focus', () => settleViewport({ force: true }));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') settleViewport({ force: true }); });
+})();
 
 // ---------------------------------------------------------------- back keeps your place
 // Each history entry remembers where you were (page scroll + a few list states, e.g. which page of
@@ -486,8 +591,14 @@ if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; // we 
 function entryState() { const st = history.state; return st && typeof st === 'object' ? st : {}; }
 function remember(patch) { try { history.replaceState({ ...entryState(), ...patch }, ''); } catch { /* replaceState rate limit */ } }
 let scrollSaveTimer = null;
-const saveScroll = () => { clearTimeout(scrollSaveTimer); scrollSaveTimer = null; if (!document.body.classList.contains('chat-mode')) remember({ y: Math.round(window.scrollY) }); };
-window.addEventListener('scroll', () => { clearTimeout(scrollSaveTimer); scrollSaveTimer = setTimeout(saveScroll, 150); }, { passive: true });
+const saveScroll = () => { clearTimeout(scrollSaveTimer); scrollSaveTimer = null; if (!document.body.classList.contains('chat-mode')) remember({ y: Math.round(getPageScrollY()) }); };
+window.addEventListener('scroll', (e) => {
+  if (Date.now() > userMove.selfUntil) markMove();
+  if (document.body.classList.contains('chat-mode')) return;
+  const tg = e.target;
+  const isPage = MOBILE_SHELL.matches ? tg?.id === 'view' : (tg === document || tg === window || tg === document.documentElement || tg === document.body);
+  if (isPage) { clearTimeout(scrollSaveTimer); scrollSaveTimer = setTimeout(saveScroll, 150); }
+}, { passive: true, capture: true });
 document.addEventListener('click', (e) => { if (e.target.closest?.('a[href^="#"]')) saveScroll(); }, true); // tap right after a fling
 /** Scroll back to `y` once the screen is tall enough (lists can still be growing); a touch cancels it. */
 function restoreScroll(y, onDone) {
@@ -500,8 +611,8 @@ function restoreScroll(y, onDone) {
   const step = () => {
     if (cancelled || navCount !== G.navCount) { finish(); return; }
     userMove.selfUntil = Date.now() + 120;
-    window.scrollTo(0, y);
-    if (Math.abs(window.scrollY - y) > 2 && Date.now() < until) requestAnimationFrame(step);
+    setPageScrollY(y);
+    if (Math.abs(getPageScrollY() - y) > 2 && Date.now() < until) requestAnimationFrame(step);
     else finish();
   };
   step();
@@ -548,9 +659,12 @@ async function render() {
   // Same hash again = a refresh of this very screen (pull-to-refresh, an action that re-renders): stay where you are.
   const refresh = raw === G.lastRaw && !document.body.classList.contains('chat-mode');
   G.lastRaw = raw;
-  const keepY = refresh ? Math.round(window.scrollY) : 0;
+  const keepY = refresh ? Math.round(getPageScrollY()) : 0;
   app.style.minHeight = '';
-  if (keepY > 0) { G.restore = { ...G.restore, y: keepY }; app.style.minHeight = `${document.documentElement.scrollHeight}px`; } // don't let the skeleton shrink the page
+  if (keepY > 0) {
+    G.restore = { ...G.restore, y: keepY };
+    if (!MOBILE_SHELL.matches) app.style.minHeight = `${document.documentElement.scrollHeight}px`; // don't let the skeleton shrink the desktop page
+  }
   G.navCount = (G.navCount || 0) + 1;
   const navCount = G.navCount;
   for (const [re, fn, tab, sideTab] of routes) {
@@ -558,12 +672,13 @@ async function render() {
     if (!m) continue;
     // tab === null → full-screen chat (mobile hides the tab bar); the desktop sidebar still marks where you are.
     document.body.classList.toggle('chat-mode', tab === null);
+    syncViewport();
     $$('#tabbar a').forEach((a) => a.classList.toggle('on', a.dataset.tab === (tab ?? sideTab)));
-    if (!keepY) window.scrollTo(0, 0);
+    if (!keepY) { setPageScrollY(0); if (window.scrollY > 0) window.scrollTo(0, 0); }
     try { await fn(m.slice(1).map(decodeURIComponent), params); drawRunPill(); }
     catch (e) { console.error(e); if (navCount === G.navCount) app.innerHTML = `<div class="empty" style="padding-top:30vh"><b>${t('불러오지 못했어요')}</b>${esc(e.message)}<br><br><button class="btn" onclick="location.reload()">${t('다시 시도')}</button></div>`; }
     const unlock = () => { if (navCount === G.navCount) app.style.minHeight = ''; };
-    if (navCount === G.navCount) { if (G.restore.y > 0) restoreScroll(G.restore.y, unlock); else unlock(); repaint(); }
+    if (navCount === G.navCount) { if (tab !== null && G.restore.y > 0) restoreScroll(G.restore.y, unlock); else unlock(); repaint(); }
     return;
   }
   location.hash = '#/';
@@ -576,7 +691,7 @@ window.addEventListener('hashchange', render);
 (() => {
   const PULL = 70, MAX = 110;
   let y0 = null, x0 = 0, dy = 0, pulling = false, busy = false, ind = null;
-  const scroller = () => (document.body.classList.contains('chat-mode') ? $('#scroll') : null);
+  const scroller = () => (document.body.classList.contains('chat-mode') ? $('#scroll') : pageScroller());
   const atTop = () => { const s = scroller(); return s ? s.scrollTop <= 0 : (window.scrollY || document.documentElement.scrollTop) <= 0; };
   const indicator = () => {
     if (!ind) { ind = document.createElement('div'); ind.className = 'ptr'; ind.innerHTML = '<div class="spinner"></div>'; document.body.append(ind); }
@@ -1057,11 +1172,14 @@ async function viewProject([id]) {
       // Measuring needs height:auto, which briefly shrinks the page; the browser then clamps the scroll position
       // and the view jumps up on the first keystroke. Hold the page height and the scroll position across it.
       const fit = () => {
-        const y = window.scrollY, h = document.documentElement.scrollHeight;
-        app.style.minHeight = `${h}px`;
+        const sc = pageScroller();
+        const y = getPageScrollY();
+        if (sc) box.style.minHeight = `${box.offsetHeight}px`;
+        else app.style.minHeight = `${document.documentElement.scrollHeight}px`;
         ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`;
-        if (Math.abs(window.scrollY - y) > 1) { userMove.selfUntil = Date.now() + 120; window.scrollTo(0, y); }
-        app.style.minHeight = '';
+        if (Math.abs(getPageScrollY() - y) > 1) { userMove.selfUntil = Date.now() + 120; setPageScrollY(y); }
+        if (sc) box.style.minHeight = '';
+        else app.style.minHeight = '';
       };
       fit(); ta.oninput = fit;
       ta.focus({ preventScroll: true }); ta.setSelectionRange(caret, caret);
@@ -1079,7 +1197,7 @@ async function viewProject([id]) {
       const vh = window.visualViewport?.height || innerHeight;
       const want = ev && ev.clientY != null ? Math.min(ev.clientY, vh * 0.4) : topBefore;
       const drift = caretY - want;
-      if (Math.abs(drift) > 1) { userMove.selfUntil = Date.now() + 120; window.scrollBy(0, drift); }
+      if (Math.abs(drift) > 1) { userMove.selfUntil = Date.now() + 120; scrollPageBy(drift); }
       const finish = async (save) => {
         if (save && ta.value !== (p.note || '')) {
           try { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { note: ta.value } }); toast(t('메모를 저장했어요')); }
@@ -1651,26 +1769,19 @@ function drawOpts(tool) {
 }
 
 function setupViewport() {
-  const vv = window.visualViewport;
-  const apply = () => {
-    const h = vv ? vv.height : window.innerHeight;
-    document.documentElement.style.setProperty('--vvh', `${h}px`);
-    document.body.classList.toggle('kb-open', vv ? window.innerHeight - vv.height > 120 : false);
-    if (vv) window.scrollTo(0, 0);
-  };
-  apply();
-  vv?.addEventListener('resize', apply);
-  vv?.addEventListener('scroll', apply);
+  syncViewport();
   return () => {
-    vv?.removeEventListener('resize', apply); vv?.removeEventListener('scroll', apply);
     // Leaving with the keyboard up or the message list still coasting: end both before the screen is
     // swapped. Otherwise the phone finishes them against a layout that no longer exists and can leave
     // the next screen unpainted (black) until the next touch-scroll.
     const f = document.activeElement;
-    if (f && f !== document.body && f.matches?.('input, textarea, select, [contenteditable]')) f.blur();
+    if (isKeyboardField(f)) f.blur();
     const sc = $('#scroll'); if (sc) sc.style.overflowY = 'hidden'; // stops momentum scrolling now
     document.body.classList.remove('kb-open');
-    document.documentElement.style.setProperty('--vvh', '100dvh');
+    document.documentElement.style.setProperty('--vvh', MOBILE_SHELL.matches ? '100%' : '100dvh');
+    document.documentElement.style.setProperty('--vvt', '0px');
+    document.documentElement.style.setProperty('--kb-h', '0px');
+    settleViewport();
   };
 }
 
@@ -3363,7 +3474,7 @@ async function viewSkillNew(_, params) {
   let shownStage = null;
   function draw() {
     clearInterval(timer);
-    if (shownStage && shownStage !== S.stage) window.scrollTo(0, 0); // a new step starts at the top
+    if (shownStage && shownStage !== S.stage) setPageScrollY(0); // a new step starts at the top
     shownStage = S.stage;
     if (S.stage === 'writing' && S.job) drawWriting();
     else if (S.stage === 'review' && S.draft) drawReview();
@@ -3951,7 +4062,7 @@ async function viewMcpNew(_, params) {
   let shownStage = null;
   function draw() {
     clearInterval(timer);
-    if (shownStage && shownStage !== S.stage) window.scrollTo(0, 0);
+    if (shownStage && shownStage !== S.stage) setPageScrollY(0);
     shownStage = S.stage;
     if (S.stage === 'writing' && S.job) drawWriting();
     else if (S.stage === 'installing' && S.job) drawInstalling();
@@ -4735,19 +4846,28 @@ navigator.serviceWorker?.addEventListener('message', (e) => {
   if (e.data?.type === 'navigate' && e.data.url) {
     // Tapping a notification while Baton is already open: go to that chat inside this page. Assigning the
     // same URL (or only its hash) would otherwise do nothing, or reload the whole app.
+    if (isKeyboardField(document.activeElement)) document.activeElement.blur();
+    while (sheetStack.length) sheetStack[sheetStack.length - 1](undefined);
     const u = new URL(e.data.url, location.href);
     if (u.origin !== location.origin) location.href = e.data.url;
     else if ((u.hash || '#/') === (location.hash || '#/')) render();
     else location.hash = u.hash || '#/';
-    settleViewport();
+    settleViewport({ force: true });
   }
   if (e.data?.type === 'desk-cards?') e.ports[0]?.postMessage({ cards: deskCardsOn() && document.visibilityState === 'visible' });
 });
 pushStatus().then((p) => { desk.pushOn = Boolean(p.sub); }).catch(() => {});
 (async () => {
   $$('[data-t]', $('#tabbar')).forEach((el) => { el.textContent = t(el.dataset.t); });
+  // If launched directly into a chat (e.g. from a phone notification), enter chat-mode immediately so the
+  // tab bar doesn't flash or skew viewport height before loadState() finishes.
+  const bootHash = (location.hash || '#/').split('?')[0];
+  const bootRoute = routes.find(([re]) => bootHash.match(re));
+  if (bootRoute && bootRoute[2] === null) document.body.classList.add('chat-mode');
+  syncViewport();
   await loadState();
   // first run: nothing set up yet -> onboarding
   if (G.state && !G.state.settings?.setupDone && !(G.state.tools || []).some((x) => x.installed) && !location.hash.startsWith('#/setup')) location.hash = '#/setup';
-  render();
+  await render();
+  settleViewport({ force: true });
 })();
