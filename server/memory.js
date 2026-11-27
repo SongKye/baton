@@ -117,7 +117,7 @@ function normDir(p) {
 export function memoryProject(cwd) {
   if (!cwd) return null;
   // Check POSIX temp dirs before path.resolve: on Windows it turns `/tmp/x` into `D:\tmp\x`.
-  if (/^\/(?:var\/)?tmp(?:\/|$)/.test(String(cwd))) return null;
+  if (!cfg.projectRootFn && /^\/(?:var\/)?tmp(?:\/|$)/.test(String(cwd))) return null;
   const abs = normDir(cwd);
   if (/[\\/]\.claude[\\/]worktrees(?:[\\/]|$)|[\\/]\.codex(?:[\\/]|$)/.test(abs)) return null;
   const root = (cfg.projectRootFn || projectRoot)(abs);
