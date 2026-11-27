@@ -45,11 +45,11 @@ async function buildContext(root) {
   return { text: parts.join('\n'), sessions };
 }
 
-/** The configured summary tool/model, falling back to something that works on this setup. */
-async function briefTarget(st) {
-  let tool = st.briefTool;
+/** The configured AI helper tool/model (briefs, shared memory), falling back to something that works on this setup. */
+export async function aiTarget(st, toolKey = 'briefTool', modelKey = 'briefModel') {
+  let tool = st[toolKey];
   if (!binFor(tool)) tool = TOOL_IDS.find((id) => binFor(id)) || tool;
-  let model = tool === st.briefTool ? st.briefModel : '';
+  let model = tool === st[toolKey] ? st[modelKey] : '';
   if (tool === 'claude' && ['haiku', 'sonnet', 'opus'].includes(model)) {
     // on gateways / self-hosted servers an alias like "haiku" may not exist — use the configured model
     const p = await claudeProvider().catch(() => null);
@@ -109,7 +109,7 @@ export async function ensureBrief(project, { force = false } = {}) {
   const p = (async () => {
     const { text } = await buildContext(project.id);
     const st = getSettings();
-    const { tool: briefTool, model: briefModel } = await briefTarget(st);
+    const { tool: briefTool, model: briefModel } = await aiTarget(st, 'briefTool', 'briefModel');
     const out = await oneShot({ tool: briefTool, model: briefModel, prompt: PROMPT(clip(text, 40000), lang() === 'ko' ? 'Korean' : 'English') });
     const brief = parseJson(out);
     saveBrief(project.id, fp, brief);

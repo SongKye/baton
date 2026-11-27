@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Project shared memory across AI CLIs.** Conversations in Baton chat now share decisions, conventions, gotchas, active state, recent cross-CLI activity, and live dev servers within the same project without repeating context. Uses a 3-speed lifecycle (instant zero-token activity bridge + session reference logs, debounced lightweight AI extraction, and periodic "Dream" consolidation), Korean+English smart recall, delta-only injection after turn 1 (preserving prompt caches), a single **Save to shared memory** action in the chat `⋯` menu for on-demand summarization, per-project toggles, and Settings controls for the extractor tool/model.
+
 ### Fixed
 - **Phone: the bottom tab bar stays anchored at the bottom while scrolling, and opening a chat from a notification no longer leaves a large blank gap.** On phones (`<= 759px`), Baton now uses a locked flex app shell with inner scrolling (`main.view`) instead of a `position: fixed` tab bar over a scrolling document, and chat views fill `100%` of the shell whenever no keyboard is open while re-syncing and flushing the viewport on notification launch/resume.
 - **Scrolling no longer snaps back to the top after coming back to the app.** The "reset the displaced viewport" step could fire on every scroll when the browser kept a leftover viewport offset, so each scroll down jumped straight back up until the app was restarted. The reset now waits while you are scrolling and runs at most once every 5 seconds.

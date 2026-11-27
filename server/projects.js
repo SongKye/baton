@@ -71,6 +71,7 @@ export function groupProjects(sessions, metaMap, briefs) {
         lastNudged: meta?.last_nudged || null,
         note: meta?.note || null,
         muted: Boolean(meta?.muted),
+        memoryOff: Boolean(meta?.memory_off),
         sessions: 0,
         autoSessions: 0,
         tools: {},

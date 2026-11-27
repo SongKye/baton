@@ -58,6 +58,7 @@ const q = (sql) => db.prepare(sql);
 try { db.exec('ALTER TABLE session_meta ADD COLUMN notify INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ }
 try { db.exec('ALTER TABLE session_meta ADD COLUMN cwd_override TEXT'); } catch { /* exists */ }
 try { db.exec('ALTER TABLE project_meta ADD COLUMN muted INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ }
+try { db.exec('ALTER TABLE project_meta ADD COLUMN memory_off INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ }
 try { db.exec('ALTER TABLE events ADD COLUMN quiet INTEGER NOT NULL DEFAULT 0'); } catch { /* exists */ } // inbox only, no pop-up
 // Notifications are on for every session by default now: session_meta.notify -1 = muted, 0 = default.
 // The old opt-in values (1 = next time only, 2 = every time) mean "on", which is the default.
@@ -75,6 +76,9 @@ const DEFAULT_SETTINGS = {
   nudgeCooldownDays: 10,        // don't nudge the same project again within N days
   briefTool: 'claude',
   briefModel: 'haiku',
+  sharedMemory: true,
+  memoryTool: 'claude',
+  memoryModel: 'haiku',
   defaultPerm: 'auto',
   notifyOnRunDone: true,
   updateCheck: false,           // reserved for compatibility; new-version alerts cannot be enabled
@@ -146,12 +150,12 @@ export function getProjectMeta(id) {
   return q('SELECT * FROM project_meta WHERE id = ?').get(id) || null;
 }
 export function patchProjectMeta(id, patch) {
-  const cur = getProjectMeta(id) || { id, name: null, status: 'active', pinned: 0, snooze_until: null, last_nudged: null, note: null, muted: 0 };
+  const cur = getProjectMeta(id) || { id, name: null, status: 'active', pinned: 0, snooze_until: null, last_nudged: null, note: null, muted: 0, memory_off: 0 };
   const next = { ...cur, ...patch };
-  q(`INSERT INTO project_meta (id, name, status, pinned, snooze_until, last_nudged, note, muted) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  q(`INSERT INTO project_meta (id, name, status, pinned, snooze_until, last_nudged, note, muted, memory_off) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, status=excluded.status, pinned=excluded.pinned,
-       snooze_until=excluded.snooze_until, last_nudged=excluded.last_nudged, note=excluded.note, muted=excluded.muted`)
-    .run(id, next.name ?? null, next.status || 'active', next.pinned ? 1 : 0, next.snooze_until ?? null, next.last_nudged ?? null, next.note ?? null, next.muted ? 1 : 0);
+       snooze_until=excluded.snooze_until, last_nudged=excluded.last_nudged, note=excluded.note, muted=excluded.muted, memory_off=excluded.memory_off`)
+    .run(id, next.name ?? null, next.status || 'active', next.pinned ? 1 : 0, next.snooze_until ?? null, next.last_nudged ?? null, next.note ?? null, next.muted ? 1 : 0, next.memory_off ? 1 : 0);
   return next;
 }
 

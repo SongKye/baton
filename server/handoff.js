@@ -27,6 +27,7 @@ import { TOOLS, binFor } from './tools.js';
 import { spawnCli } from './platform.js';
 import { tr } from './i18n.js';
 import { CLAUDE_HOME } from './env.js';
+import { withMemory } from './memory.js';
 
 db.exec(`CREATE TABLE IF NOT EXISTS session_links (
   from_key TEXT NOT NULL, to_key TEXT NOT NULL, created INTEGER NOT NULL, note TEXT,
@@ -43,7 +44,7 @@ function parseInput(m) {
   return input;
 }
 
-function filesTouched(msgs) {
+export function filesTouched(msgs) {
   const files = new Map(); // path -> action
   for (const m of msgs) {
     if (m.role !== 'tool' || !m.tool) continue;
@@ -80,7 +81,7 @@ function latestTodos(msgs) {
 }
 
 /** Claude Code's per-project auto-memory (~/.claude/projects/<encoded cwd>/memory/*.md) — other CLIs can't see it. */
-function claudeMemory(dirs) {
+export function claudeMemory(dirs) {
   const out = [];
   let size = 0;
   for (const d of [...new Set(dirs.filter(Boolean))]) {
@@ -107,31 +108,45 @@ function ruleFiles(root) {
 
 const fmtTool = (t) => `${t.name}${t.summary ? ` (${clip(oneLine(t.summary), 100)})` : ''}`;
 
-/** Zero-token extracted record of the session, within NOTE_BUDGET. */
-export async function buildHandoffNote(s, msgs, { agentSummary = null } = {}) {
+/** Zero-token extracted record of the session, within `budget` chars. mode: 'handoff' | 'reference'. */
+export async function buildHandoffNote(s, msgs, { agentSummary = null, budget: noteBudget = NOTE_BUDGET, mode = 'handoff' } = {}) {
   const root = s.project || s.cwd;
   const head = [];
   const users = msgs.filter((m) => m.role === 'user' && m.text);
   const lastUser = users.at(-1);
   const lastAsst = [...msgs].reverse().find((m) => m.role === 'assistant' && m.text);
-  head.push(`# Handoff: ${s.title || 'session'}`);
-  head.push('');
-  head.push(`You are taking over a coding session that was started in **${toolName(s.tool)}** (session \`${s.id}\`${s.model ? `, model ${s.model}` : ''}).`);
-  head.push('It was paused — usually because that tool ran low on its usage limit. Continue the same work here.');
-  head.push('');
-  head.push(`- Project: ${projectName(root)} (\`${shortHome(s.cwd || root || '')}\`)`);
-  head.push(`- Last activity: ${new Date(s.updated).toISOString()}`);
-  head.push('');
-  head.push('## Rules for you');
-  head.push('- This note can be incomplete or slightly stale. The files on disk and `git diff` are the source of truth — check them before editing.');
-  head.push('- Do not redo finished work. Keep the decisions and conventions recorded here unless the user says otherwise.');
-  const rules = ruleFiles(root);
-  if (rules.length) head.push(`- Project rules live in ${rules.map((f) => `\`${f}\``).join(', ')} (some were written for a different agent — they still apply to you). Read them.`);
-  head.push('- If the last task was cut off mid-way, finish or repair it first (files may be half-edited).');
-  head.push('');
+  const isRef = mode === 'reference';
+  if (isRef) {
+    head.push(`# Session log (reference only): ${s.title || 'session'}`);
+    head.push('');
+    head.push(`Read-only summary of another **${toolName(s.tool)}** session (\`${s.id}\`${s.model ? `, model ${s.model}` : ''}) on this project.`);
+    head.push('Use this only as background reference for your current task — do NOT take over this session or abandon the user\'s current request.');
+    head.push('');
+    head.push(`- Project: ${projectName(root)} (\`${shortHome(s.cwd || root || '')}\`)`);
+    head.push(`- Last activity: ${new Date(s.updated).toISOString()}`);
+    head.push('');
+  } else {
+    head.push(`# Handoff: ${s.title || 'session'}`);
+    head.push('');
+    head.push(`You are taking over a coding session that was started in **${toolName(s.tool)}** (session \`${s.id}\`${s.model ? `, model ${s.model}` : ''}).`);
+    head.push('It was paused — usually because that tool ran low on its usage limit. Continue the same work here.');
+    head.push('');
+    head.push(`- Project: ${projectName(root)} (\`${shortHome(s.cwd || root || '')}\`)`);
+    head.push(`- Last activity: ${new Date(s.updated).toISOString()}`);
+    head.push('');
+    head.push('## Rules for you');
+    head.push('- This note can be incomplete or slightly stale. The files on disk and `git diff` are the source of truth — check them before editing.');
+    head.push('- Do not redo finished work. Keep the decisions and conventions recorded here unless the user says otherwise.');
+    const rules = ruleFiles(root);
+    if (rules.length) head.push(`- Project rules live in ${rules.map((f) => `\`${f}\``).join(', ')} (some were written for a different agent — they still apply to you). Read them.`);
+    head.push('- If the last task was cut off mid-way, finish or repair it first (files may be half-edited).');
+    head.push('');
+  }
   if (agentSummary) { head.push(`## Summary written by ${toolName(s.tool)} itself (most reliable)`); head.push(agentSummary.trim()); head.push(''); }
-  const mem = claudeMemory([s.cwd, root]);
-  if (mem.length) { head.push('## Project memory saved by Claude Code (conventions/decisions — follow them)'); head.push(...mem); head.push(''); }
+  if (!isRef) {
+    const mem = claudeMemory([s.cwd, root]);
+    if (mem.length) { head.push('## Project memory saved by Claude Code (conventions/decisions — follow them)'); head.push(...mem); head.push(''); }
+  }
   if (users[0]) { head.push('## Original goal'); head.push(clip(users[0].text.trim(), 3000)); head.push(''); }
   const todos = latestTodos(msgs);
   if (todos) { head.push('## Latest todo list'); head.push(...todos.slice(0, 40)); head.push(''); }
@@ -174,7 +189,7 @@ export async function buildHandoffNote(s, msgs, { agentSummary = null } = {}) {
     else if (m.role === 'tool' && m.tool) cur.tools.push(m.tool);
   }
   const fixed = [...head, ...stop].join('\n');
-  let budget = NOTE_BUDGET - fixed.length - 600;
+  let budget = noteBudget - fixed.length - 600;
   const rendered = [];
   for (let i = turns.length - 1; i >= 0; i--) {
     const tn = turns[i];
@@ -287,10 +302,15 @@ export async function handoff({ fromTool, fromId, toTool, toSessionId, prompt, m
   const composed = toSessionId
     ? `While you were paused, this work continued in another agent (${toolName(fromTool)}). Read \`${rel}\` first — it records what happened there (decisions, files changed, where it stopped). Check the files' current state. ${check}\n\nUser's request: ${ask}`
     : `You are continuing a session handed over from ${toolName(fromTool)} (it ran low on usage limits). First read \`${rel}\` in this folder — it has the goal, decisions, files touched, git state and where it stopped. Check the current state of the files. ${check}\n\nUser's request: ${ask}`;
-  const run = startRun({ tool: toTool, sessionId: toSessionId || null, cwd, prompt: composed, model, effort, perm, title: s.title, images });
   const fromKey = `${fromTool}:${fromId}`;
+  const mem = await withMemory({ tool: toTool, sessionId: toSessionId || null, cwd, prompt: composed, excludeSessionKey: fromKey, includeClaudeMemory: false });
+  const run = startRun({
+    tool: toTool, sessionId: toSessionId || null, cwd, prompt: composed, wirePrompt: mem.wirePrompt,
+    model, effort, perm, title: s.title, images, initialEvents: mem.memoryEvent ? [mem.memoryEvent] : null,
+  });
   const save = (id) => {
     if (!id) return;
+    mem.markSeen(id);
     link(fromKey, `${toTool}:${id}`, rel);
     // a new session would otherwise be titled after the handoff instructions
     if (!toSessionId && s.title) patchSessionMeta(`${toTool}:${id}`, { title: `↪ ${s.title}` });
