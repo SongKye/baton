@@ -1845,6 +1845,29 @@ function msgsHtml(msgs) {
 }
 
 /**
+ * True when a bullet item looks like a declarative explanation sentence rather than a selectable choice
+ * (e.g. FAQ-style self-answered replies from Antigravity/Gemini).
+ */
+function isExplanationOpt(raw) {
+  const x = raw.replace(/\*\*|__|`/g, '').trim();
+  if (/^(?:안|옵션|방안|선택지|option|choice)\s*[A-Za-z0-9]/i.test(x) || /^[A-Ha-h1-9][.)]\s+/.test(x)) return false;
+  const labeled = x.match(/^(.{1,40}?)\s*(?:—|–|:)\s+.+$/);
+  if (labeled && !/[.!?。]/.test(labeled[1])) return false;
+  if (/(?:입니다|합니다|됩니다|있습니다|없습니다|겠습니다|드립니다|않습니다|못합니다|필요합니다|가능합니다|지원합니다|동작합니다|제공합니다|의미합니다|사용합니다|보여줍니다|해줍니다|예요|에요|어요|아요|해요|돼요|줘요|네요|군요|죠|이다|한다|된다|있다|없다)[.!?。]?$/.test(x)) return true;
+  if (x.length > 55 && /[.!?。]$/.test(x)) return true;
+  return false;
+}
+
+/** True when a question heading looks like a rhetorical FAQ heading rather than asking the user to choose. */
+function isRhetoricalFaq(q) {
+  const s = q.replace(/\*\*|__|`/g, '').trim();
+  if (/할까요|볼까요|좋을까요|원하시|원해|고르|골라|선택|어느\s*쪽|어느\s*것|어떻게\s*할|진행할까요|바꿀까요|쓸까요|넣을까요|which|choose|pick|select|prefer|should\s+i|do\s+you\s+want|would\s+you\s+like/i.test(s)) return false;
+  if (/(?:무엇인가요|뭐가\s*좋|뭔가요|인가요|쓰이나요|동작하나요|작동하나요|그런가요|발생하나요|차이인가요|필요한가요|해야\s*하나요)\s*[?？]$/.test(s)) return true;
+  if (/^(?:what\s+(?:is|are|does)|how\s+(?:does|do|it)|why\s+(?:is|are|does|do))\b/i.test(s)) return true;
+  return false;
+}
+
+/**
  * "Question + list of choices" at the end of a reply -> { question, options } for quick-reply buttons.
  * For CLIs whose question tool doesn't reach Baton (Codex exec, Antigravity -p): they ask in plain text.
  * Deliberately strict, so a summary list followed by "shall I commit?" does not turn into buttons.
@@ -1862,13 +1885,13 @@ function parseChoices(text) {
   const opts = [];
   let i = end;
   while (i > 0 && OPT.test(lines[i - 1])) { opts.unshift(lines[i - 1].match(OPT)[1]); i--; }
-  if (opts.length < 2 || opts.length > 6 || opts.some((o) => o.length > 120)) return null;
+  if (opts.length < 2 || opts.length > 6 || opts.some((o) => o.length > 120) || opts.some(isExplanationOpt)) return null;
   let j = i;
   while (j > 0 && !lines[j - 1]) j--;
   const before = j > 0 ? lines[j - 1] : '';
   const isQ = (x) => /[?？]\**\s*$|[:：]\**\s*$/.test(x);
   const q = tail ? (isQ(tail) && CHOOSE.test(tail) ? tail : null) : (isQ(before) ? before : null);
-  if (!q || q.length > 240) return null;
+  if (!q || q.length > 240 || isRhetoricalFaq(strip(q))) return null;
   return { question: strip(q), options: opts.map(choiceOf) };
 }
 
@@ -1889,7 +1912,7 @@ function parseQuestions(text) {
   const CHOOSE = /골라|고르|선택|어느|어떤|어떻게|중에|중 하나|which|choose|pick|select|prefer|또는|아니면/i;
   const strip = (x) => x.replace(/\*\*|__|`/g, '').trim();
   const qText = (x) => strip(x).replace(/^#{1,6}\s+/, '').replace(/^(?:Q\s*)?\d{1,2}[.)]\s+|^(?:Q|질문)\s*\d{1,2}\s*[.:)]\s*/i, '').trim();
-  const isQ = (x) => { const y = qText(x); return y.length > 1 && y.length <= 240 && (/[?？]$/.test(y) || (/[:：]$/.test(y) && CHOOSE.test(y))); };
+  const isQ = (x) => { const y = qText(x); return y.length > 1 && y.length <= 240 && !isRhetoricalFaq(y) && (/[?？]$/.test(y) || (/[:：]$/.test(y) && CHOOSE.test(y))); };
   // up to two closing lines ("Tell me and I'll start") after the last block
   let end = lines.length, tail = 0;
   while (end && (!lines[end - 1] || (!OPT.test(lines[end - 1]) && !isQ(lines[end - 1]) && tail < 2))) { if (lines[end - 1]) tail++; end--; }
@@ -1900,7 +1923,7 @@ function parseQuestions(text) {
     while (i > 0 && OPT.test(lines[i - 1]) && !isQ(lines[i - 1])) { opts.unshift(lines[i - 1].match(OPT)[1]); i--; }
     let j = i;
     while (j > 0 && !lines[j - 1]) j--;
-    if (opts.length < 2 || opts.length > 6 || opts.some((o) => o.length > 120) || !j || !isQ(lines[j - 1])) break;
+    if (opts.length < 2 || opts.length > 6 || opts.some((o) => o.length > 120) || opts.some(isExplanationOpt) || !j || !isQ(lines[j - 1])) break;
     blocks.unshift({ question: qText(lines[j - 1]), options: opts.map(choiceOf) });
     i = j - 1;
     while (i > 0 && !lines[i - 1]) i--;
