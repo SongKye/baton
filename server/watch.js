@@ -58,6 +58,14 @@ export function watchStep(st, { now, mtime, updated = 0, busy = false, quietMs }
   return 'finished';
 }
 
+/**
+ * What the "did new messages arrive" check compares: the newest message time from the transcript, or for
+ * sources whose `updated` is only a file mtime (Cursor) the id of the newest message.
+ */
+export function progressOf(s) {
+  return Number(s?.progress ?? s?.updated) || 0;
+}
+
 /** Did the transcript really get new content since the session was last idle? */
 export function transcriptAdvanced(st, updated) {
   const advanced = (updated || 0) > (st.seen || 0);
@@ -76,16 +84,16 @@ async function tick() {
     const sk = `${key}\0${s.file}`;
     const m = await mtimeOf(s);
     const st = state.get(sk);
-    if (!st) { state.set(sk, { mtime: m, working: false, lastChange: 0, seen: s.updated || 0 }); continue; } // baseline, don't fire on start
+    if (!st) { state.set(sk, { mtime: m, working: false, lastChange: 0, seen: progressOf(s) }); continue; } // baseline, don't fire on start
     const lv = live.get(key);
     const busy = lv?.status === 'busy' || Boolean(activeRunFor(key));
     const idleConfirmed = s.tool === 'claude' && lv?.status === 'idle';
     const quietMs = idleConfirmed ? 2500 : QUIET_MS[s.tool] || 15000;
-    if (watchStep(st, { now, mtime: m, updated: s.updated, busy, quietMs }) !== 'finished') continue;
-    if (now - (batonEnded.get(key) || 0) < 60_000) { transcriptAdvanced(st, s.updated); continue; } // Baton's own run_end push already covered it
-    const snapFresh = (await forceRefresh()).byKey.get(key);
-    const fresh = snapFresh && snapFresh.file === s.file ? snapFresh : s;
-    if (!transcriptAdvanced(st, fresh.updated)) continue; // file touched, no new messages
+    if (watchStep(st, { now, mtime: m, updated: progressOf(s), busy, quietMs }) !== 'finished') continue;
+    // Look up by file, not key: the same session id can live in several files and byKey keeps only one.
+    const fresh = (await forceRefresh()).byFile.get(s.file) || s;
+    if (now - (batonEnded.get(key) || 0) < 60_000) { transcriptAdvanced(st, progressOf(fresh)); continue; } // Baton's own run_end push already covered it
+    if (!transcriptAdvanced(st, progressOf(fresh))) continue; // file touched, no new messages
     const allowed = notifyAllowed(key, { project: s.project, cwd: s.cwd });
     const body = clip(String(fresh.lastReply || tr('응답이 끝났어요')).replace(/\s+/g, ' '), 140);
     if (!allowed) { addEvent('watch_done', fromLine(s.tool, fresh.model), `✅ ${clip(fresh.title || tr('세션'), 40)}\n${body}`, `/#/s/${s.tool}/${encodeURIComponent(s.id)}`, { quiet: true }); continue; }

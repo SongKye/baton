@@ -54,7 +54,8 @@ async function summarize(file, st, batonIds) {
   const head = await headJsonl(file, 64 * 1024, 200);
   const meta = head.find((e) => e.type === 'session_meta')?.payload;
   if (!meta) return null;
-  const tail = st.size > 64 * 1024 ? await tailJsonl(file, 192 * 1024) : head;
+  // The head stops at 200 lines even in a small file; read the tail then too so the latest reply is seen.
+  const tail = st.size > 64 * 1024 || head.length >= 200 ? await tailJsonl(file, 192 * 1024) : head;
   let firstPrompt = null, lastPrompt = null, lastReply = null, updated = null, model = null;
   for (const e of head) {
     const u = userText(e);

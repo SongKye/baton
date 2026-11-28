@@ -3,7 +3,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { watchStep, transcriptAdvanced, mtimeOf } from '../server/watch.js';
+import { DatabaseSync } from 'node:sqlite';
+
+// Point every CLI's home at a throwaway folder before the source modules read their paths.
+const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'baton-watch-home-'));
+process.env.HOME = fakeHome;
+process.env.USERPROFILE = fakeHome;
+delete process.env.CLAUDE_CONFIG_DIR;
+delete process.env.CODEX_HOME;
+const { watchStep, transcriptAdvanced, mtimeOf, progressOf } = await import('../server/watch.js');
+const { listClaude } = await import('../server/sources/claude.js');
+const { listCodex } = await import('../server/sources/codex.js');
+const { listCursor } = await import('../server/sources/cursor.js');
 
 const QUIET = 15000;
 const fresh = (updated) => ({ mtime: 1000, working: false, lastChange: 0, seen: updated, startedAt: 0 });
@@ -64,5 +75,68 @@ const fresh = (updated) => ({ mtime: 1000, working: false, lastChange: 0, seen: 
   }
 }
 
+// 6. Claude: a small file with more than 300 short records still shows the newest reply/time
+{
+  const dir = path.join(fakeHome, '.claude', 'projects', '-tmp-proj');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'long-short.jsonl');
+  const t = (i) => new Date(Date.UTC(2026, 10, 28, 0, 0, i)).toISOString();
+  const lines = [JSON.stringify({ type: 'user', cwd: '/home/x/proj', timestamp: t(0), isSidechain: false, message: { role: 'user', content: 'hello' } })];
+  for (let i = 1; i < 300; i++) lines.push(JSON.stringify({ type: 'system', timestamp: t(i), isSidechain: false }));
+  fs.writeFileSync(file, lines.join('\n') + '\n');
+  const before = (await listClaude()).find((x) => x.id === 'long-short');
+  assert.ok(before && fs.statSync(file).size < 96 * 1024, 'fixture is a small file');
+  fs.appendFileSync(file, JSON.stringify({ type: 'assistant', timestamp: t(400), isSidechain: false, message: { role: 'assistant', content: [{ type: 'text', text: 'line 301 reply' }] } }) + '\n');
+  const after = (await listClaude()).find((x) => x.id === 'long-short');
+  assert.equal(after.lastReply, 'line 301 reply', 'Claude reply on line 301 is read');
+  assert.ok(progressOf(after) > progressOf(before), 'Claude progress moves with line 301');
+}
+
+// 7. Codex: same for a small file past the 200-line head window
+{
+  const dir = path.join(fakeHome, '.codex', 'sessions', '2026', '11', '28');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'rollout-2026-11-28T00-00-00-abc.jsonl');
+  const t = (i) => new Date(Date.UTC(2026, 10, 28, 0, 0, i)).toISOString();
+  const lines = [
+    JSON.stringify({ type: 'session_meta', timestamp: t(0), payload: { id: 'codex-long', cwd: '/home/x/proj', timestamp: t(0), source: 'cli' } }),
+    JSON.stringify({ type: 'event_msg', timestamp: t(1), payload: { type: 'user_message', message: 'hello' } }),
+  ];
+  for (let i = 2; i < 200; i++) lines.push(JSON.stringify({ type: 'event_msg', timestamp: t(i), payload: { type: 'token_count' } }));
+  fs.writeFileSync(file, lines.join('\n') + '\n');
+  const before = (await listCodex()).find((x) => x.id === 'codex-long');
+  assert.ok(before && fs.statSync(file).size < 64 * 1024, 'codex fixture is a small file');
+  fs.appendFileSync(file, JSON.stringify({ type: 'event_msg', timestamp: t(400), payload: { type: 'task_complete', last_agent_message: 'line 201 reply' } }) + '\n');
+  const after = (await listCodex()).find((x) => x.id === 'codex-long');
+  assert.equal(after.lastReply, 'line 201 reply', 'Codex reply on line 201 is read');
+  assert.ok(progressOf(after) > progressOf(before), 'Codex progress moves with line 201');
+}
+
+// 8. Cursor: renaming a chat is not progress; a new message is, even with the same text as before
+{
+  const dir = path.join(fakeHome, '.cursor', 'chats', 'hash1', 'chat1');
+  fs.mkdirSync(dir, { recursive: true });
+  const dbFile = path.join(dir, 'store.db');
+  const db = new DatabaseSync(dbFile);
+  db.exec('CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT); CREATE TABLE blobs (id TEXT, data BLOB);');
+  const setName = (name) => db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('0', ?)").run(JSON.stringify({ name, createdAt: 1 }));
+  const addMsg = (role, text) => db.prepare('INSERT INTO blobs (id, data) VALUES (?, ?)').run(String(Math.random()), Buffer.from(JSON.stringify({ role, content: text })));
+  setName('first');
+  addMsg('user', 'hi');
+  addMsg('assistant', 'same answer');
+  const base = (await listCursor()).find((x) => x.id === 'chat1');
+  const st = { seen: progressOf(base) };
+  setName('renamed');
+  const renamed = (await listCursor()).find((x) => x.id === 'chat1');
+  assert.equal(renamed.title, 'renamed', 'rename is visible');
+  assert.equal(transcriptAdvanced(st, progressOf(renamed)), false, 'rename only -> no ping');
+  addMsg('user', 'again');
+  addMsg('assistant', 'same answer');
+  const replied = (await listCursor()).find((x) => x.id === 'chat1');
+  assert.equal(transcriptAdvanced(st, progressOf(replied)), true, 'same text, new message -> ping');
+  db.close();
+}
+
+fs.rmSync(fakeHome, { recursive: true, force: true });
 console.log('watch-check: OK');
 process.exit(0);

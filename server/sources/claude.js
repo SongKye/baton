@@ -32,7 +32,9 @@ function isRealUserPrompt(e) {
 async function summarize(file, st) {
   const id = path.basename(file, '.jsonl');
   const head = await headJsonl(file, 96 * 1024, 300);
-  const tail = st.size > 96 * 1024 ? await tailJsonl(file, 256 * 1024) : head;
+  // The head stops at 300 lines even in a small file, so a long run of short records also needs the tail;
+  // otherwise lastReply/updated would freeze at line 300.
+  const tail = st.size > 96 * 1024 || head.length >= 300 ? await tailJsonl(file, 256 * 1024) : head;
   let cwd = null, created = null, entrypoint = null, firstPrompt = null, gitBranch = null;
   for (const e of head) {
     if (!cwd && e.cwd) cwd = e.cwd;

@@ -26,7 +26,8 @@ function readMeta(db) {
   } catch { return {}; }
 }
 
-function messages(db) {
+/** JSON message blobs in order. `info.lastRowid` gets the rowid of the newest one (a new message = a new rowid). */
+function messages(db, info = {}) {
   const out = [];
   let rows = [];
   try { rows = db.prepare('SELECT rowid, data FROM blobs ORDER BY rowid').all(); } catch { return out; }
@@ -35,7 +36,7 @@ function messages(db) {
     if (buf[0] !== 0x7b) continue; // JSON objects only
     try {
       const j = JSON.parse(buf.toString('utf8'));
-      if (j && typeof j.role === 'string') out.push(j);
+      if (j && typeof j.role === 'string') { out.push(j); info.lastRowid = r.rowid; }
     } catch { /* protobuf/binary */ }
   }
   return out;
@@ -74,7 +75,8 @@ export async function listCursor() {
       let db;
       try { db = openRO(file); } catch { continue; }
       let meta = {}, msgs = [];
-      try { meta = readMeta(db); msgs = messages(db); } finally { try { db.close(); } catch { /* ignore */ } }
+      const info = { lastRowid: 0 };
+      try { meta = readMeta(db); msgs = messages(db, info); } finally { try { db.close(); } catch { /* ignore */ } }
       const users = msgs.filter((m) => m.role === 'user').map((m) => userQuery(textOf(m.content))).filter(Boolean);
       const lastAsst = [...msgs].reverse().find((m) => m.role === 'assistant' && textOf(m.content).trim());
       let cwd = dirForHash(h);
@@ -89,6 +91,8 @@ export async function listCursor() {
         firstPrompt: clip(oneLine(cleanPrompt(users[0] || '')), 240), lastPrompt: clip(oneLine(cleanPrompt(users.length > 1 ? users[users.length - 1] : '')), 240),
         lastReply: clip(oneLine(lastAsst ? textOf(lastAsst.content) : ''), 400),
         model: meta.lastUsedModel || null, automated: !batonIds.has(id) && users.length === 0, file, size: st.size,
+        // `updated` is a file mtime (a rename bumps it); the watcher compares this instead to spot new messages.
+        progress: Number(info.lastRowid) || 0,
       };
       cache.set(file, { stamp, row });
       out.push(row);
