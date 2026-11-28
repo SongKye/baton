@@ -105,15 +105,18 @@ assert.equal(rMultiKo.questions.length, 2);
 assert.deepEqual(rMultiKo.questions[0].options.map((o) => o.label), ['안 A: Postgres', '안 B: SQLite']);
 assert.deepEqual(rMultiKo.questions[1].options.map((o) => o.label), ['Google OAuth', 'GitHub OAuth']);
 
-// 7. Tail choice question still works; summary + yes/no or summary bullets stay null
-const tailChoice = `- Postgres
+// 7. Tail questions: only trigger when explicitly referring back to the preceding list.
+// Note: generic tail questions like "Which database do you prefer?" without a list reference now intentionally
+// return null to prevent false positives on status/summary lists (use "Which of these ..." instead).
+const explicitTailChoice = `- Postgres
 - SQLite
 
-Which database do you prefer?`;
-const rTail = detect(tailChoice);
+Which of these databases do you prefer?`;
+const rTail = detect(explicitTailChoice);
 assert.equal(rTail?.kind, 'single');
 assert.deepEqual(rTail.options.map((o) => o.label), ['Postgres', 'SQLite']);
 
+assert.equal(detect(`- Postgres\n- SQLite\n\nWhich database do you prefer?`), null, 'generic tail question without list reference must stay null');
 assert.equal(detect(`- Fixed login\n- Updated tests\n\nShall I commit?`), null);
 assert.equal(detect(`어떻게 진행할까요?\n- 변경 사항을 커밋했습니다.\n- 테스트도 통과했습니다.`), null);
 assert.equal(detect(`1. 어느 환경에 배포할까요?\n- 개발\n- 운영\n\`\`\`\nend\n\`\`\``), null);
@@ -127,4 +130,43 @@ const trailingFaq = `1. 어느 환경에 배포할까요?
 - 빠른 조회`;
 assert.equal(detect(trailingFaq), null);
 
-console.log('PASS: choice-parser regression suite (FAQ filtering, user prompts, A/B markers, mixed boundaries, markdown headings)');
+// 9. Re-review contrast cases (PR #125): 4 non-button cases vs 3 button cases
+// 9a. Reported "현재 상태" status summary + inline A/B closing question -> null
+const reportedStatusReply = `### 현재 상태
+- **PR #125**: Ready 전환 및 리뷰 답변 코멘트 등록 완료 (커밋 \`922b314\`)
+- **CI**: 5/5 전부 통과 (\`Ubuntu\`, \`macOS\`, \`Windows\`, \`Chromium\` 브라우저 테스트)
+
+Codex 재리뷰를 먼저 보실까요, 아니면 바로 머지할까요?`;
+assert.equal(detect(reportedStatusReply), null, 'status report + inline A/B question must not show buttons');
+
+// 9b. Unrelated tail questions ("Which branch..." / "editor?" matching old or\b) -> null
+assert.equal(detect(`- 로그인 수정\n- 문서 정리\n\nWhich branch should I deploy?`), null, 'unrelated Which tail question must stay null');
+assert.equal(detect(`- 로그인 수정\n- 문서 정리\n\nCan I open the editor?`), null, 'editor? must not match or\\b');
+
+// 9c. Informational "Which platforms are supported?" FAQ vs user-directed "Which platform should I target?"
+assert.equal(detect(`### Which platforms are supported?\n- Windows\n- macOS`), null, 'informational Which FAQ must stay null');
+const rTarget = detect(`Which platform should I target?\n- Windows\n- macOS`);
+assert.equal(rTarget?.kind, 'single');
+assert.deepEqual(rTarget.options.map((o) => o.label), ['Windows', 'macOS']);
+
+// 9d. Candidate list + explicit back-referencing tail question -> 2 buttons preserved
+const deployCandidates = `### 배포 후보
+- 스테이징
+- 프로덕션
+
+이 중에서 어느 환경에 배포할까요?`;
+const rDeploy = detect(deployCandidates);
+assert.equal(rDeploy?.kind, 'single');
+assert.equal(rDeploy.question, '이 중에서 어느 환경에 배포할까요?');
+assert.deepEqual(rDeploy.options.map((o) => o.label), ['스테이징', '프로덕션']);
+
+// 9e. Question-first list with "CI:" / "문서:" labels -> 2 buttons preserved (no brittle key blacklist)
+const changeFirst = `어떤 변경부터 진행할까요?
+- CI: 테스트 추가
+- 문서: 설치 안내 수정`;
+const rChange = detect(changeFirst);
+assert.equal(rChange?.kind, 'single');
+assert.equal(rChange.question, '어떤 변경부터 진행할까요?');
+assert.deepEqual(rChange.options.map((o) => o.label), ['CI: 테스트 추가', '문서: 설치 안내 수정']);
+
+console.log('PASS: choice-parser regression suite (FAQ filtering, user prompts, A/B markers, mixed boundaries, tail references, markdown headings)');

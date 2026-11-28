@@ -10,10 +10,12 @@
 //      (explicit A./B. markers, labeled choices, concise candidates vs declarative sentences).
 
 const OPT_RE = /^([-*•]|\d{1,2}[.)]|[A-Ha-h][.)]|\([A-Ha-h1-9]\))\s+(.+)$/;
-const CHOOSE_RE = /골라|고르|선택|어느|어떤|어떻게|중에|중 하나|which|choose|pick|select|prefer|or\b|또는|아니면/i;
-const USER_ASKED_RE = /할까요|볼까요|좋을까요|원하시|원해|고르|골라|선택|어느|어떻게\s*할|진행할까요|바꿀까요|쓸까요|넣을까요|배포할까요|사용\s*중|쓰고\s*계|쓰시는|원하시는|목표|대상|타깃|타겟|환경은|버전은|이름은|경로는|which|choose|pick|select|prefer|should\s+i|shall\s+i|do\s+you\s+want|would\s+you\s+like|would\s+you\s+prefer|\byour\b|\byou\b|\btarget\b|\bpreferred\b/i;
+const CHOOSE_RE = /골라|고르|선택|어느|중에|중 하나|\b(?:which|choose|pick|select|prefer)\b/i;
+// Tail questions (list first, closing question after) must explicitly refer back to the preceding list.
+const TAIL_LIST_REF_RE = /(?:이\s*중(?:에|에서)?|위\s*(?:(?:두|세|네|\d+\s*개)\s*)?(?:목록|항목|옵션|후보|방안|안)?\s*중(?:에|에서)?|위(?:의)?\s*(?:목록|항목|옵션|후보|방안)\s*에서|중\s*하나|\bwhich\s+(?:one|option|of\s+(?:these|them|those|the\s+above))\b|\b(?:choose|pick|select)\s+(?:one|from\s+(?:these|the\s+above|above))\b|\bof\s+(?:these|the\s+above)\b)/i;
+const USER_ASKED_RE = /할까요|볼까요|좋을까요|원하시|원해|고르|골라|선택|어느|어떻게\s*할|진행할까요|바꿀까요|쓸까요|넣을까요|배포할까요|사용\s*중|쓰고\s*계|쓰시는|원하시는|목표|대상|타깃|타겟|환경은|버전은|이름은|경로는|\b(?:choose|pick|select|prefer|target|should\s+i|shall\s+i|do\s+you|would\s+you)\b|\byour\s+(?:target|platform|os|environment|setup|preference|choice|stack|editor|ide|browser|version|path|branch|region|db|database)\b/i;
 const FAQ_KO_RE = /(?:무엇인가요|뭐가\s*좋|뭔가요|인가요|쓰이나요|동작하나요|작동하나요|그런가요|발생하나요|차이인가요|필요한가요|해야\s*하나요|포함되나요|지원하나요|가능한가요)\s*[?？]$/;
-const FAQ_EN_RE = /^(?:what\s+(?:is|are|does|can|gets?)|how\s+(?:does|do|it|to)|why\s+(?:is|are|does|do)|when\s+(?:is|does|to)|where\s+(?:is|are|does))\b/i;
+const FAQ_EN_RE = /^(?:(?:what|why|where)\s+(?:is|are|does|can|gets?|do)\b|how\s+(?:does|do|it|to)\b|when\s+(?:is|does|to)\b|which\b.*\b(?:is|are|was|were)\b)/i;
 const EXPLICIT_MARKER_RE = /^(?:[A-Ha-h][.)]|\([A-Ha-h1-9]\))$/;
 const EXPLICIT_OPT_PREFIX_RE = /^(?:안|옵션|방안|선택지|option|choice)\s*[A-Za-z0-9]/i;
 const DECL_KO_RE = /(?:입니다|합니다|됩니다|있습니다|없습니다|겠습니다|드립니다|않습니다|못합니다|필요합니다|가능합니다|지원합니다|동작합니다|제공합니다|의미합니다|사용합니다|보여줍니다|해줍니다|했습니다|됐습니다|였습니다|예요|에요|어요|아요|해요|돼요|줘요|네요|군요|죠|이다|한다|된다|있다|없다)[.!?。]?$/;
@@ -82,12 +84,12 @@ export function choiceOf(opt) {
 }
 
 /** Validate a normalized heading + its option items together. */
-function isValidBlock(heading, opts, { allowColonWithChoose = true, requireChoose = false } = {}) {
+function isValidBlock(heading, opts, { allowColonWithChoose = true, requireListRef = false } = {}) {
   if (!heading || heading.length <= 1 || heading.length > 240) return false;
   const endsQ = /[?？]$/.test(heading);
   const endsColon = /[:：]$/.test(heading);
-  if (requireChoose) {
-    if (!(endsQ || endsColon) || !CHOOSE_RE.test(heading)) return false;
+  if (requireListRef) {
+    if (!(endsQ || endsColon) || !TAIL_LIST_REF_RE.test(heading)) return false;
   } else if (!endsQ) {
     if (!(allowColonWithChoose && endsColon && CHOOSE_RE.test(heading))) return false;
   }
@@ -149,7 +151,8 @@ export function parseChoices(text) {
   while (lines.length && !lines[lines.length - 1]) lines.pop();
   if (!lines.length) return null;
 
-  // Case 1: Options list followed by a single closing choice question ("- Postgres\n- SQLite\nWhich do you prefer?")
+  // Case 1: Options list followed by a closing question that explicitly refers back to the list
+  // (e.g. "이 중에서 어느 환경에 배포할까요?", "Which of these databases do you prefer?").
   const last = lines[lines.length - 1];
   if (!OPT_RE.test(last)) {
     let i = lines.length - 1;
@@ -164,7 +167,7 @@ export function parseChoices(text) {
       i--;
     }
     const tailHeading = normalizeHeading(last);
-    if (isValidBlock(tailHeading, opts, { requireChoose: true })) {
+    if (isValidBlock(tailHeading, opts, { requireListRef: true })) {
       return { question: tailHeading, options: opts.map(choiceOf) };
     }
   }
