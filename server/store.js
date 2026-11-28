@@ -51,6 +51,12 @@ CREATE TABLE IF NOT EXISTS run_outcome (
   denied TEXT,                    -- JSON array of blocked tools
   at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS pending_ask (
+  key TEXT PRIMARY KEY,           -- "<tool>:<id>"
+  request_id TEXT NOT NULL,
+  questions TEXT NOT NULL,        -- JSON array of normalized questions from MCP ask_user
+  at INTEGER NOT NULL
+);
 `);
 
 const q = (sql) => db.prepare(sql);
@@ -139,6 +145,21 @@ export function setRunOutcome(key, { kind, error = null, denied = [] }) {
   q('INSERT OR REPLACE INTO run_outcome (key, kind, error, denied, at) VALUES (?, ?, ?, ?, ?)').run(key, kind, error, JSON.stringify(denied || []), Date.now());
 }
 export function clearRunOutcome(key) { q('DELETE FROM run_outcome WHERE key = ?').run(key); }
+
+// ---------- pending structured questions from non-blocking MCP ask_user (until user replies or dismisses) ----------
+export function getPendingAsk(key) {
+  const r = q('SELECT * FROM pending_ask WHERE key = ?').get(key);
+  if (!r) return null;
+  try {
+    const questions = JSON.parse(r.questions || '[]');
+    if (!Array.isArray(questions) || !questions.length) return null;
+    return { requestId: r.request_id, questions, at: r.at };
+  } catch { return null; }
+}
+export function setPendingAsk(key, { requestId, questions }) {
+  q('INSERT OR REPLACE INTO pending_ask (key, request_id, questions, at) VALUES (?, ?, ?, ?)').run(key, String(requestId || ''), JSON.stringify(questions || []), Date.now());
+}
+export function clearPendingAsk(key) { q('DELETE FROM pending_ask WHERE key = ?').run(key); }
 
 // ---------- project meta ----------
 export function allProjectMeta() {

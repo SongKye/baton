@@ -9,7 +9,7 @@ import { ROOT, HOME, DAY, clip, shortHome } from './util.js';
 import * as store from './store.js';
 import { decoratedSessions, projectsList, findSession, readMessages, getSnapshot, forceRefresh } from './indexer.js';
 import { gitInfo, projectRoot, projectFingerprint } from './projects.js';
-import { startRun, getRun, stopRun, answerRun, listRuns, publicRun, activeRunFor, bus } from './runner.js';
+import { startRun, getRun, stopRun, answerRun, listRuns, publicRun, activeRunFor, bus, setAskEndpoint, submitMcpAsk } from './runner.js';
 import { catalogs, fromLine } from './models.js';
 import { schedule, listScheduled, cancelScheduled, nextReset, startScheduler } from './schedule.js';
 import { vapidPublicKey, notify, setPublicOrigin } from './push.js';
@@ -272,12 +272,18 @@ route('GET', '/api/sessions/:tool/:id', async (req, url, { tool, id }) => {
   return { session: sessionView(view), ...page, messages: page.messages.map((message) => {
     const { imageRefs, ...m } = slimMessage(message);
     return { ...m, ...(imageRefs?.length ? { imageUrls: imageRefs.map((ref) => `/api/sessions/claude/${encodeURIComponent(s.id)}/images/${ref}`) } : {}) };
-  }), run: run ? publicRun(run) : null, outcome: run ? null : store.getRunOutcome(s.key), links };
+  }), run: run ? publicRun(run) : null, outcome: run ? null : store.getRunOutcome(s.key), pendingAsk: run ? null : store.getPendingAsk(s.key), links };
 });
 
 // dismiss the "last run hit the limit / was blocked / failed" card in a chat
 route('DELETE', '/api/sessions/:tool/:id/outcome', async (req, url, { tool, id }) => {
   store.clearRunOutcome(`${tool}:${decodeURIComponent(id)}`);
+  return { ok: true };
+});
+
+// dismiss a persisted non-blocking MCP ask_user card in a chat
+route('DELETE', '/api/sessions/:tool/:id/ask', async (req, url, { tool, id }) => {
+  store.clearPendingAsk(`${tool}:${decodeURIComponent(id)}`);
   return { ok: true };
 });
 
@@ -338,6 +344,7 @@ route('POST', '/api/run', async (req) => {
   try { images = await saveImages(b.tool, cwd, b.images); } catch (e) { return [400, { error: e.message }]; }
   try {
     const prompt0 = String(b.prompt || '');
+    if (b.sessionId) store.clearPendingAsk(`${b.tool}:${b.sessionId}`);
     const prompt1 = b.sessionId ? consumeMoveNote(`${b.tool}:${b.sessionId}`, prompt0) : prompt0;
     const mem = await memory.withMemory({ tool: b.tool, sessionId: b.sessionId || null, cwd, prompt: prompt1 });
     const run = startRun({
@@ -760,13 +767,15 @@ bus.on('run_ask', (run) => {
   notify({ kind: 'ask', title: fromLine(run.tool, run.model), body: `❓ ${clip(run.title || run.prompt, 40)}\n${clip(q, 140)}`, url, tag: `ask-${run.sessionId || run.id}` }).catch(() => {});
 });
 
-// ---------- remember how a session's last run ended (limit / blocked / error) until the next run ----------
+// ---------- remember how a session's last run ended (limit / blocked / error / pending MCP ask) until the next run ----------
 bus.on('run_end', (run) => {
   if (!run.sessionId) return;
   const key = `${run.tool}:${run.sessionId}`;
   const kind = run.stopped ? null : run.limited ? 'limited' : run.denied?.length ? 'denied' : run.status === 'error' ? 'error' : null;
   if (kind) store.setRunOutcome(key, { kind, error: run.error, denied: run.denied });
   else store.clearRunOutcome(key);
+  if (run.deferredAsk && !run.stopped) store.setPendingAsk(key, run.deferredAsk);
+  else store.clearPendingAsk(key);
 });
 
 // ---------- notifications on run completion ----------
@@ -780,7 +789,8 @@ bus.on('run_end', (run) => {
   const title = fromLine(run.tool, run.model);
   const res = run.events.findLast?.((e) => e.t === 'done');
   const bodyText = `${ok ? '✅' : '⚠️'} ${label}\n${ok ? clip((res?.result || tr('응답이 끝났어요')).replace(/\s+/g, ' '), 140) : clip(run.error || tr('실패했어요'), 140)}`;
-  if (settings.notifyOnRunDone && !watching && runNotifies(run)) notify({ kind: ok ? 'run_done' : 'run_error', title, body: bodyText, url, tag: `run-${run.sessionId || run.id}` }).catch(() => {});
+  // When a non-blocking MCP ask already sent an "ask" notification, don't double-ping with "run_done" right after.
+  if (settings.notifyOnRunDone && !watching && runNotifies(run) && !(ok && run.deferredAsk)) notify({ kind: ok ? 'run_done' : 'run_error', title, body: bodyText, url, tag: `run-${run.sessionId || run.id}` }).catch(() => {});
   else store.addEvent(ok ? 'run_done' : 'run_error', title, bodyText, url, { quiet: !watching }); // muted / alerts off: inbox only
   forceRefresh().catch(() => {});
   observeRun(run);
@@ -834,13 +844,24 @@ async function serveStatic(req, res, pathname) {
 }
 
 const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, 'http://x');
+  // Local-only internal callback from Baton's stdio MCP `ask_user` server, authenticated by a per-run 192-bit bearer token.
+  if (req.method === 'POST' && url.pathname === '/api/internal/ask' && isLocal(req)) {
+    try {
+      const m = /^Bearer\s+([A-Za-z0-9._-]+)$/.exec(String(req.headers.authorization || ''));
+      const b = await body(req);
+      const out = submitMcpAsk(m?.[1] || '', b?.questions);
+      return send(res, out.ok ? 200 : (out.status || 400), out);
+    } catch (e) {
+      return send(res, 400, { ok: false, error: e.message });
+    }
+  }
   if (!authorized(req, ALLOWED)) { res.writeHead(403, { 'content-type': 'text/plain' }); res.end('forbidden'); return; }
   // Retire cookies issued by the removed password/device login.
   if (/(?:^|;\s*)baton_device=/.test(req.headers.cookie || '')) {
     res.setHeader('set-cookie', 'baton_device=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax');
   }
   if (req.headers['tailscale-user-login'] && req.headers.host) setPublicOrigin(`https://${req.headers['x-forwarded-host'] || req.headers.host}`);
-  const url = new URL(req.url, 'http://x');
   if (req.method === 'GET' && url.pathname === '/api/instance' && isLocal(req)) {
     return send(res, 200, { id: listener.id, os: OS_NAME, port: PORT });
   }
@@ -886,6 +907,7 @@ let listening;
 try {
   listening = await listen(server, listener, HOST);
   setPort(listening.port);
+  setAskEndpoint(`http://127.0.0.1:${listening.port}/api/internal/ask`);
 } catch (e) {
   console.error(`[baton] ${e.message}`);
   process.exit(1);

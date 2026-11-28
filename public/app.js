@@ -1845,6 +1845,29 @@ function msgsHtml(msgs) {
   }).join('');
 }
 
+/** Persisted non-blocking MCP `ask_user` card: submits answers as the next turn, or dismisses permanently. */
+function pendingAskCard(pending, sendText, dismissAsk) {
+  const qs = pending?.questions || [];
+  const card = askPager(qs, {
+    onSubmit: async (ans) => {
+      if (!ans) {
+        await dismissAsk?.();
+        card.remove();
+        return true;
+      }
+      const msg = qs.length === 1
+        ? String(ans[qs[0].question] || '')
+        : qs.map((q, i) => (ans[q.question] ? `${i + 1}. ${q.question}\n→ ${ans[q.question]}` : '')).filter(Boolean).join('\n\n');
+      if (!msg.trim()) return false;
+      const ok = await sendText(msg);
+      if (ok) card.remove();
+      return ok;
+    },
+  });
+  card.classList.add('ask-mcp-card');
+  return card;
+}
+
 /** The pager for questions asked in plain text; the answers go back as one ordinary message. */
 function textAskCard(qs, sendText) {
   const card = askPager(qs.map((q) => ({ question: q.question, header: '', multiSelect: false, options: q.options.map((o) => ({ label: o.label, description: o.full !== o.label ? o.full : '' })) })), {
@@ -2049,11 +2072,21 @@ function liveRun(container, runId, { onSession, onDone } = {}) {
       }
     } else if (ev.t === 'ask') {
       thinking = false;
-      const card = askCard(runId, ev);
-      el.insertBefore(card, status);
-      asks.set(ev.requestId, card);
-      waiting = true; drawStatus();
-      setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+      if (ev.mode === 'turn') {
+        // Non-blocking MCP ask_user: the agent ends its turn right after; keep questions visible without collapsing on `done`.
+        const preview = document.createElement('div');
+        preview.className = 'ask-card';
+        const qs = ev.questions || [];
+        preview.innerHTML = `<div class="ask-top">❓ ${t('AI가 물어봐요')}</div>${qs.map((q) => `<div class="ask-q">${q.header ? `<span class="ask-h">${esc(q.header)}</span>` : ''}<div class="ask-text">${esc(q.question)}</div></div>`).join('')}`;
+        el.insertBefore(preview, status);
+        setTimeout(() => preview.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+      } else {
+        const card = askCard(runId, ev);
+        el.insertBefore(card, status);
+        asks.set(ev.requestId, card);
+        waiting = true; drawStatus();
+        setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+      }
     } else if (ev.t === 'ask_done') {
       asks.get(ev.requestId)?.answered(ev.answers);
       waiting = false; drawStatus();
@@ -2566,10 +2599,20 @@ function mountChatPane(root, opts = {}) {
     api('/api/limits').catch(() => ({})).then((l) => { if (!destroyed) { lim = l; renderAlerts(); } });
     if (!d.messages.length) msgsEl.insertAdjacentHTML('beforeend', `<div class="empty">${t('표시할 대화가 없어요')}</div>`);
     const lastMsg = d.messages[d.messages.length - 1];
-    const asked = !busy && !live && lastMsg?.role === 'assistant';
+    const lastAi = [...$$('.msg-ai', msgsEl)].pop();
+    const hasPendingAsk = !busy && !live && Boolean(d.pendingAsk?.questions?.length);
+    if (hasPendingAsk) {
+      const card = pendingAskCard(
+        d.pendingAsk,
+        (text) => send(text, composerPrefs(tool), []),
+        () => api(`/api/sessions/${tool}/${encodeURIComponent(id)}/ask`, { method: 'DELETE' }).catch(() => {}),
+      );
+      if (lastAi) lastAi.after(card);
+      else $('[data-ref="schedbanners"]', msgsEl)?.before(card);
+    }
+    const asked = !busy && !live && !hasPendingAsk && lastMsg?.role === 'assistant';
     const mq = asked ? parseQuestions(lastMsg.text) : null;
     const ch = asked && !mq ? parseChoices(lastMsg.text) : null;
-    const lastAi = [...$$('.msg-ai', msgsEl)].pop();
     if (mq && lastAi) lastAi.after(textAskCard(mq, (text) => send(text, composerPrefs(tool), [])));
     if (ch && lastAi) {
       lastAi.insertAdjacentHTML('afterend', `<div class="quick-replies"><span>💬 ${t('눌러서 바로 답하기')}</span><div class="qr-opts">${ch.options.map((o, k) => `<button class="btn sm" data-qr-i="${k}" title="${esc(o.full)}">${esc(o.label)}</button>`).join('')}</div></div>`);
