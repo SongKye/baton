@@ -20,13 +20,20 @@ import { summarizeTool } from './sources/common.js';
 import { agyArtifactsInArgs, agyArtifactBlock } from './sources/agy.js';
 import { getKV, setKV, patchSessionMeta } from './store.js';
 import { codexDefaultFallback } from './providers.js';
-import { clip, ONESHOT_DIR } from './util.js';
+import { clip, ONESHOT_DIR, ROOT } from './util.js';
 import { noteMcpStatus } from './mcp.js';
 import { createRunEvents } from './run-events.js';
-import { claudePermArgs, codexPermArgs, agyPermArgs, opencodePermArgs, codexSandboxBlock } from './permissions.js';
+import { claudePermArgs, codexPermArgs, agyPermArgs, opencodePermArgs, codexSandboxBlock, tomlString } from './permissions.js';
+import { normalizeAskQuestions } from './mcp-ask.js';
 
 const runs = new Map();         // runId -> run
 const activeByKey = new Map();  // "<tool>:<sessionId>" -> runId
+const runByAskToken = new Map(); // per-run 192-bit bearer token -> run
+const MCP_ASK_SCRIPT = path.join(ROOT, 'server', 'mcp-ask.js');
+const MCP_ASK_TOOLS = new Set(['codex']);
+let askEndpointUrl = null;
+/** Enable per-run MCP `ask_user` injection pointing at Baton's local HTTP server. */
+export function setAskEndpoint(url) { askEndpointUrl = url || null; }
 export const bus = new EventEmitter(); // 'run_end' (run)
 bus.setMaxListeners(100);
 
@@ -84,7 +91,7 @@ function claudeCmd({ sessionId, model, effort, perm, prompt, images }) {
   return { bin: 'claude', args, stdin, keepOpen: true };
 }
 
-function codexCmd({ sessionId, model, effort, perm, prompt, images, cwd }) {
+function codexCmd({ sessionId, model, effort, perm, prompt, images, cwd, askMcp }) {
   const args = ['exec'];
   if (sessionId) args.push('resume');
   for (const im of images || []) args.push(`--image=${im.path}`);
@@ -92,6 +99,16 @@ function codexCmd({ sessionId, model, effort, perm, prompt, images, cwd }) {
   model ||= codexDefaultFallback(); // config.toml's model isn't offered on this ChatGPT account
   if (model) args.push('-m', model);
   if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
+  if (askMcp) {
+    args.push(
+      '-c', `mcp_servers.baton_ask.command=${tomlString(process.execPath)}`,
+      '-c', `mcp_servers.baton_ask.args=[${tomlString(askMcp.script)}]`,
+      '-c', `mcp_servers.baton_ask.env={BATON_ASK_URL=${tomlString(askMcp.url)},BATON_ASK_TOKEN=${tomlString(askMcp.token)}}`,
+      '-c', 'mcp_servers.baton_ask.default_tools_approval_mode="approve"',
+      '-c', 'mcp_servers.baton_ask.startup_timeout_sec=10',
+      '-c', 'mcp_servers.baton_ask.tool_timeout_sec=15',
+    );
+  }
   args.push(...codexPermArgs(perm, cwd)); // auto: workspace sandbox + network, git folder and package caches
   if (sessionId) args.push(sessionId);
   args.push('-');
@@ -331,15 +348,18 @@ export function startRun({ tool, sessionId, cwd, prompt, wirePrompt = null, mode
     const existing = activeRunFor(`${tool}:${sessionId}`);
     if (existing) throw Object.assign(new Error(tr('이 세션은 이미 응답 중이에요')), { code: 'BUSY', runId: existing.id });
   }
-  const opts = { sessionId, model, effort, perm, prompt: wirePrompt || prompt, images, cwd };
+  const askToken = askEndpointUrl && MCP_ASK_TOOLS.has(tool) ? crypto.randomBytes(24).toString('hex') : null;
+  const askMcp = askToken ? { script: MCP_ASK_SCRIPT, url: askEndpointUrl, token: askToken } : null;
+  const opts = { sessionId, model, effort, perm, prompt: wirePrompt || prompt, images, cwd, askMcp };
   const cmd = BUILDERS[tool](opts);
   const eventLog = createRunEvents();
 
   const run = {
     id: crypto.randomUUID(), tool, sessionId: sessionId || null, cwd, prompt, model: model || null, reqModel: model || null, effort: effort || null, images: images?.length || 0, perm: perm || 'auto',
     title: title || null, status: 'running', startedAt: Date.now(), endedAt: null, events: eventLog.events, eventLog, result: null, error: null,
-    stderr: '', listeners: new Set(), child: null, lastText: '',
+    stderr: '', listeners: new Set(), child: null, lastText: '', askToken, askMcp: Boolean(askMcp), deferredAsk: null,
   };
+  if (askToken) runByAskToken.set(askToken, run);
   run.emit = (ev) => {
     eventLog.append(ev);
     for (const l of run.listeners) { try { l(ev); } catch { /* ignore */ } }
@@ -422,7 +442,8 @@ export function startRun({ tool, sessionId, cwd, prompt, wirePrompt = null, mode
     run.limited = !ok && /rate.?limit|usage limit|limit (?:reached|exceeded)|quota|exceeded your|out of (?:credits|tokens)|\b429\b|too many requests|hit your limit|resets? (?:at|in)/i.test(`${error || ''} ${run.stderr.slice(-2000)}`);
     const denied = [...new Set(res.denied || [])];
     run.denied = denied;
-    run.emit({ t: 'done', ok, error, denied, limited: run.limited, result: res.result ? clip(res.result, 4000) : null, cost: res.cost ?? null, usage: res.usage ?? null, durationMs: run.endedAt - run.startedAt });
+    run.emit({ t: 'done', ok, error, denied, limited: run.limited, hasMcpAsk: Boolean(run.deferredAsk), result: res.result ? clip(res.result, 4000) : null, cost: res.cost ?? null, usage: res.usage ?? null, durationMs: run.endedAt - run.startedAt });
+    if (run.askToken) runByAskToken.delete(run.askToken);
     if (run.sessionId) activeByKey.delete(`${tool}:${run.sessionId}`);
     bus.emit('run_end', run);
     setTimeout(() => { run.listeners.clear(); runs.delete(run.id); eventLog.dispose(); }, 45 * 60 * 1000).unref();
@@ -446,6 +467,21 @@ export function answerRun(id, requestId, answers) {
     : run.control({ behavior: 'deny', message: 'The user skipped this question. Continue with your best judgment and say what you assumed.' }, requestId);
   run.emit({ t: 'ask_done', requestId, answers: answers || null });
   return ok;
+}
+
+/** Receive structured questions from Baton's non-blocking stdio MCP `ask_user` server. */
+export function submitMcpAsk(token, rawQuestions) {
+  if (!token || typeof token !== 'string') return { ok: false, status: 401, error: 'missing token' };
+  const run = runByAskToken.get(token);
+  if (!run || run.status !== 'running') return { ok: false, status: 401, error: 'unknown or finished run' };
+  if (run.deferredAsk) return { ok: false, status: 409, error: 'questions were already sent in this turn; end your turn and wait for the user reply' };
+  const questions = normalizeAskQuestions(rawQuestions);
+  if (!questions) return { ok: false, status: 400, error: 'invalid questions' };
+  const requestId = crypto.randomUUID();
+  run.deferredAsk = { requestId, questions, at: Date.now() };
+  run.emit({ t: 'ask', mode: 'turn', requestId, questions });
+  bus.emit('run_ask', run);
+  return { ok: true, requestId, runId: run.id };
 }
 
 export function stopRun(id) {
