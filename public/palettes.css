@@ -23,5 +23,9 @@
   :root[data-palette]:not([data-palette="default"]) .studio-brand strong { color: #f0eff5; }
   :root[data-palette]:not([data-palette="default"]) .studio-brand strong span,
   :root[data-palette]:not([data-palette="default"]) .studio-foot > span,
+  :root[data-palette]:not([data-palette="default"]) .side-sec-h,
   :root[data-palette]:not([data-palette="default"]) .tabbar:has(.studio-brand) > a { color: #c9cbd6; }
+  :root[data-palette]:not([data-palette="default"]) .side-cmd,
+  :root[data-palette]:not([data-palette="default"]) .side-toggle,
+  :root[data-palette]:not([data-palette="default"]) .side-run { color: #d7d9e2; }
 }

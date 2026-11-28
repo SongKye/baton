@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dict = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/locales/en.json'), 'utf8'));
-const files = ['public/app.js', ...fs.readdirSync(path.join(ROOT, 'server')).filter((f) => f.endsWith('.js')).map((f) => `server/${f}`),
+const files = ['public/app.js', 'public/workspace.js', ...fs.readdirSync(path.join(ROOT, 'server')).filter((f) => f.endsWith('.js')).map((f) => `server/${f}`),
   ...fs.readdirSync(path.join(ROOT, 'server/sources')).map((f) => `server/sources/${f}`)];
 const re = /\btr?\(\s*'((?:[^'\\]|\\.)*)'/g;
 const used = new Set();
