@@ -67,6 +67,12 @@ try {
   assert.equal(isWorthExtracting([{ userText: '수정해줘', reply: '완료', files: ['server/auth.js'], qaPairs: [] }]), false, 'bare file edit with no explanation skipped');
   assert.equal(isWorthExtracting([{ userText: '로그인 화면 손봐줘', reply: '세션 만료 처리를 고쳤습니다. '.repeat(30), files: ['server/auth.js'], qaPairs: [] }]), true, 'file edit with a real explanation passes');
   assert.equal(isWorthExtracting([{ userText: 'support 페이지 report 버튼 prefix 정리', reply: '변경하고 해결했습니다.', files: [], qaPairs: [] }]), false, 'support/report/prefix are not port/fix signals');
+  assert.equal(isWorthExtracting([{ userText: 'author 필드 정리해줘', reply: '완료', files: [], qaPairs: [] }]), false, 'author is not an auth signal');
+  assert.equal(isWorthExtracting([{ userText: 'authentication 흐름 정리', reply: '완료', files: [], qaPairs: [] }]), true, 'authentication still counts');
+  for (const verb of ['PR 머지하자', '테스트하자', '확인하자', '진행하자']) {
+    assert.equal(isWorthExtracting([{ userText: verb, reply: '네', files: [], qaPairs: [] }]), false, `"${verb}" alone is not a decision`);
+  }
+  assert.equal(isWorthExtracting([{ userText: '이대로 하자', reply: '네', files: [], qaPairs: [] }]), true, 'standalone "하자" still counts');
   assert.equal(isWorthExtracting([{ userText: '왜 안 돼?', reply: 'root cause는 캐시 키 충돌입니다.', files: [], qaPairs: [] }]), true, 'lesson in the reply passes');
   assert.equal(isWorthExtracting([{ userText: '골라줘', reply: '완료', files: [], qaPairs: ['Q: Auth? -> A: JWT'] }]), true, 'AskUserQuestion answer passes');
   assert.equal(parseMemoryJson('not valid json at all'), null, 'broken JSON ignored');
@@ -77,6 +83,12 @@ try {
   const mid = `${'a'.repeat(330)} 까지 이어지는 설명`;
   assert.equal(parseMemoryJson(JSON.stringify({ add: [{ kind: 'gotcha', text: mid }] })).add[0].text, mid, '330-char item is no longer cut at 260');
   assert.ok(clipItemText('x'.repeat(500)).endsWith('…') && clipItemText('x'.repeat(500)).length === 400, 'no sentence end -> hard clip with ellipsis');
+  const atBoundary = clipItemText(`${'a'.repeat(386)}server/memory.js is used for storage`);
+  assert.ok(atBoundary.endsWith('…') && !atBoundary.endsWith('memory.'), 'a "." inside a file name at the limit is not a sentence end');
+  const listed1 = clipItemText(`${'가'.repeat(250)} 이유는 다음과 같다. 1. ${'나'.repeat(200)}`);
+  assert.ok(listed1.endsWith('같다.'), 'a "1." list marker is not a sentence end');
+  const secretAtEdge = parseMemoryJson(JSON.stringify({ add: [{ kind: 'gotcha', text: `${'a'.repeat(380)} ghp_1234567890abcdefghij1234567890` }] })).add[0].text;
+  assert.ok(!secretAtEdge.includes('ghp_'), 'a token at the length limit is redacted, not half-kept');
   assert.deepEqual(parseMemoryJson('Sure:\n{"add":[{"kind":"convention","text":"Use tabs","tags":["style","tabs"]}],"update":[],"remove":[]}').add[0].kind, 'feedback', 'kind alias normalized');
 
   // 4. L0 instant bridge + AskUserQuestion capture BEFORE L1 runs
@@ -130,13 +142,16 @@ try {
   assert.equal(codexTurn2Noop.memoryEvent, null);
 
   // Self-turn must NOT echo back to same session
-  configureMemory({ oneShotFn: async () => JSON.stringify({ add: [{ kind: 'state', text: 'Codex own work', tags: 'self' }], update: [], remove: [] }) });
+  let selfExtractCalls = 0;
+  configureMemory({ oneShotFn: async () => { selfExtractCalls++; return JSON.stringify({ add: [{ kind: 'state', text: 'Codex own work', tags: 'self' }], update: [], remove: [] }); } });
   recordTurn({
     tool: 'codex', sessionId: 'codex-s1', cwd: proj1, status: 'done',
-    prompt: '진행 중 상태 저장 테스트',
+    prompt: '진행 중 상태 저장 테스트, 앞으로 a.js 구조는 유지',
     events: [{ t: 'tool', name: 'Edit', summary: 'a.js' }, { t: 'text', text: '작업 완료했습니다.' }],
   });
   await flushAllMemory();
+  assert.equal(selfExtractCalls, 1, 'self turn actually went through L1 extraction');
+  assert.ok(listMemory(proj1).items.some((m) => m.text === 'Codex own work'), 'self turn item was stored');
   const codexTurn3Self = await withMemory({ tool: 'codex', sessionId: 'codex-s1', cwd: proj1, prompt: '계속 진행해' });
   assert.equal(codexTurn3Self.memoryEvent, null, 'own session changes are excluded from delta');
 

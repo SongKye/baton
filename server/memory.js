@@ -444,7 +444,7 @@ function extractTurnFromRun(run) {
 // ---------- 0-token pre-filter for L1 extraction ----------
 // What the USER says is the strongest signal (decisions, rules, corrections). English words get word
 // boundaries so "support"/"report"/"prefix"/"author" don't count as port/fix/auth.
-const USER_SIGNAL_RE = /결정|규칙|컨벤션|앞으로|하자|쓰자|쓰지\s*마|하지\s*마|사용하|바꾸|변경|대신|유지|고정|금지|주의|버그|원인|해결|실패|에러|포트|인증|로그인|결제|배포|스키마|마이그레이션|브랜치|기억해|TODO|FIXME|\b(?:decid\w*|convention|instead|prefer|always|never|avoid|switch|migrat\w*|ports?|auth\w*|bugs?|gotcha|caveat|workaround|architect\w*|schema|deploy\w*|remember)\b/i;
+const USER_SIGNAL_RE = /결정|규칙|컨벤션|앞으로|(?:^|\s)하자|쓰자|쓰지\s*마|하지\s*마|사용하|바꾸|변경|대신|유지|고정|금지|주의|버그|원인|해결|실패|에러|포트|인증|로그인|결제|배포|스키마|마이그레이션|브랜치|기억해|TODO|FIXME|\b(?:decid\w*|convention|instead|prefer|always|never|avoid|switch|migrat\w*|ports?|auth(?:n|z|entic\w*|oriz\w*)?|bugs?|gotcha|caveat|workaround|architect\w*|schema|deploy\w*|remember)\b/i;
 // Assistant replies mention "변경/해결/fix" on almost every coding turn, so only count words that
 // usually mark a lesson or a choice.
 const REPLY_SIGNAL_RE = /원인|함정|우회|주의할|결정했|하기로\s*했|\b(?:root\s+cause|gotcha|caveat|workaround|pitfall|decided|instead\s+of)\b/i;
@@ -493,12 +493,13 @@ async function callMemoryAi(prompt, label) {
 export function clipItemText(text, max = MAX_ITEM_CHARS) {
   const s = oneLine(text || '');
   if (s.length <= max) return s;
-  const head = s.slice(0, max);
+  // Match against the full string so a "." in "memory.js" or "v0.14" sitting exactly at the limit
+  // isn't mistaken for a sentence end. A lone 1-2 digit number before "." is a list marker ("1. ").
+  const re = /(?<!(?:^|\s)\d{1,2})[.!?](?=\s)|。/g;
   let cut = -1;
-  const re = /(?:[.!?。](?=\s|$)|다\.|요\.)/g;
   let m;
-  while ((m = re.exec(head))) cut = m.index + m[0].length;
-  if (cut >= Math.floor(max / 2)) return head.slice(0, cut).trim();
+  while ((m = re.exec(s)) && m.index + m[0].length <= max) cut = m.index + m[0].length;
+  if (cut >= Math.floor(max / 2)) return s.slice(0, cut).trim();
   return clip(s, max);
 }
 
@@ -515,8 +516,8 @@ export function parseMemoryJson(raw) {
         .filter((x) => x && typeof x.text === 'string' && x.text.trim())
         .map((x) => ({
           kind: normalizeKind(x.kind),
-          text: redactSecrets(clipItemText(x.text)),
-          tags: x.tags ? redactSecrets(clip(oneLine(Array.isArray(x.tags) ? x.tags.join(' ') : String(x.tags)), 120)) : null,
+          text: clipItemText(redactSecrets(x.text)),
+          tags: x.tags ? clip(oneLine(redactSecrets(Array.isArray(x.tags) ? x.tags.join(' ') : String(x.tags))), 120) : null,
         }))
     : [];
   const update = Array.isArray(j.update)
@@ -525,8 +526,8 @@ export function parseMemoryJson(raw) {
         .map((x) => ({
           id: Number(x.id),
           kind: x.kind ? normalizeKind(x.kind) : null,
-          text: redactSecrets(clipItemText(x.text)),
-          tags: x.tags !== undefined ? redactSecrets(clip(oneLine(Array.isArray(x.tags) ? x.tags.join(' ') : String(x.tags || '')), 120)) : undefined,
+          text: clipItemText(redactSecrets(x.text)),
+          tags: x.tags !== undefined ? clip(oneLine(redactSecrets(Array.isArray(x.tags) ? x.tags.join(' ') : String(x.tags || ''))), 120) : undefined,
         }))
     : [];
   const remove = Array.isArray(j.remove)
@@ -1020,7 +1021,8 @@ export async function withMemory({ tool, sessionId = null, cwd, prompt, excludeS
     }
 
     // 2. Core decisions / feedback / gotchas / references (leave room for state, recall, activity, servers)
-    const coreReserve = Math.max(400, Math.floor(budget * 0.52));
+    // Always leave room for at least one full-length core line (+ section heading).
+    const coreReserve = Math.max(MAX_ITEM_CHARS + 120, Math.floor(budget * 0.52));
     if (core.length && budget > 120) {
       const savedBudget = budget;
       budget = Math.min(budget, coreReserve);
@@ -1210,12 +1212,12 @@ export function listMemory(project, { query = '' } = {}) {
 }
 
 export async function addMemoryItem(project, { kind = 'decision', text, tags = null, pinned = false, sourceKey = 'user', branch = null } = {}) {
-  const clean = redactSecrets(clipItemText(text || ''));
+  const clean = clipItemText(redactSecrets(text || ''));
   if (!clean) throw new Error('empty memory text');
   const k = normalizeKind(kind);
   const seq = nextSeq(project);
   const now = Date.now();
-  const cleanTags = tags ? redactSecrets(clip(oneLine(tags), 120)) : null;
+  const cleanTags = tags ? clip(oneLine(redactSecrets(tags)), 120) : null;
   const info = q('INSERT INTO project_memory (project, kind, text, tags, source_key, branch, pinned, created, updated, seq, removed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)')
     .run(project, k, clean, cleanTags, sourceKey, branch, pinned ? 1 : 0, now, now, seq);
   const row = q('SELECT * FROM project_memory WHERE id = ?').get(info.lastInsertRowid);
@@ -1231,9 +1233,9 @@ export async function updateMemoryItem(project, id, patch = {}) {
   const cur = q('SELECT * FROM project_memory WHERE id = ? AND project = ? AND removed = 0').get(Number(id), project);
   if (!cur) return null;
   const nextKind = patch.kind !== undefined ? normalizeKind(patch.kind) : cur.kind;
-  const nextText = patch.text !== undefined ? redactSecrets(clipItemText(patch.text)) : cur.text;
+  const nextText = patch.text !== undefined ? clipItemText(redactSecrets(patch.text)) : cur.text;
   if (!nextText) throw new Error('empty memory text');
-  const nextTags = patch.tags !== undefined ? (patch.tags ? redactSecrets(clip(oneLine(patch.tags), 120)) : null) : cur.tags;
+  const nextTags = patch.tags !== undefined ? (patch.tags ? clip(oneLine(redactSecrets(patch.tags)), 120) : null) : cur.tags;
   const nextPinned = patch.pinned !== undefined ? (patch.pinned ? 1 : 0) : cur.pinned;
   const seq = nextSeq(project);
   const now = Date.now();
