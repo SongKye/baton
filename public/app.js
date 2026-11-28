@@ -1845,21 +1845,22 @@ function msgsHtml(msgs) {
   }).join('');
 }
 
-/** Persisted non-blocking MCP `ask_user` card: submits answers as the next turn, or dismisses permanently. */
+/** Persisted non-blocking MCP `ask_user` card: submits answers with requestId as the next turn, or dismisses safely. */
 function pendingAskCard(pending, sendText, dismissAsk) {
   const qs = pending?.questions || [];
+  const reqId = pending?.requestId || '';
   const card = askPager(qs, {
     onSubmit: async (ans) => {
       if (!ans) {
-        await dismissAsk?.();
-        card.remove();
-        return true;
+        const ok = await dismissAsk?.(reqId);
+        if (ok) card.remove();
+        return Boolean(ok);
       }
       const msg = qs.length === 1
         ? String(ans[qs[0].question] || '')
         : qs.map((q, i) => (ans[q.question] ? `${i + 1}. ${q.question}\n→ ${ans[q.question]}` : '')).filter(Boolean).join('\n\n');
       if (!msg.trim()) return false;
-      const ok = await sendText(msg);
+      const ok = await sendText(msg, reqId);
       if (ok) card.remove();
       return ok;
     },
@@ -2604,8 +2605,18 @@ function mountChatPane(root, opts = {}) {
     if (hasPendingAsk) {
       const card = pendingAskCard(
         d.pendingAsk,
-        (text) => send(text, composerPrefs(tool), []),
-        () => api(`/api/sessions/${tool}/${encodeURIComponent(id)}/ask`, { method: 'DELETE' }).catch(() => {}),
+        (text, reqId) => send(text, composerPrefs(tool), [], reqId),
+        async (reqId) => {
+          try {
+            const qs = reqId ? `?requestId=${encodeURIComponent(reqId)}` : '';
+            await api(`/api/sessions/${tool}/${encodeURIComponent(id)}/ask${qs}`, { method: 'DELETE' });
+            return true;
+          } catch (e) {
+            toast(e.message, true);
+            if (e.data?.code === 'STALE_ASK') load({ keepScroll: true });
+            return false;
+          }
+        },
       );
       if (lastAi) lastAi.after(card);
       else $('[data-ref="schedbanners"]', msgsEl)?.before(card);
@@ -2661,17 +2672,21 @@ function mountChatPane(root, opts = {}) {
     requestAnimationFrame(() => { scroll.scrollTop = scroll.scrollHeight; });
   };
 
-  const send = async (text, prefs, imgs) => {
+  const send = async (text, prefs, imgs, askRequestId = null) => {
     if (busy) { toast(t('아직 응답 중이에요'), true); return false; }
     try {
-      const { run } = await api('/api/run', { body: { tool, sessionId: id, prompt: text, model: prefs.model, effort: prefs.effort, perm: prefs.perm, images: imgPayload(imgs) } });
+      const body = { tool, sessionId: id, prompt: text, model: prefs.model, effort: prefs.effort, perm: prefs.perm, images: imgPayload(imgs) };
+      if (askRequestId) body.askRequestId = askRequestId;
+      const { run } = await api('/api/run', { body });
       $('.empty', msgsEl)?.remove();
       attachRun(run.id, text, imgs);
       loadState();
       return true;
     } catch (e) {
       if (e.data?.runId) { toast(t('이미 응답 중이에요 — 이어서 보여드릴게요')); attachRun(e.data.runId); return false; }
-      toast(e.message, true); return false;
+      toast(e.message, true);
+      if (e.data?.code === 'STALE_ASK') load({ keepScroll: true });
+      return false;
     }
   };
   const comp = wireComposer(root, tool, send, `draft:${key}`, () => ({ session: id }));

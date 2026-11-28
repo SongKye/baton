@@ -159,7 +159,15 @@ export function getPendingAsk(key) {
 export function setPendingAsk(key, { requestId, questions }) {
   q('INSERT OR REPLACE INTO pending_ask (key, request_id, questions, at) VALUES (?, ?, ?, ?)').run(key, String(requestId || ''), JSON.stringify(questions || []), Date.now());
 }
-export function clearPendingAsk(key) { q('DELETE FROM pending_ask WHERE key = ?').run(key); }
+export function clearPendingAsk(key, expectedRequestId = null) {
+  if (expectedRequestId) {
+    const cur = getPendingAsk(key);
+    if (!cur) return { ok: true, cleared: false };
+    if (cur.requestId !== expectedRequestId) return { ok: false, stale: true, currentRequestId: cur.requestId };
+  }
+  const r = q('DELETE FROM pending_ask WHERE key = ?').run(key);
+  return { ok: true, cleared: (r?.changes || 0) > 0 };
+}
 
 // ---------- project meta ----------
 export function allProjectMeta() {

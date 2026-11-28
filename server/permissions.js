@@ -88,7 +88,7 @@ export function packageCacheDirs(home = os.homedir(), env = process.env) {
   return [...new Set(dirs)];
 }
 
-const tomlString = (s) => JSON.stringify(String(s)); // a JSON string is a valid TOML basic string
+export const tomlString = (s) => JSON.stringify(String(s)); // a JSON string is a valid TOML basic string
 
 /** Codex `-c` overrides for a permission level. */
 export function codexPermArgs(perm, cwd) {

@@ -269,10 +269,16 @@ route('GET', '/api/sessions/:tool/:id', async (req, url, { tool, id }) => {
   const lk = linksOf(s.key);
   const describe = (l) => { const x = byKey.get(l.key); const [tool, ...rest] = l.key.split(':'); return { key: l.key, tool, id: rest.join(':'), title: x?.title || null, created: l.created }; };
   const links = { from: lk.from.map(describe), to: lk.to.map(describe) };
+  let pendingAsk = run ? null : store.getPendingAsk(s.key);
+  // If the session was continued outside Baton (e.g. PC terminal) after the ask turn ended, expire the stale card.
+  if (pendingAsk && s.updated && s.updated > pendingAsk.at + 5000) {
+    store.clearPendingAsk(s.key, pendingAsk.requestId);
+    pendingAsk = null;
+  }
   return { session: sessionView(view), ...page, messages: page.messages.map((message) => {
     const { imageRefs, ...m } = slimMessage(message);
     return { ...m, ...(imageRefs?.length ? { imageUrls: imageRefs.map((ref) => `/api/sessions/claude/${encodeURIComponent(s.id)}/images/${ref}`) } : {}) };
-  }), run: run ? publicRun(run) : null, outcome: run ? null : store.getRunOutcome(s.key), pendingAsk: run ? null : store.getPendingAsk(s.key), links };
+  }), run: run ? publicRun(run) : null, outcome: run ? null : store.getRunOutcome(s.key), pendingAsk, links };
 });
 
 // dismiss the "last run hit the limit / was blocked / failed" card in a chat
@@ -281,10 +287,16 @@ route('DELETE', '/api/sessions/:tool/:id/outcome', async (req, url, { tool, id }
   return { ok: true };
 });
 
-// dismiss a persisted non-blocking MCP ask_user card in a chat
+// dismiss a persisted non-blocking MCP ask_user card in a chat (reject stale requestId with 409)
 route('DELETE', '/api/sessions/:tool/:id/ask', async (req, url, { tool, id }) => {
-  store.clearPendingAsk(`${tool}:${decodeURIComponent(id)}`);
-  return { ok: true };
+  const key = `${tool}:${decodeURIComponent(id)}`;
+  let expected = url.searchParams.get('requestId') || null;
+  if (!expected) {
+    try { const b = await body(req); if (b?.requestId) expected = String(b.requestId); } catch { /* empty body */ }
+  }
+  const r = store.clearPendingAsk(key, expected);
+  if (!r.ok && r.stale) return [409, { error: tr('이미 새 질문으로 바뀌었어요. 화면을 새로고침해주세요'), code: 'STALE_ASK' }];
+  return { ok: true, cleared: r.cleared };
 });
 
 route('POST', '/api/sessions/:tool/:id/meta', async (req, url, { tool, id }) => {
@@ -344,14 +356,22 @@ route('POST', '/api/run', async (req) => {
   try { images = await saveImages(b.tool, cwd, b.images); } catch (e) { return [400, { error: e.message }]; }
   try {
     const prompt0 = String(b.prompt || '');
-    if (b.sessionId) store.clearPendingAsk(`${b.tool}:${b.sessionId}`);
-    const prompt1 = b.sessionId ? consumeMoveNote(`${b.tool}:${b.sessionId}`, prompt0) : prompt0;
+    const sessionKey = b.sessionId ? `${b.tool}:${b.sessionId}` : null;
+    if (sessionKey && b.askRequestId) {
+      const curAsk = store.getPendingAsk(sessionKey);
+      if (curAsk && curAsk.requestId !== String(b.askRequestId)) {
+        return [409, { error: tr('이미 새 질문으로 바뀌었어요. 화면을 새로고침해주세요'), code: 'STALE_ASK' }];
+      }
+    }
+    const prompt1 = sessionKey ? consumeMoveNote(sessionKey, prompt0) : prompt0;
     const mem = await memory.withMemory({ tool: b.tool, sessionId: b.sessionId || null, cwd, prompt: prompt1 });
     const run = startRun({
       tool: b.tool, sessionId: b.sessionId || null, cwd, prompt: prompt0, wirePrompt: mem.wirePrompt,
       model: b.model || null, effort: b.effort || null, perm: b.perm || store.getSettings().defaultPerm,
       title, images, initialEvents: mem.memoryEvent ? [mem.memoryEvent] : null,
     });
+    // Consume pending_ask only after the new run is accepted and spawned (4xx failures preserve it).
+    if (sessionKey) store.clearPendingAsk(sessionKey);
     if (run.sessionId) mem.markSeen(run.sessionId);
     else {
       const listener = (ev) => { if (ev.t === 'session') { mem.markSeen(ev.id); run.listeners.delete(listener); } };
@@ -762,7 +782,7 @@ const runNotifies = (run) => {
 };
 bus.on('run_ask', (run) => {
   if (run.listeners.size > 0 || !runNotifies(run)) return;
-  const q = run.pendingAsk?.input?.questions?.[0]?.question || '';
+  const q = run.pendingAsk?.input?.questions?.[0]?.question || run.deferredAsk?.questions?.[0]?.question || '';
   const url = run.sessionId ? `/#/s/${run.tool}/${encodeURIComponent(run.sessionId)}` : '/#/';
   notify({ kind: 'ask', title: fromLine(run.tool, run.model), body: `❓ ${clip(run.title || run.prompt, 40)}\n${clip(q, 140)}`, url, tag: `ask-${run.sessionId || run.id}` }).catch(() => {});
 });
@@ -844,7 +864,17 @@ async function serveStatic(req, res, pathname) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://x');
+  if (!authorized(req, ALLOWED)) { res.writeHead(403, { 'content-type': 'text/plain' }); res.end('forbidden'); return; }
+  // Retire cookies issued by the removed password/device login.
+  if (/(?:^|;\s*)baton_device=/.test(req.headers.cookie || '')) {
+    res.setHeader('set-cookie', 'baton_device=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax');
+  }
+  if (req.headers['tailscale-user-login'] && req.headers.host) setPublicOrigin(`https://${req.headers['x-forwarded-host'] || req.headers.host}`);
+  let url;
+  try { url = new URL(req.url, 'http://x'); } catch { return send(res, 400, { error: 'bad url' }); }
+  if (req.method === 'GET' && url.pathname === '/api/instance' && isLocal(req)) {
+    return send(res, 200, { id: listener.id, os: OS_NAME, port: PORT });
+  }
   // Local-only internal callback from Baton's stdio MCP `ask_user` server, authenticated by a per-run 192-bit bearer token.
   if (req.method === 'POST' && url.pathname === '/api/internal/ask' && isLocal(req)) {
     try {
@@ -855,15 +885,6 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       return send(res, 400, { ok: false, error: e.message });
     }
-  }
-  if (!authorized(req, ALLOWED)) { res.writeHead(403, { 'content-type': 'text/plain' }); res.end('forbidden'); return; }
-  // Retire cookies issued by the removed password/device login.
-  if (/(?:^|;\s*)baton_device=/.test(req.headers.cookie || '')) {
-    res.setHeader('set-cookie', 'baton_device=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax');
-  }
-  if (req.headers['tailscale-user-login'] && req.headers.host) setPublicOrigin(`https://${req.headers['x-forwarded-host'] || req.headers.host}`);
-  if (req.method === 'GET' && url.pathname === '/api/instance' && isLocal(req)) {
-    return send(res, 200, { id: listener.id, os: OS_NAME, port: PORT });
   }
   try {
     const image = url.pathname.match(/^\/api\/sessions\/claude\/([^/]+)\/images\/([^/]+)$/);
@@ -907,7 +928,9 @@ let listening;
 try {
   listening = await listen(server, listener, HOST);
   setPort(listening.port);
-  setAskEndpoint(`http://127.0.0.1:${listening.port}/api/internal/ask`);
+  const bound = server.address();
+  const isV6 = (bound && typeof bound === 'object' && (bound.family === 'IPv6' || String(bound.address || '').includes(':'))) || String(HOST || '').includes(':');
+  setAskEndpoint(`http://${isV6 ? '[::1]' : '127.0.0.1'}:${listening.port}/api/internal/ask`);
 } catch (e) {
   console.error(`[baton] ${e.message}`);
   process.exit(1);

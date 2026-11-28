@@ -1415,5 +1415,6 @@
  "분할된 채팅 창 간 포커스 이동": "Switch focus between split chat panes",
  "세션을 옆 창에 바로 분할 열기": "Open session directly in a split pane",
  "키보드 단축키 보기": "Show keyboard shortcuts",
- "키보드 단축키": "Keyboard shortcuts"
+ "키보드 단축키": "Keyboard shortcuts",
+ "이미 새 질문으로 바뀌었어요. 화면을 새로고침해주세요": "A newer question is waiting — please refresh the view"
 }

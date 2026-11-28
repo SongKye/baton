@@ -1,17 +1,44 @@
 #!/usr/bin/env node
-// End-to-end tests for Baton's non-blocking stdio MCP `ask_user` server, Codex per-run injection,
-// bearer token auth, pending_ask persistence, and tool definition size measurement.
+// End-to-end tests for Baton's non-blocking stdio MCP `ask_user` server, Codex per-run injection
+// (including default_tools_approval_mode="approve"), bearer token auth, single-ask-per-turn guard,
+// IPv6 loopback support, stale requestId rejection, and pending_ask persistence on 4xx errors.
+// Self-isolates into a temp copy when run standalone so the repo's real data/baton.db is never touched.
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const MCP_SCRIPT = path.join(ROOT, 'server', 'mcp-ask.js');
 
+// Self-isolation guard when invoked directly (`node scripts/ask-mcp-check.mjs`) outside `scripts/check.mjs`:
+if (process.env.BATON_ASK_TEST_ISOLATED !== '1' && !ROOT.startsWith(os.tmpdir())) {
+  const iso = await fs.mkdtemp(path.join(os.tmpdir(), 'baton-ask-iso-'));
+  try {
+    const app = path.join(iso, 'app');
+    const home = path.join(iso, 'home');
+    await fs.mkdir(app);
+    await fs.mkdir(home);
+    for (const dir of ['server', 'public']) await fs.cp(path.join(ROOT, dir), path.join(app, dir), { recursive: true });
+    await fs.mkdir(path.join(app, 'scripts'));
+    await fs.copyFile(path.join(ROOT, 'scripts', 'ask-mcp-check.mjs'), path.join(app, 'scripts', 'ask-mcp-check.mjs'));
+    await fs.copyFile(path.join(ROOT, 'package.json'), path.join(app, 'package.json'));
+    await fs.symlink(path.join(ROOT, 'node_modules'), path.join(app, 'node_modules'), 'junction');
+    const r = spawnSync(process.execPath, ['--no-warnings', path.join(app, 'scripts', 'ask-mcp-check.mjs')], {
+      cwd: app,
+      env: { ...process.env, HOME: home, USERPROFILE: home, BATON_NO_SHELL_ENV: '1', BATON_ASK_TEST_ISOLATED: '1' },
+      stdio: 'inherit',
+      timeout: 60000,
+    });
+    process.exit(r.status ?? 1);
+  } finally {
+    await fs.rm(iso, { recursive: true, force: true });
+  }
+}
+
+const MCP_SCRIPT = path.join(ROOT, 'server', 'mcp-ask.js');
 const { ASK_USER_TOOL, normalizeAskQuestions } = await import('../server/mcp-ask.js');
 
 // 1. Measure exact tool definition size (bytes & rough ~4 chars/token estimate)
@@ -84,25 +111,21 @@ function spawnMcp(env = {}) {
   }
 }
 
-// 4. Full integration: isolated HOME + fake Codex CLI that parses `-c mcp_servers.baton_ask.*`,
-//    spawns server/mcp-ask.js, invokes `ask_user` over stdio -> HTTP localhost -> runner.submitMcpAsk -> store.pending_ask
+// 4. Full integration: fake Codex CLI parses `-c mcp_servers.baton_ask.*`, calls ask_user TWICE
+//    (1st succeeds, 2nd is rejected with 409 so Q1 is preserved), verifies approval flag & token revocation
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'baton-ask-mcp-'));
 let httpServer = null;
+let v6Server = null;
 try {
   const binDir = path.join(tmp, 'bin');
-  const dataDir = path.join(tmp, 'data');
   await fs.mkdir(binDir, { recursive: true });
-  await fs.mkdir(dataDir, { recursive: true });
-  process.env.BATON_DATA_DIR = dataDir;
 
-  // Fake codex binary: records args, extracts baton_ask env from `-c`, spawns mcp-ask.js, calls ask_user, then emits Codex turn completion
   const fakeCodexScript = path.join(tmp, 'fake-codex.mjs');
   await fs.writeFile(fakeCodexScript, `
     import fs from 'node:fs';
     import { spawn } from 'node:child_process';
     const args = process.argv.slice(2);
-    const argsOut = process.env.FAKE_ARGS_OUT;
-    if (argsOut) fs.writeFileSync(argsOut, JSON.stringify(args));
+    if (process.env.FAKE_ARGS_OUT) fs.writeFileSync(process.env.FAKE_ARGS_OUT, JSON.stringify(args));
     const envArg = args.find((a) => a.startsWith('mcp_servers.baton_ask.env='));
     const scriptArg = args.find((a) => a.startsWith('mcp_servers.baton_ask.args='));
     const cmdArg = args.find((a) => a.startsWith('mcp_servers.baton_ask.command='));
@@ -114,6 +137,7 @@ try {
     if (urlM && tokM && script) {
       const child = spawn(cmd, [script], { env: { ...process.env, BATON_ASK_URL: urlM[1], BATON_ASK_TOKEN: tokM[1] }, stdio: ['pipe', 'pipe', 'pipe'] });
       let b = '';
+      const results = {};
       await new Promise((resolve, reject) => {
         child.stdout.setEncoding('utf8');
         child.stdout.on('data', (c) => {
@@ -132,6 +156,20 @@ try {
                 },
               }) + '\\n');
             } else if (m.id === 2) {
+              results.first = m.result;
+              // Attempt a second ask_user in the same turn — must be rejected (409) without overwriting Q1
+              child.stdin.write(JSON.stringify({
+                jsonrpc: '2.0', id: 3, method: 'tools/call',
+                params: {
+                  name: 'ask_user',
+                  arguments: {
+                    questions: [{ header: 'Second', question: 'Should overwrite?', options: [{ label: 'Yes' }, { label: 'No' }] }],
+                  },
+                },
+              }) + '\\n');
+            } else if (m.id === 3) {
+              results.second = m.result;
+              if (process.env.FAKE_RESULTS_OUT) fs.writeFileSync(process.env.FAKE_RESULTS_OUT, JSON.stringify(results));
               child.stdin.end();
               child.kill();
               resolve(m);
@@ -161,8 +199,7 @@ try {
   const runner = await import('../server/runner.js');
   const store = await import('../server/store.js');
 
-  // Local HTTP callback server mirroring server/index.js `/api/internal/ask`
-  httpServer = http.createServer(async (req, res) => {
+  const makeAskServer = () => http.createServer(async (req, res) => {
     const chunks = [];
     for await (const c of req) chunks.push(c);
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
@@ -171,14 +208,17 @@ try {
     res.writeHead(out.ok ? 200 : (out.status || 400), { 'content-type': 'application/json' });
     res.end(JSON.stringify(out));
   });
+
+  httpServer = makeAskServer();
   await new Promise((r) => httpServer.listen(0, '127.0.0.1', r));
-  const askUrl = `http://127.0.0.1:${httpServer.address().port}/api/internal/ask`;
-  runner.setAskEndpoint(askUrl);
+  runner.setAskEndpoint(`http://127.0.0.1:${httpServer.address().port}/api/internal/ask`);
 
   const argsOut = path.join(tmp, 'codex-args.json');
+  const resultsOut = path.join(tmp, 'codex-results.json');
   process.env.FAKE_ARGS_OUT = argsOut;
-  let busAskFired = false;
-  const onAsk = () => { busAskFired = true; };
+  process.env.FAKE_RESULTS_OUT = resultsOut;
+  let busAskCount = 0;
+  const onAsk = () => { busAskCount++; };
   runner.bus.on('run_ask', onAsk);
 
   const run = runner.startRun({ tool: 'codex', cwd: tmp, prompt: 'deploy please', perm: 'auto' });
@@ -189,32 +229,132 @@ try {
   runner.bus.off('run_ask', onAsk);
 
   assert.equal(doneEv.ok, true, `codex run failed: ${doneEv.error}`);
-  assert.equal(doneEv.hasMcpAsk, true, 'done event must report hasMcpAsk=true');
-  assert.equal(busAskFired, true, 'bus run_ask event must fire');
-  const askEv = run.events.find((e) => e.t === 'ask');
-  assert(askEv, 'run events must include ask');
-  assert.equal(askEv.mode, 'turn');
-  assert.equal(askEv.questions[0].question, 'Which environment?');
-  assert.deepEqual(askEv.questions[0].options.map((o) => o.label), ['Staging', 'Production']);
+  assert.equal(doneEv.hasMcpAsk, true);
+  assert.equal(busAskCount, 1, 'only the first ask_user call should emit run_ask');
+  assert.equal(run.pendingAsk, undefined, 'non-blocking MCP ask must not touch blocking run.pendingAsk');
+  const askEvs = run.events.filter((e) => e.t === 'ask');
+  assert.equal(askEvs.length, 1);
+  assert.equal(askEvs[0].mode, 'turn');
+  assert.equal(askEvs[0].questions[0].question, 'Which environment?');
+  assert.deepEqual(askEvs[0].questions[0].options.map((o) => o.label), ['Staging', 'Production']);
 
-  // Verify injected Codex `-c` args and post-run token revocation
+  // Verify 2nd call in the same turn was rejected cleanly (409) without overwriting Q1
+  const callResults = JSON.parse(await fs.readFile(resultsOut, 'utf8'));
+  assert(!callResults.first.isError);
+  assert.equal(callResults.second.isError, true);
+  assert.match(callResults.second.content[0].text, /409/);
+
+  // Verify Codex `-c` args include auto-approval (`default_tools_approval_mode="approve"`) & post-run token revocation
   const recordedArgs = JSON.parse(await fs.readFile(argsOut, 'utf8'));
+  assert(recordedArgs.includes('mcp_servers.baton_ask.default_tools_approval_mode="approve"'), `missing approval override: ${JSON.stringify(recordedArgs)}`);
   assert(recordedArgs.some((a) => a.startsWith('mcp_servers.baton_ask.command=')));
   assert(recordedArgs.some((a) => a.includes('mcp-ask.js')));
   assert(recordedArgs.some((a) => a.includes('BATON_ASK_TOKEN=')));
   assert.equal(runner.submitMcpAsk(run.askToken, norm).ok, false, 'ask token must expire after run finishes');
 
-  // Verify store pending_ask persistence round-trip
-  store.setPendingAsk('codex:codex-ask-session-1', run.deferredAsk);
-  const saved = store.getPendingAsk('codex:codex-ask-session-1');
-  assert.equal(saved.requestId, askEv.requestId);
-  assert.equal(saved.questions.length, 1);
-  store.clearPendingAsk('codex:codex-ask-session-1');
-  assert.equal(store.getPendingAsk('codex:codex-ask-session-1'), null);
+  // Verify stale requestId rejection on clearPendingAsk (old Q1 card must NOT delete newer Q2)
+  const key = 'codex:codex-ask-session-1';
+  store.setPendingAsk(key, { requestId: 'req-q2', questions: norm });
+  const stale = store.clearPendingAsk(key, 'req-q1');
+  assert.equal(stale.ok, false);
+  assert.equal(stale.stale, true);
+  assert.equal(store.getPendingAsk(key)?.requestId, 'req-q2', 'stale dismiss must preserve Q2');
+  const cleared = store.clearPendingAsk(key, 'req-q2');
+  assert.equal(cleared.ok, true);
+  assert.equal(cleared.cleared, true);
+  assert.equal(store.getPendingAsk(key), null);
+
+  // 5. Verify IPv6 loopback (`::1`) delivery works end-to-end when IPv6 is available
+  v6Server = makeAskServer();
+  const v6Ready = await new Promise((resolve) => {
+    v6Server.once('error', () => resolve(false));
+    v6Server.listen(0, '::1', () => resolve(true));
+  });
+  if (v6Ready) {
+    runner.setAskEndpoint(`http://[::1]:${v6Server.address().port}/api/internal/ask`);
+    const v6Run = runner.startRun({ tool: 'codex', cwd: tmp, prompt: 'ipv6 check', perm: 'plan' });
+    const v6Done = await new Promise((resolve) => {
+      const listener = (ev) => { if (ev.t === 'done') { v6Run.listeners.delete(listener); resolve(ev); } };
+      v6Run.listeners.add(listener);
+    });
+    assert.equal(v6Done.ok, true);
+    assert.equal(v6Done.hasMcpAsk, true, 'IPv6 [::1] callback must succeed');
+  }
 
   runner.setAskEndpoint(null);
-  console.log(`PASS: ask_user MCP stdio server, Codex per-run injection & persistence (schema: ${toolJson.length} bytes, ~${estTokens} tokens)`);
+
+  // 6. Real Baton HTTP server regression checks:
+  //    - stale DELETE /ask?requestId=old -> 409 (Q2 preserved)
+  //    - failed POST /api/run (400 empty prompt) -> Q2 preserved
+  //    - stale POST /api/run with askRequestId=old -> 409 STALE_ASK (Q2 preserved)
+  //    - matching DELETE /ask?requestId=req-q2 -> 200 (cleared)
+  const sid = '019a0000-0000-7000-8000-000000000126';
+  const sessDir = path.join(os.homedir(), '.codex', 'sessions', '2026', '11', '28');
+  await fs.mkdir(sessDir, { recursive: true });
+  const nowIso = new Date().toISOString();
+  await fs.writeFile(path.join(sessDir, `rollout-2026-11-28T00-00-00-${sid}.jsonl`), [
+    JSON.stringify({ timestamp: nowIso, type: 'session_meta', payload: { id: sid, timestamp: nowIso, cwd: tmp } }),
+    JSON.stringify({ timestamp: nowIso, type: 'event_msg', payload: { type: 'user_message', message: 'hello' } }),
+    JSON.stringify({ timestamp: nowIso, type: 'event_msg', payload: { type: 'agent_message', message: 'Waiting for your choice.' } }),
+  ].join('\n') + '\n');
+  store.setPendingAsk(`codex:${sid}`, { requestId: 'req-q2', questions: norm });
+
+  const probe = http.createServer();
+  await new Promise((r) => probe.listen(0, '127.0.0.1', r));
+  const srvPort = probe.address().port;
+  probe.close();
+  const base = `http://127.0.0.1:${srvPort}`;
+  const batonSrv = spawn(process.execPath, ['--no-warnings', 'server/index.js'], {
+    cwd: ROOT,
+    env: { ...process.env, BATON_PORT: String(srvPort), BATON_HOST: '127.0.0.1', BATON_NO_SHELL_ENV: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let srvLog = '';
+  batonSrv.stdout.on('data', (c) => { srvLog += c; });
+  batonSrv.stderr.on('data', (c) => { srvLog += c; });
+  try {
+    let up = false;
+    for (let i = 0; i < 40 && !up; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      try { up = (await fetch(`${base}/api/settings`)).ok; } catch { /* booting */ }
+    }
+    assert(up, `isolated Baton server did not start:\n${srvLog.slice(-1500)}`);
+    const getSess = async () => (await fetch(`${base}/api/sessions/codex/${sid}`)).json();
+    assert.equal((await getSess()).pendingAsk?.requestId, 'req-q2');
+
+    // Stale DELETE must 409 and preserve Q2
+    const staleDel = await fetch(`${base}/api/sessions/codex/${sid}/ask?requestId=req-q1`, { method: 'DELETE' });
+    assert.equal(staleDel.status, 409);
+    assert.equal((await getSess()).pendingAsk?.requestId, 'req-q2');
+
+    // 400 empty prompt on POST /api/run must preserve Q2
+    const emptyRun = await fetch(`${base}/api/run`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tool: 'codex', sessionId: sid, prompt: '   ' }),
+    });
+    assert.equal(emptyRun.status, 400);
+    assert.equal((await getSess()).pendingAsk?.requestId, 'req-q2', '400 POST /api/run must not clear pendingAsk');
+
+    // Stale askRequestId on POST /api/run must 409 STALE_ASK and preserve Q2
+    const staleRun = await fetch(`${base}/api/run`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tool: 'codex', sessionId: sid, prompt: 'Postgres', askRequestId: 'req-q1' }),
+    });
+    assert.equal(staleRun.status, 409);
+    assert.equal((await staleRun.json()).code, 'STALE_ASK');
+    assert.equal((await getSess()).pendingAsk?.requestId, 'req-q2');
+
+    // Matching DELETE clears Q2 cleanly
+    const okDel = await fetch(`${base}/api/sessions/codex/${sid}/ask?requestId=req-q2`, { method: 'DELETE' });
+    assert.equal(okDel.status, 200);
+    assert.equal((await getSess()).pendingAsk, null);
+  } finally {
+    batonSrv.kill();
+  }
+
+  console.log(`PASS: ask_user MCP stdio server, Codex approval override, stale-ID guard, HTTP 4xx preservation & IPv6 callback (schema: ${toolJson.length} bytes, ~${estTokens} tokens)`);
 } finally {
   httpServer?.close();
+  v6Server?.close();
   await fs.rm(tmp, { recursive: true, force: true });
 }

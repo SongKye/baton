@@ -23,7 +23,7 @@ import { codexDefaultFallback } from './providers.js';
 import { clip, ONESHOT_DIR, ROOT } from './util.js';
 import { noteMcpStatus } from './mcp.js';
 import { createRunEvents } from './run-events.js';
-import { claudePermArgs, codexPermArgs, agyPermArgs, opencodePermArgs, codexSandboxBlock } from './permissions.js';
+import { claudePermArgs, codexPermArgs, agyPermArgs, opencodePermArgs, codexSandboxBlock, tomlString } from './permissions.js';
 import { normalizeAskQuestions } from './mcp-ask.js';
 
 const runs = new Map();         // runId -> run
@@ -101,9 +101,10 @@ function codexCmd({ sessionId, model, effort, perm, prompt, images, cwd, askMcp 
   if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
   if (askMcp) {
     args.push(
-      '-c', `mcp_servers.baton_ask.command=${JSON.stringify(process.execPath)}`,
-      '-c', `mcp_servers.baton_ask.args=[${JSON.stringify(askMcp.script)}]`,
-      '-c', `mcp_servers.baton_ask.env={BATON_ASK_URL=${JSON.stringify(askMcp.url)},BATON_ASK_TOKEN=${JSON.stringify(askMcp.token)}}`,
+      '-c', `mcp_servers.baton_ask.command=${tomlString(process.execPath)}`,
+      '-c', `mcp_servers.baton_ask.args=[${tomlString(askMcp.script)}]`,
+      '-c', `mcp_servers.baton_ask.env={BATON_ASK_URL=${tomlString(askMcp.url)},BATON_ASK_TOKEN=${tomlString(askMcp.token)}}`,
+      '-c', 'mcp_servers.baton_ask.default_tools_approval_mode="approve"',
       '-c', 'mcp_servers.baton_ask.startup_timeout_sec=10',
       '-c', 'mcp_servers.baton_ask.tool_timeout_sec=15',
     );
@@ -473,11 +474,11 @@ export function submitMcpAsk(token, rawQuestions) {
   if (!token || typeof token !== 'string') return { ok: false, status: 401, error: 'missing token' };
   const run = runByAskToken.get(token);
   if (!run || run.status !== 'running') return { ok: false, status: 401, error: 'unknown or finished run' };
+  if (run.deferredAsk) return { ok: false, status: 409, error: 'questions were already sent in this turn; end your turn and wait for the user reply' };
   const questions = normalizeAskQuestions(rawQuestions);
   if (!questions) return { ok: false, status: 400, error: 'invalid questions' };
   const requestId = crypto.randomUUID();
   run.deferredAsk = { requestId, questions, at: Date.now() };
-  run.pendingAsk = { requestId, mode: 'turn', input: { questions } };
   run.emit({ t: 'ask', mode: 'turn', requestId, questions });
   bus.emit('run_ask', run);
   return { ok: true, requestId, runId: run.id };
