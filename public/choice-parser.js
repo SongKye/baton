@@ -17,7 +17,7 @@ const USER_ASKED_RE = /할까요|볼까요|좋을까요|원하시|원해|고르|
 const FAQ_KO_RE = /(?:무엇인가요|뭐가\s*좋|뭔가요|인가요|쓰이나요|동작하나요|작동하나요|그런가요|발생하나요|차이인가요|필요한가요|해야\s*하나요|포함되나요|지원하나요|가능한가요)\s*[?？]$/;
 const FAQ_EN_RE = /^(?:(?:what|why|where)\s+(?:is|are|does|can|gets?|do)\b|how\s+(?:does|do|it|to)\b|when\s+(?:is|does|to)\b|which\b.*\b(?:is|are|was|were)\b)/i;
 const EXPLICIT_MARKER_RE = /^(?:[A-Ha-h][.)]|\([A-Ha-h1-9]\))$/;
-const EXPLICIT_OPT_PREFIX_RE = /^(?:안|옵션|방안|선택지|option|choice)\s*[A-Za-z0-9]/i;
+const EXPLICIT_OPT_PREFIX_RE = /^(?:(?:안|옵션|방안|선택지)\s*(?:[A-Za-z]|\d+)|(?:option|choice)\s+(?:[A-Za-z]|\d+))(?=$|[\s:.)—–-])/i;
 const DECL_KO_RE = /(?:입니다|합니다|됩니다|있습니다|없습니다|겠습니다|드립니다|않습니다|못합니다|필요합니다|가능합니다|지원합니다|동작합니다|제공합니다|의미합니다|사용합니다|보여줍니다|해줍니다|했습니다|됐습니다|였습니다|예요|에요|어요|아요|해요|돼요|줘요|네요|군요|죠|이다|한다|된다|있다|없다)[.!?。]?$/;
 
 const stripMd = (x) => String(x || '').replace(/\*\*|__|`/g, '').trim();
@@ -58,16 +58,23 @@ function parseOptionLine(line) {
   return { marker: m[1], text: m[2] };
 }
 
+/** True when an option item has an explicit choice marker (`A.`, `B.`, `(1)`, `안 A`, `Option 1`). */
+export function isExplicitChoiceOpt(opt) {
+  const marker = typeof opt === 'string' ? '' : (opt.marker || '');
+  const raw = typeof opt === 'string' ? opt : (opt.text || '');
+  if (EXPLICIT_MARKER_RE.test(marker)) return true;
+  const x = stripMd(raw);
+  return EXPLICIT_OPT_PREFIX_RE.test(x) || /^[A-Ha-h1-9][.)]\s+/.test(x);
+}
+
 /**
  * True when an option item looks like a declarative explanation sentence rather than a choice.
  * Preserves explicit choice markers (`A.`, `B.`, `(1)`, `안 A`, `Option 1`) and `shortLabel — desc` items.
  */
 export function isExplanationOpt(opt) {
-  const marker = typeof opt === 'string' ? '' : (opt.marker || '');
+  if (isExplicitChoiceOpt(opt)) return false;
   const raw = typeof opt === 'string' ? opt : (opt.text || '');
-  if (EXPLICIT_MARKER_RE.test(marker)) return false;
   const x = stripMd(raw);
-  if (EXPLICIT_OPT_PREFIX_RE.test(x) || /^[A-Ha-h1-9][.)]\s+/.test(x)) return false;
   const labeled = x.match(/^(.{1,40}?)\s*(?:—|–|:)\s+.+$/);
   if (labeled && !/[.!?。]/.test(labeled[1])) return false;
   if (DECL_KO_RE.test(x)) return true;
@@ -84,7 +91,7 @@ export function choiceOf(opt) {
 }
 
 /** Validate a normalized heading + its option items together. */
-function isValidBlock(heading, opts, { allowColonWithChoose = true, requireListRef = false } = {}) {
+function isValidBlock(heading, opts, { allowColonWithChoose = true, requireListRef = false, strict = false } = {}) {
   if (!heading || heading.length <= 1 || heading.length > 240) return false;
   const endsQ = /[?？]$/.test(heading);
   const endsColon = /[:：]$/.test(heading);
@@ -96,6 +103,7 @@ function isValidBlock(heading, opts, { allowColonWithChoose = true, requireListR
   if (opts.length < 2 || opts.length > 6) return false;
   if (opts.some((o) => o.text.length > 120)) return false;
   if (isRhetoricalFaq(heading)) return false;
+  if (strict && !opts.every(isExplicitChoiceOpt)) return false;
   if (opts.some(isExplanationOpt)) return false;
   return true;
 }
@@ -144,7 +152,7 @@ function extractTrailingBlocks(lines, { maxTailLines = 2 } = {}) {
  * "Question + list of choices" at the end of a reply -> { question, options } for quick-reply buttons.
  * Deliberately strict, so a summary list followed by "shall I commit?" or an FAQ explanation does not turn into buttons.
  */
-export function parseChoices(text) {
+export function parseChoices(text, { strict = false } = {}) {
   const raw = String(text || '').replace(/\r/g, '');
   if (/```\s*$/.test(raw.trim())) return null;
   const lines = raw.split('\n').map((l) => l.trim());
@@ -167,7 +175,7 @@ export function parseChoices(text) {
       i--;
     }
     const tailHeading = normalizeHeading(last);
-    if (isValidBlock(tailHeading, opts, { requireListRef: true })) {
+    if (isValidBlock(tailHeading, opts, { requireListRef: true, strict })) {
       return { question: tailHeading, options: opts.map(choiceOf) };
     }
   }
@@ -176,7 +184,7 @@ export function parseChoices(text) {
   const blocks = extractTrailingBlocks(lines, { maxTailLines: 0 });
   if (!blocks.length) return null;
   const block = blocks[blocks.length - 1];
-  if (!isValidBlock(block.heading, block.opts, { allowColonWithChoose: true })) return null;
+  if (!isValidBlock(block.heading, block.opts, { allowColonWithChoose: true, strict })) return null;
   return { question: block.heading, options: block.opts.map(choiceOf) };
 }
 
@@ -185,7 +193,7 @@ export function parseChoices(text) {
  * Structural block boundaries are resolved first, then each block is validated independently so FAQ blocks
  * in between are dropped cleanly without contaminating neighboring questions.
  */
-export function parseQuestions(text) {
+export function parseQuestions(text, { strict = false } = {}) {
   const raw = String(text || '').replace(/\r/g, '');
   if (/```\s*$/.test(raw.trim())) return null;
   const lines = raw.split('\n').map((l) => l.trim());
@@ -194,7 +202,7 @@ export function parseQuestions(text) {
 
   const blocks = extractTrailingBlocks(lines, { maxTailLines: 2 });
   const valid = blocks
-    .filter((b) => isValidBlock(b.heading, b.opts, { allowColonWithChoose: true }))
+    .filter((b) => isValidBlock(b.heading, b.opts, { allowColonWithChoose: true, strict }))
     .map((b) => ({ question: b.heading, options: b.opts.map(choiceOf) }));
   return valid.length >= 2 ? valid : null;
 }
