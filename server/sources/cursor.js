@@ -26,7 +26,8 @@ function readMeta(db) {
   } catch { return {}; }
 }
 
-function messages(db) {
+/** JSON message blobs in order. `info.lastRowid` gets the rowid of the newest one (a new message = a new rowid). */
+function messages(db, info = {}) {
   const out = [];
   let rows = [];
   try { rows = db.prepare('SELECT rowid, data FROM blobs ORDER BY rowid').all(); } catch { return out; }
@@ -35,7 +36,7 @@ function messages(db) {
     if (buf[0] !== 0x7b) continue; // JSON objects only
     try {
       const j = JSON.parse(buf.toString('utf8'));
-      if (j && typeof j.role === 'string') out.push(j);
+      if (j && typeof j.role === 'string') { out.push(j); info.lastRowid = r.rowid; }
     } catch { /* protobuf/binary */ }
   }
   return out;
@@ -68,13 +69,15 @@ export async function listCursor() {
       const st = await statSafe(file);
       if (!st) continue;
       const wal = await statSafe(file + '-wal');
-      const stamp = `${st.mtimeMs}:${wal?.mtimeMs || 0}`;
+      // Sizes too: back-to-back WAL writes can land within one mtime tick.
+      const stamp = `${st.mtimeMs}:${st.size}:${wal?.mtimeMs || 0}:${wal?.size || 0}`;
       const c = cache.get(file);
       if (c && c.stamp === stamp) { out.push(c.row); continue; }
       let db;
       try { db = openRO(file); } catch { continue; }
       let meta = {}, msgs = [];
-      try { meta = readMeta(db); msgs = messages(db); } finally { try { db.close(); } catch { /* ignore */ } }
+      const info = { lastRowid: 0 };
+      try { meta = readMeta(db); msgs = messages(db, info); } finally { try { db.close(); } catch { /* ignore */ } }
       const users = msgs.filter((m) => m.role === 'user').map((m) => userQuery(textOf(m.content))).filter(Boolean);
       const lastAsst = [...msgs].reverse().find((m) => m.role === 'assistant' && textOf(m.content).trim());
       let cwd = dirForHash(h);
@@ -85,10 +88,12 @@ export async function listCursor() {
       const row = {
         tool: 'cursor', id, // the chat folder name is what `cursor-agent --resume` takes
         title: meta.name && meta.name !== 'New Agent' ? meta.name : clip(oneLine(cleanPrompt(users[0] || '')), 80) || '(untitled)',
-        cwd, created: meta.createdAt || st.birthtimeMs, updated: Math.max(st.mtimeMs, wal?.mtimeMs || 0),
+        cwd, created: meta.createdAt || st.birthtimeMs, updated: Math.max(st.mtimeMs, wal?.size > 0 ? wal.mtimeMs : 0), // an empty -wal is touched by mere opens
         firstPrompt: clip(oneLine(cleanPrompt(users[0] || '')), 240), lastPrompt: clip(oneLine(cleanPrompt(users.length > 1 ? users[users.length - 1] : '')), 240),
         lastReply: clip(oneLine(lastAsst ? textOf(lastAsst.content) : ''), 400),
         model: meta.lastUsedModel || null, automated: !batonIds.has(id) && users.length === 0, file, size: st.size,
+        // `updated` is a file mtime (a rename bumps it); the watcher compares this instead to spot new messages.
+        progress: Number(info.lastRowid) || 0,
       };
       cache.set(file, { stamp, row });
       out.push(row);

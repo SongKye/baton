@@ -263,4 +263,11 @@ try {
   console.log('memory-check: OK');
 } finally {
   fs.rmSync(tmpBase, { recursive: true, force: true });
+  // The manual-save step writes a fake Claude transcript under ~/.claude/projects. When this script is
+  // run on its own (not via check.mjs) that is the real HOME, and a live Baton would watch it.
+  const claudeProjects = path.join(HOME, '.claude', 'projects');
+  const fixtureSlug = tmpBase.replace(/[^a-zA-Z0-9]/g, '-');
+  for (const d of fs.existsSync(claudeProjects) ? fs.readdirSync(claudeProjects) : []) {
+    if (d.startsWith(fixtureSlug)) fs.rmSync(path.join(claudeProjects, d), { recursive: true, force: true });
+  }
 }
