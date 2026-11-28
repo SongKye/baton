@@ -1103,6 +1103,8 @@ async function viewProject([id]) {
   let selecting = false, noteEditing = false, reloadAfterNote = false;
   const PAGE = matchMedia('(min-width: 1100px)').matches ? 6 : 4;
   let page = G.restore.ppage || 0; // survives reloads (memo save, archive toggle…) and Back from a chat
+  let mtab = G.restore.pmtab || 'work';
+  let stab = G.restore.pstab || 'memory';
   const sel = new Set();
   G.cleanup = () => document.body.classList.remove('selecting');
   const load = async () => {
@@ -1123,45 +1125,105 @@ async function viewProject([id]) {
     const latest = human[0] || d.sessions[0];
     const git = d.git;
     const repo = (d.services || []).find((x) => REPO_KINDS.has(x.kind));
-    const srvHtml = d.servers?.length ? `<div class="section" id="psrv"><div class="section-h"><h2>${t('개발 서버')}</h2><span class="count">${d.servers.filter((x) => x.running).length}/${d.servers.length}</span><a class="more" href="#/ports">${t('전체 ›')}</a></div>
+    const runningSrv = (d.servers || []).filter((x) => x.running).length;
+    const metaChips = [
+      git ? `<button type="button" class="pchip" data-jump="git">🌿 ${esc(git.branch || 'HEAD')}${git.dirty ? ` <em>· ${t('미커밋 {n}개', { n: git.dirty })}</em>` : ''}</button>` : '',
+      d.servers?.length ? `<button type="button" class="pchip${runningSrv ? ' is-live' : ''}" data-jump="srv"><i class="pchip-dot"></i>${t('개발 서버')} ${runningSrv}/${d.servers.length}</button>` : '',
+      repo ? `<a class="pchip" href="${esc(repo.url)}" target="_blank" rel="noopener">${esc(repo.name)} ↗</a>` : '',
+    ].filter(Boolean).join('');
+    const srvHtml = d.servers?.length ? `<div class="section" id="psrv" data-m="work"><div class="section-h"><h2>${t('개발 서버')}</h2><span class="count">${runningSrv}/${d.servers.length}</span><a class="more" href="#/ports">${t('전체 ›')}</a></div>
       <div class="card list">${d.servers.map((x) => serverRow(x, { showProject: false })).join('')}</div></div>` : '';
-    const gitHtml = git ? `<div class="section"><div class="section-h"><h2>Git</h2>${repo ? `<a class="more" href="${esc(repo.url)}" target="_blank" rel="noopener">${esc(repo.name)} ↗</a>` : ''}<span class="count">${esc(git.branch || '')}${git.dirty ? ` · ${t('미커밋 {n}개', { n: git.dirty })}` : ''}</span></div>
+    const gitHtml = git ? `<div class="section" id="pgit" data-m="env"><div class="section-h"><h2>Git</h2>${repo ? `<a class="more" href="${esc(repo.url)}" target="_blank" rel="noopener">${esc(repo.name)} ↗</a>` : ''}<span class="count">${esc(git.branch || '')}${git.dirty ? ` · ${t('미커밋 {n}개', { n: git.dirty })}` : ''}</span></div>
       <div class="card" style="padding:6px 14px">${git.commits.slice(0, 6).map((c) => `<div class="commit"><span class="h">${esc(c.hash)}</span><span class="s">${esc(c.subject)}</span><span class="d">${ago(c.ts)}</span></div>`).join('') || `<div class="muted small" style="padding:8px 0">${t('커밋이 아직 없어요')}</div>`}</div></div>` : '';
     v.innerHTML = `
       ${p.archived ? `<div class="section" style="margin-top:8px"><div class="banner">${t('목록에서 숨겨둔 프로젝트예요')} <button class="btn sm" id="punarchive">${t('다시 보이기')}</button></div></div>` : ''}
       ${p.muted ? `<div class="section"${p.archived ? '' : ' style="margin-top:8px"'}><div class="banner">🔕 ${t('이 프로젝트는 알림이 꺼져 있어요')} <button class="btn sm" id="punmute">${t('다시 켜기')}</button></div></div>` : ''}
-      <div class="project-bento">
+      <div class="phead">
+        ${metaChips ? `<div class="pmeta">${metaChips}</div>` : ''}
+        <div class="pacts">
+          <a class="btn sm primary" href="#/new?cwd=${encodeURIComponent(p.path)}">${ICON.plus}${t('새 세션')}</a>
+          ${latest ? `<a class="btn sm" href="#/s/${latest.tool}/${encodeURIComponent(latest.id)}">${t('최근 세션 열기')}</a>` : ''}
+          ${latest && WS?.canSplit?.() ? `<button type="button" class="btn sm ghost pacts-split" id="psplitopen">${WS_ICON.split}${t('분할 보기')}</button>` : ''}
+        </div>
+      </div>
+      <div class="seg proj-mtabs" role="tablist">
+        <button type="button" class="${mtab === 'work' ? 'on' : ''}" data-mtab="work" role="tab" aria-selected="${mtab === 'work'}">${t('작업')}</button>
+        <button type="button" class="${mtab === 'memory' ? 'on' : ''}" data-mtab="memory" role="tab" aria-selected="${mtab === 'memory'}">${t('메모리')}<span class="tab-n" data-mem-count></span></button>
+        <button type="button" class="${mtab === 'env' ? 'on' : ''}" data-mtab="env" role="tab" aria-selected="${mtab === 'env'}">${t('환경')}</button>
+      </div>
+      <div class="project-bento" data-mtab="${mtab}" data-stab="${stab}">
         <div class="project-main">
-          <div class="section"><div class="section-h"><h2>${t('세션')}</h2><span class="count">${d.sessions.length}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span>
+          <div class="section" id="psess" data-m="work"><div class="section-h"><h2>${t('세션')}</h2><span class="count">${d.sessions.length}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span>
             ${d.sessions.length ? `<button class="more" id="pselbtn">${selecting ? t('완료') : t('선택')}</button>` : ''}</div>
             <div class="card list" id="plist">${listHtml()}</div>
             <div class="pager" id="ppager">${pagerHtml()}</div>
-            <div class="project-quick-bar" style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-              ${latest && WS?.canSplit?.() ? `<button class="btn block" id="psplitopen">${WS_ICON.split}${t('프로젝트 + 채팅 함께 보기')}</button>` : ''}
-              ${latest ? `<a class="btn block" href="#/s/${latest.tool}/${encodeURIComponent(latest.id)}">${t('최근 세션 열기')}</a>` : ''}
-              <a class="btn block primary" href="#/new?cwd=${encodeURIComponent(p.path)}">${t('새 세션')}</a>
-            </div>
           </div>
+          ${srvHtml}
           ${gitHtml}
         </div>
         <div class="project-side">
-          <div class="section" id="pnote"><div class="section-h"><h2>${t('메모')}</h2><button class="more" id="pnotefold" hidden></button></div>
+          <div class="section" id="pnote" data-m="work"><div class="section-h"><h2>${t('메모')}</h2><button class="more" id="pnotefold" hidden></button></div>
             ${p.note ? `<button class="card memo" id="pnotecard" title="${t('눌러서 고치기')}">${esc(p.note)}</button>`
               : `<button class="memo-empty" id="pnotecard">📝 ${t('메모 남기기')}<span>${t('다음에 돌아왔을 때 볼 메모')}</span></button>`}</div>
-          ${srvHtml}
-          <div class="section" id="pmem"></div>
-          ${servicesHtml(d.services)}
-          <div class="section" id="pskills"></div>
-          <div class="section" id="pmcp"></div>
+          <div class="section pmem-preview" id="pmem-preview" data-m="work"></div>
+          <div class="seg proj-stabs" role="tablist">
+            <button type="button" class="${stab === 'memory' ? 'on' : ''}" data-stab="memory" role="tab" aria-selected="${stab === 'memory'}">${t('메모리')}<span class="tab-n" data-mem-count></span></button>
+            <button type="button" class="${stab === 'env' ? 'on' : ''}" data-stab="env" role="tab" aria-selected="${stab === 'env'}">${t('환경')}</button>
+          </div>
+          <div class="section" id="pmem" data-m="memory" data-s="memory"></div>
+          ${servicesHtml(d.services, 'data-m="env" data-s="env"')}
+          <div class="section" id="pskills" data-m="env" data-s="env"></div>
+          <div class="section" id="pmcp" data-m="env" data-s="env"></div>
         </div>
       </div>
       <div class="bulkbar" id="pbar" ${selecting ? '' : 'hidden'}><button class="btn sm ghost" id="pall">${t('전체 선택')}</button><span>${t('{n}개 선택', { n: '<b id="pcount">0</b>' })}</span><button class="btn sm" id="phide">${t('숨기기')}</button><button class="btn primary danger-fill" id="ptrash">${t('휴지통으로')}</button></div>`;
+    const bento = $('.project-bento', v);
+    const setMtab = (next) => {
+      mtab = next;
+      if (bento) bento.dataset.mtab = mtab;
+      $$('[data-mtab]', v).forEach((b) => {
+        const on = b.dataset.mtab === mtab;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-selected', String(on));
+      });
+      remember({ pmtab: mtab });
+    };
+    const setStab = (next) => {
+      stab = next;
+      if (bento) bento.dataset.stab = stab;
+      $$('[data-stab]', v).forEach((b) => {
+        const on = b.dataset.stab === stab;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-selected', String(on));
+      });
+      remember({ pstab: stab });
+    };
+    $$('[data-mtab]', v).forEach((b) => (b.onclick = () => setMtab(b.dataset.mtab)));
+    $$('[data-stab]', v).forEach((b) => (b.onclick = () => setStab(b.dataset.stab)));
+    $$('[data-jump]', v).forEach((b) => (b.onclick = () => {
+      const target = b.dataset.jump;
+      if (target === 'git') {
+        if (!matchMedia('(min-width: 1100px)').matches) setMtab('env');
+        $('#pgit')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else if (target === 'srv') {
+        if (!matchMedia('(min-width: 1100px)').matches) setMtab('work');
+        $('#psrv')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }));
     if ($('#psplitopen') && latest) {
       $('#psplitopen').onclick = () => WS?.openSplitFromAnywhere({ kind: 'chat', tool: latest.tool, id: latest.id }, { withProjectId: p.id });
     }
     loadProjectSkills($('#pskills'), p);
     loadProjectMcp($('#pmcp'), p.path, p.id);
-    loadProjectMemory($('#pmem'), p);
+    loadProjectMemory($('#pmem'), p, {
+      previewEl: $('#pmem-preview'),
+      onCount: (n) => $$('[data-mem-count]', v).forEach((el) => { el.textContent = n > 0 ? ` ${n}` : ''; }),
+      onOpenAll: () => {
+        setMtab('memory');
+        setStab('memory');
+        $('#pmem')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
+    });
     if ($('#psrv')) bindServers($('#psrv'), () => load());
     bindServices($('#psvc'), p.id, () => load());
     // memo: tap it to edit right there
@@ -1283,7 +1345,7 @@ async function viewProject([id]) {
       ]);
       if (act === 'pin') await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { pinned: !p.pinned } });
       else if (act === 'rename') { const n = await promptSheet(t('프로젝트 이름'), p.name); if (n !== undefined) await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { name: n } }); }
-      else if (act === 'note') { $('#pnote').scrollIntoView({ behavior: 'smooth', block: 'center' }); return editNote(); }
+      else if (act === 'note') { if (!matchMedia('(min-width: 1100px)').matches) setMtab('work'); $('#pnote').scrollIntoView({ behavior: 'smooth', block: 'center' }); return editNote(); }
       else if (act === 'mute') { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { muted: !p.muted } }); toast(p.muted ? t('알림을 다시 켰어요') : t('이 프로젝트 알림을 껐어요')); }
       else if (act === 'archive') { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { archived: !p.archived } }); toast(p.archived ? t('목록에 다시 보이게 했어요') : t('목록에서 숨겼어요 (프로젝트 목록 「보관」에서 다시 꺼낼 수 있어요)')); }
       else return;
@@ -2693,10 +2755,10 @@ function memoryItemSheet(projectId, initial = {}, onSaved = null) {
   });
 }
 
-function renderMemoryItems(items) {
+function renderMemoryItems(items, { compact = false } = {}) {
   if (!items.length) return `<div class="muted small mem-empty">${t('아직 저장된 프로젝트 기억이 없어요. Baton에서 대화하면 중요한 내용이 자동으로 쌓여요.')}</div>`;
   return items.map((m) => `
-    <button type="button" class="mem-row" data-mid="${m.id}">
+    <button type="button" class="mem-row${compact ? ' compact' : ''}" data-mid="${m.id}">
       <div class="mem-top">
         ${m.pinned ? '<span class="mem-pin" title="Pinned">📌</span>' : ''}
         <span class="mem-src">${esc(memSourceLabel(m.sourceTool))}</span>
@@ -2707,14 +2769,28 @@ function renderMemoryItems(items) {
     </button>`).join('');
 }
 
-async function renderMemoryPanel(container, projectId, { onChanged = null, inSheet = false } = {}) {
+async function renderMemoryPanel(container, projectId, { onChanged = null, inSheet = false, onData = null } = {}) {
   if (!container) return;
   let query = container.dataset.memQuery || '';
+  let filter = container.dataset.memFilter || 'all';
+  const PAGE_SIZE = 8;
+  let limit = PAGE_SIZE;
   const draw = async () => {
+    const prevActive = document.activeElement;
+    const keepFocus = prevActive && prevActive.id === 'pmem-q' && container.contains(prevActive);
+    const selStart = keepFocus ? prevActive.selectionStart : null;
+    const selEnd = keepFocus ? prevActive.selectionEnd : null;
     const qs = query ? `?q=${encodeURIComponent(query)}` : '';
     const d = await api(`/api/projects/${encodeURIComponent(projectId)}/memory${qs}`);
     if (!container.isConnected) return;
-    const active = d.enabled;
+    if (!query) onData?.(d, { refresh: draw });
+    const pinnedCount = d.items.filter((x) => x.pinned).length;
+    const autoCount = d.items.length - pinnedCount;
+    if (filter === 'pinned' && !pinnedCount && !query) filter = 'all';
+    const filtered = filter === 'pinned' ? d.items.filter((x) => x.pinned)
+      : filter === 'auto' ? d.items.filter((x) => !x.pinned)
+      : d.items;
+    const shown = filtered.slice(0, limit);
     const head = inSheet ? '' : `<div class="section-h"><h2>${t('공유 메모리')} 🧠</h2><span class="count">${d.items.length}</span>
       <label class="switch sm" title="${t('이 프로젝트의 공유 메모리 켜기/끄기')}"><input type="checkbox" id="pmem-sw" ${!d.memoryOff ? 'checked' : ''}><i></i></label></div>`;
     let body;
@@ -2724,6 +2800,10 @@ async function renderMemoryPanel(container, projectId, { onChanged = null, inShe
       body = `<div class="card mem-card"><div class="muted small" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>${t('이 프로젝트에서는 공유 메모리가 꺼져 있어요.')}</span>${inSheet ? `<button class="btn sm" id="pmem-on">${t('다시 켜기')}</button>` : ''}</div></div>`;
     } else {
       const showSearch = d.items.length >= 5 || Boolean(query);
+      const showFilter = pinnedCount > 0 || filter !== 'all';
+      const emptyMsg = query || filter !== 'all'
+        ? `<div class="muted small mem-empty">${t('조건에 맞는 기억이 없어요.')}</div>`
+        : '';
       body = `<div class="card mem-card">
         <div class="mem-bar">
           ${showSearch ? `<input class="mem-search" id="pmem-q" placeholder="${t('기억 검색…')}" value="${esc(query)}">` : `<span class="small muted">${t('모든 AI CLI가 이 기억을 함께 참고해요')}</span>`}
@@ -2732,7 +2812,13 @@ async function renderMemoryPanel(container, projectId, { onChanged = null, inShe
             <button class="btn sm" id="pmem-add">+ ${t('추가')}</button>
           </div>
         </div>
-        <div class="mem-list">${renderMemoryItems(d.items)}</div>
+        ${showFilter ? `<div class="mem-filters">
+          <button type="button" class="mem-f${filter === 'all' ? ' on' : ''}" data-mf="all">${t('전체')} <span>${d.items.length}</span></button>
+          <button type="button" class="mem-f${filter === 'pinned' ? ' on' : ''}" data-mf="pinned">📌 ${t('고정')} <span>${pinnedCount}</span></button>
+          <button type="button" class="mem-f${filter === 'auto' ? ' on' : ''}" data-mf="auto">${t('자동')} <span>${autoCount}</span></button>
+        </div>` : ''}
+        <div class="mem-list">${shown.length ? renderMemoryItems(shown) : (emptyMsg || renderMemoryItems([]))}</div>
+        ${filtered.length > shown.length ? `<button type="button" class="btn sm ghost block mem-more" id="pmem-more">${t('더 보기 ({n}개 남음)', { n: filtered.length - shown.length })}</button>` : ''}
         ${d.stats?.lastDreamAt ? `<div class="small muted mem-foot">${t('마지막 자동 정리: {ago}', { ago: ago(d.stats.lastDreamAt) })}</div>` : ''}
       </div>`;
     }
@@ -2752,14 +2838,27 @@ async function renderMemoryPanel(container, projectId, { onChanged = null, inShe
     };
     const qInput = $('#pmem-q', container);
     if (qInput) {
+      if (keepFocus) {
+        qInput.focus({ preventScroll: true });
+        if (selStart != null && selEnd != null) { try { qInput.setSelectionRange(selStart, selEnd); } catch { /* ignore */ } }
+      }
       let tm;
       qInput.oninput = () => {
         query = qInput.value;
+        limit = PAGE_SIZE;
         container.dataset.memQuery = query;
         clearTimeout(tm);
         tm = setTimeout(() => draw(), 180);
       };
     }
+    $$('[data-mf]', container).forEach((b) => (b.onclick = () => {
+      filter = b.dataset.mf;
+      limit = PAGE_SIZE;
+      container.dataset.memFilter = filter;
+      draw();
+    }));
+    const moreBtn = $('#pmem-more', container);
+    if (moreBtn) moreBtn.onclick = () => { limit += PAGE_SIZE; draw(); };
     const addBtn = $('#pmem-add', container);
     if (addBtn) addBtn.onclick = () => memoryItemSheet(projectId, { pinned: true }, async () => { await draw(); onChanged?.(); });
     const dreamBtn = $('#pmem-dream', container);
@@ -2783,9 +2882,52 @@ async function renderMemoryPanel(container, projectId, { onChanged = null, inShe
   await draw().catch(() => {});
 }
 
-function loadProjectMemory(box, project) {
+function renderMemoryPreview(box, projectId, d, { onOpenAll, onRefresh }) {
+  if (!box || !box.isConnected) return;
+  const head = `<div class="section-h"><h2>${t('공유 메모리')} 🧠</h2><span class="count">${d.items.length}</span>
+    <button type="button" class="more" data-mem-all>${t('전체 보기 ›')}</button></div>`;
+  let body;
+  if (!d.globalEnabled) {
+    body = `<div class="card compact-empty"><span>${t('설정에서 공유 메모리가 꺼져 있어요')}</span><a class="btn sm ghost" href="#/settings">${t('설정')} ›</a></div>`;
+  } else if (d.memoryOff) {
+    body = `<div class="card compact-empty"><span>${t('이 프로젝트에서는 공유 메모리가 꺼져 있어요.')}</span><button type="button" class="btn sm ghost" data-prev-on>${t('다시 켜기')}</button></div>`;
+  } else if (!d.items.length) {
+    body = `<div class="card compact-empty"><span>${t('아직 저장된 기억이 없어요')}</span><button type="button" class="btn sm ghost" data-prev-add>+ ${t('추가')}</button></div>`;
+  } else {
+    const top = [...d.items]
+      .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.updated || 0) - (a.updated || 0))
+      .slice(0, 3);
+    const rest = d.items.length - top.length;
+    body = `<div class="card mem-card mem-preview-card">
+      <div class="mem-list">${renderMemoryItems(top, { compact: true })}</div>
+      ${rest > 0 ? `<button type="button" class="mem-preview-more" data-mem-all>${t('외 {n}개 기억 더 보기 ›', { n: rest })}</button>` : ''}
+    </div>`;
+  }
+  box.innerHTML = `${head}${body}`;
+  $$('[data-mem-all]', box).forEach((b) => (b.onclick = () => onOpenAll?.()));
+  const onBtn = $('[data-prev-on]', box);
+  if (onBtn) onBtn.onclick = async () => {
+    await api(`/api/projects/${encodeURIComponent(projectId)}/meta`, { body: { memoryOff: false } });
+    toast(t('이 프로젝트의 공유 메모리를 켰어요'));
+    onRefresh?.();
+  };
+  const addBtn = $('[data-prev-add]', box);
+  if (addBtn) addBtn.onclick = () => memoryItemSheet(projectId, { pinned: true }, () => onRefresh?.());
+  const byId = new Map(d.items.map((x) => [String(x.id), x]));
+  $$('[data-mid]', box).forEach((b) => (b.onclick = () => {
+    const it = byId.get(b.dataset.mid);
+    if (it) memoryItemSheet(projectId, it, () => onRefresh?.());
+  }));
+}
+
+function loadProjectMemory(box, project, { previewEl = null, onCount = null, onOpenAll = null } = {}) {
   if (!box || !project?.id) return;
-  renderMemoryPanel(box, project.id);
+  renderMemoryPanel(box, project.id, {
+    onData: (d, { refresh }) => {
+      onCount?.(d.globalEnabled && !d.memoryOff ? d.items.length : 0);
+      if (previewEl) renderMemoryPreview(previewEl, project.id, d, { onOpenAll, onRefresh: refresh });
+    },
+  });
 }
 
 function openMemorySheet(projectId, onChanged = null) {
@@ -3369,7 +3511,7 @@ const brandIcon = (kind) => {
   return b ? `<svg class="brand" viewBox="0 0 24 24" role="img" aria-label="${esc(SERVICE[kind] || kind)}" fill="${b[0] || 'currentColor'}"><path d="${b[1]}"/></svg>` : LINK_ICON;
 };
 const REPO_KINDS = new Set(['github', 'gitlab', 'bitbucket', 'git']);
-function servicesHtml(list) {
+function servicesHtml(list, attr = '') {
   list = list || [];
   const row = (s) => {
     const label = s.custom ? s.name : SERVICE[s.kind] || s.kind;
@@ -3381,16 +3523,15 @@ function servicesHtml(list) {
         <div class="m">${where}</div></div>
       <div class="pact">${s.site ? `<a class="btn sm" href="${esc(s.site)}" target="_blank" rel="noopener">${t('사이트')} ↗</a>` : ''}<a class="btn sm primary" href="${esc(s.url)}" target="_blank" rel="noopener">${s.custom ? t('열기') : REPO_KINDS.has(s.kind) ? t('저장소') : t('대시보드')} ↗</a>${s.custom ? `<button class="btn sm ghost" data-link-rm="${esc(s.linkId)}" aria-label="${t('링크 삭제')}">✕</button>` : ''}</div></div>`;
   };
-  return `<div class="section" id="psvc"><div class="section-h"><h2>${t('연결된 서비스')}</h2><span class="count">${list.length}</span><button class="more" data-link-add>+ ${t('링크 추가')}</button></div>
-    ${list.length ? `<div class="card list">${list.map(row).join('')}</div>` : `<p class="small muted">${t('자동으로 찾은 서비스가 없어요. 쓰는 대시보드가 있으면 링크를 추가해두세요.')}</p>`}</div>`;
+  return `<div class="section" id="psvc"${attr ? ` ${attr}` : ''}><div class="section-h"><h2>${t('연결된 서비스')}</h2><span class="count">${list.length}</span>${list.length ? `<button class="more" data-link-add>+ ${t('링크 추가')}</button>` : ''}</div>
+    ${list.length ? `<div class="card list">${list.map(row).join('')}</div>` : `<div class="card compact-empty"><span>${t('연결된 서비스가 없어요')}</span><button type="button" class="btn sm ghost" data-link-add>+ ${t('링크 추가')}</button></div>`}</div>`;
 }
 function bindServices(el, root, reload) {
   if (!el) return;
   $$('[data-link-rm]', el).forEach((b) => (b.onclick = async () => {
     try { await api(`/api/projects/${encodeURIComponent(root)}/links/${b.dataset.linkRm}/remove`, { method: 'POST' }); toast(t('삭제했어요')); reload(); } catch (e) { toast(e.message, true); }
   }));
-  const add = $('[data-link-add]', el);
-  if (add) add.onclick = () => sheet({
+  $$('[data-link-add]', el).forEach((add) => (add.onclick = () => sheet({
     title: t('링크 추가'),
     body: `<p class="small muted">${t('자동으로 못 찾은 서비스(배포 사이트, 관리 콘솔, 기획 문서…)의 주소를 이 프로젝트에 붙여둬요.')}</p>
       <label class="fld"><span>${t('이름')}</span><input type="text" data-ln placeholder="${t('예) 운영 사이트, AWS 콘솔')}" maxlength="60"></label>
@@ -3407,7 +3548,7 @@ function bindServices(el, root, reload) {
       $('[data-ok]', sh).onclick = ok;
       u.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) ok(); };
     },
-  });
+  })));
 }
 
 // ---------------------------------------------------------------- GIT REPOS (every remote used by a project)
@@ -4564,10 +4705,11 @@ async function loadProjectMcp(box, cwd, pid = cwd) {
       const glob = all.filter((s) => !mcpIsLocal(s));
       const globOn = glob.filter((s) => s.enabled === true).length, globUsed = glob.filter((s) => s.uses).length;
       const localHtml = mcpEffectiveHtml(d, { pick: mcpIsLocal, hideEmpty: true });
+      const addHref = `#/mcp/new?project=${encodeURIComponent(pid)}`;
       box.innerHTML = `<div class="section-h"><h2>${t('MCP 서버')}</h2><span class="count">${localOn}</span><a class="more" href="#/mcp">${t('전체 ›')}</a></div>
-        <p class="small muted" style="margin:-4px 2px 8px">${t('이 프로젝트에만 설정된 MCP예요. 전역 MCP는 아래를 펼쳐서 보세요')}</p>
-        ${localHtml || `<div class="card empty sk-empty"><b>${t('이 프로젝트 전용 MCP가 없어요')}</b>${t('DB·이 서비스의 API처럼 이 프로젝트에서만 필요한 도구는 프로젝트용으로 넣으면 다른 폴더의 컨텍스트를 아낄 수 있어요')}</div>`}
-        <a class="btn block ghost sk-padd" href="#/mcp/new?project=${encodeURIComponent(pid)}">${ICON.plus}${t('이 프로젝트용 MCP 추가')}</a>
+        ${localHtml
+          ? `${localHtml}<a class="btn sm ghost sk-padd" href="${addHref}">${ICON.plus}${t('이 프로젝트용 MCP 추가')}</a>`
+          : `<div class="card compact-empty"><span>${t('이 프로젝트 전용 MCP가 없어요')}</span><a class="btn sm ghost" href="${addHref}">+ ${t('추가')}</a></div>`}
         ${glob.length ? fold('pmcp-global', `<b>${t('전역 MCP {n}개', { n: globOn })}</b>${globUsed ? `<span class="flag run">${t('이 프로젝트에서 호출 {n}개', { n: globUsed })}</span>` : ''}<span class="small muted">${t('모든 폴더에서 불러와요')}</span>`, mcpEffectiveHtml(d, { pick: (s) => !mcpIsLocal(s), hideEmpty: true })) : ''}`;
       bindMcpCheck(box, cwd, draw);
       bindFolds(box);
@@ -4590,11 +4732,11 @@ async function loadProjectSkills(box, p) {
   try {
     const d = await api(`/api/projects/${encodeURIComponent(p.id)}/skills`);
     const usedG = d.global.filter((s) => s.uses).length;
+    const addHref = `#/skills/new?project=${encodeURIComponent(p.id)}`;
     box.innerHTML = `<div class="section-h"><h2>${t('스킬')}</h2><span class="count">${d.local.length}</span><a class="more" href="#/skills">${t('전체 ›')}</a></div>
-      <p class="small muted" style="margin:-4px 2px 8px">${t('이 프로젝트 폴더에만 있는 스킬이에요. 에이전트는 이 폴더에서 작업할 때만 봐요')}</p>
-      ${d.local.length ? `<div class="card list">${d.local.map((s) => pskRow(s)).join('')}</div>`
-        : `<div class="card empty sk-empty"><b>${t('이 프로젝트 전용 스킬이 없어요')}</b>${t('배포·테스트·릴리스처럼 이 프로젝트에서 자주 하는 작업을 스킬로 만들어두면 에이전트가 매번 같은 방식으로 해요')}</div>`}
-      <a class="btn block ghost sk-padd" href="#/skills/new?project=${encodeURIComponent(p.id)}">${ICON.plus}${t('이 프로젝트용 스킬 만들기')}</a>
+      ${d.local.length
+        ? `<div class="card list">${d.local.map((s) => pskRow(s)).join('')}</div><a class="btn sm ghost sk-padd" href="${addHref}">${ICON.plus}${t('이 프로젝트용 스킬 만들기')}</a>`
+        : `<div class="card compact-empty"><span>${t('이 프로젝트 전용 스킬이 없어요')}</span><a class="btn sm ghost" href="${addHref}">+ ${t('만들기')}</a></div>`}
       ${d.global.length ? fold('pskills-global', `<b>${t('전역 스킬 {n}개', { n: d.global.length })}</b>${usedG ? `<span class="flag run">${t('이 프로젝트에서 쓰인 것 {n}개', { n: usedG })}</span>` : ''}<span class="small muted">${t('모든 폴더에서 불러와요')}</span>`,
         `<div class="card list">${d.global.map((s) => pskRow(s, true)).join('')}</div>`) : ''}`;
     bindFolds(box);
