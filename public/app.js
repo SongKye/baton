@@ -1,6 +1,6 @@
 // Baton — mobile-first PWA front-end (no build step).
 import { createDesktopWorkspace, WS_ICON } from './workspace.js?v=1';
-import { parseChoices, parseQuestions } from './choice-parser.js?v=1';
+import { parseChoices, parseQuestions } from './choice-parser.js?v=2';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const app = $('#app');
@@ -2622,8 +2622,9 @@ function mountChatPane(root, opts = {}) {
       else $('[data-ref="schedbanners"]', msgsEl)?.before(card);
     }
     const asked = !busy && !live && !hasPendingAsk && lastMsg?.role === 'assistant';
-    const mq = asked ? parseQuestions(lastMsg.text) : null;
-    const ch = asked && !mq ? parseChoices(lastMsg.text) : null;
+    const strictTextAsk = Boolean(d.askMcpStrict);
+    const mq = asked ? parseQuestions(lastMsg.text, { strict: strictTextAsk }) : null;
+    const ch = asked && !mq ? parseChoices(lastMsg.text, { strict: strictTextAsk }) : null;
     if (mq && lastAi) lastAi.after(textAskCard(mq, (text) => send(text, composerPrefs(tool), [])));
     if (ch && lastAi) {
       lastAi.insertAdjacentHTML('afterend', `<div class="quick-replies"><span>💬 ${t('눌러서 바로 답하기')}</span><div class="qr-opts">${ch.options.map((o, k) => `<button class="btn sm" data-qr-i="${k}" title="${esc(o.full)}">${esc(o.label)}</button>`).join('')}</div></div>`);

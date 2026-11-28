@@ -169,4 +169,26 @@ assert.equal(rChange?.kind, 'single');
 assert.equal(rChange.question, '어떤 변경부터 진행할까요?');
 assert.deepEqual(rChange.options.map((o) => o.label), ['CI: 테스트 추가', '문서: 설치 안내 수정']);
 
-console.log('PASS: choice-parser regression suite (FAQ filtering, user prompts, A/B markers, mixed boundaries, tail references, markdown headings)');
+// 10. Strict mode (used for turns where structured ask tooling was already provided to the CLI):
+//     plain bullets are ignored, while explicit markers (`A./B.`, `안 A/안 B`) remain supported.
+const detectStrict = (text) => {
+  const multi = parseQuestions(text, { strict: true });
+  if (multi) return { kind: 'multi', questions: multi };
+  const single = parseChoices(text, { strict: true });
+  if (single) return { kind: 'single', ...single };
+  return null;
+};
+assert.equal(detectStrict(userOsKo), null, 'strict mode must suppress plain-bullet guesses');
+assert.equal(detectStrict(deployCandidates), null, 'strict mode must suppress plain-bullet tail guesses');
+assert.equal(detectStrict(changeFirst), null, 'strict mode must suppress plain-bullet labeled guesses');
+const rStrictLetter = detectStrict(letterChoices);
+assert.equal(rStrictLetter?.kind, 'single');
+assert.deepEqual(rStrictLetter.options.map((o) => o.label), ['지금 배포합니다', '다음 배포까지 기다립니다']);
+const strictKoreanPlan = `어느 안으로 진행할까요?
+- 안 A: Postgres
+- 안 B: SQLite`;
+const rStrictPlan = detectStrict(strictKoreanPlan);
+assert.equal(rStrictPlan?.kind, 'single');
+assert.deepEqual(rStrictPlan.options.map((o) => o.label), ['안 A: Postgres', '안 B: SQLite']);
+
+console.log('PASS: choice-parser regression suite (FAQ filtering, user prompts, A/B markers, mixed boundaries, tail references, strict mode, markdown headings)');

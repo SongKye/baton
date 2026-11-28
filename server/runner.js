@@ -30,7 +30,7 @@ const runs = new Map();         // runId -> run
 const activeByKey = new Map();  // "<tool>:<sessionId>" -> runId
 const runByAskToken = new Map(); // per-run 192-bit bearer token -> run
 const MCP_ASK_SCRIPT = path.join(ROOT, 'server', 'mcp-ask.js');
-const MCP_ASK_TOOLS = new Set(['codex']);
+const MCP_ASK_TOOLS = new Set(['codex', 'opencode']);
 let askEndpointUrl = null;
 /** Enable per-run MCP `ask_user` injection pointing at Baton's local HTTP server. */
 export function setAskEndpoint(url) { askEndpointUrl = url || null; }
@@ -142,14 +142,41 @@ const OPENCODE_RUN = ['run', '--format', 'json', '--standalone'];
 const OPENCODE_V1_USAGE = /^opencode run \[message\.\.\]/m;
 const opencodeV1Error = () => tr('OpenCode 1은 더 이상 지원하지 않아요. 설정 → 시작하기에서 OpenCode를 업데이트해주세요');
 
-function opencodeCmd({ sessionId, model, effort, perm, prompt, images }) {
+/** Merge Baton's per-run `baton_ask` MCP server into any pre-existing OPENCODE_CONFIG_CONTENT JSON. */
+function opencodeAskConfig(askMcp, existingRaw = process.env.OPENCODE_CONFIG_CONTENT) {
+  let base = {};
+  if (existingRaw) {
+    try { const parsed = JSON.parse(existingRaw); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) base = parsed; } catch { /* ignore malformed user env */ }
+  }
+  const mcpBase = base.mcp && typeof base.mcp === 'object' && !Array.isArray(base.mcp) ? base.mcp : {};
+  const serversBase = mcpBase.servers && typeof mcpBase.servers === 'object' && !Array.isArray(mcpBase.servers) ? mcpBase.servers : {};
+  const permBase = base.permission && typeof base.permission === 'object' && !Array.isArray(base.permission) ? base.permission : {};
+  return JSON.stringify({
+    ...base,
+    permission: { ...permBase, 'baton_ask_*': 'allow' },
+    mcp: {
+      ...mcpBase,
+      servers: {
+        ...serversBase,
+        baton_ask: {
+          type: 'local',
+          command: [process.execPath, askMcp.script],
+          environment: { BATON_ASK_URL: askMcp.url, BATON_ASK_TOKEN: askMcp.token },
+        },
+      },
+    },
+  });
+}
+
+function opencodeCmd({ sessionId, model, effort, perm, prompt, images, askMcp }) {
   // `opencode run` reads the message from stdin when it isn't a TTY; --format json emits one JSON event per line
   const args = [...OPENCODE_RUN];
   if (sessionId) args.push('--session', sessionId);
   if (model) args.push('--model', opencodeModelArg(model, effort));
   args.push(...opencodePermArgs(perm));
   for (const im of images || []) args.push('--file', im.path);
-  return { bin: 'opencode', args, stdin: prompt };
+  const env = askMcp ? { OPENCODE_CONFIG_CONTENT: opencodeAskConfig(askMcp) } : null;
+  return { bin: 'opencode', args, stdin: prompt, env };
 }
 
 function cursorCmd({ sessionId, model, perm, prompt, images, cwd }) {
@@ -380,7 +407,7 @@ export function startRun({ tool, sessionId, cwd, prompt, wirePrompt = null, mode
   const child = spawnCli(binFor(tool) || cmd.bin, cmd.args, {
     cwd,
     detached: !IS_WIN, // its shell/tool descendants share a process group for Stop
-    env: childEnv({ BATON_RUN: run.id }),
+    env: childEnv({ BATON_RUN: run.id, ...(cmd.env || {}) }),
     stdio: [cmd.stdin != null ? 'pipe' : 'ignore', 'pipe', 'pipe'],
   });
   run.child = child;

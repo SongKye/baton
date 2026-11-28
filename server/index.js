@@ -275,10 +275,14 @@ route('GET', '/api/sessions/:tool/:id', async (req, url, { tool, id }) => {
     store.clearPendingAsk(s.key, pendingAsk.requestId);
     pendingAsk = null;
   }
+  const metaRow = store.allSessionMeta().get(s.key);
+  // Runs where Baton provided structured ask tooling (Claude AskUserQuestion or MCP ask_user) use strict plain-text fallback
+  // unless the session was later continued outside Baton (e.g. PC terminal).
+  const askMcpStrict = Boolean(metaRow?.ask_mcp_at && !(s.updated && s.updated > metaRow.ask_mcp_at + 5000));
   return { session: sessionView(view), ...page, messages: page.messages.map((message) => {
     const { imageRefs, ...m } = slimMessage(message);
     return { ...m, ...(imageRefs?.length ? { imageUrls: imageRefs.map((ref) => `/api/sessions/claude/${encodeURIComponent(s.id)}/images/${ref}`) } : {}) };
-  }), run: run ? publicRun(run) : null, outcome: run ? null : store.getRunOutcome(s.key), pendingAsk, links };
+  }), run: run ? publicRun(run) : null, outcome: run ? null : store.getRunOutcome(s.key), pendingAsk, askMcpStrict, links };
 });
 
 // dismiss the "last run hit the limit / was blocked / failed" card in a chat
@@ -796,6 +800,8 @@ bus.on('run_end', (run) => {
   else store.clearRunOutcome(key);
   if (run.deferredAsk && !run.stopped) store.setPendingAsk(key, run.deferredAsk);
   else store.clearPendingAsk(key);
+  // Record whether this completed Baton turn had structured ask tooling available (Claude AskUserQuestion or MCP ask_user).
+  store.patchSessionMeta(key, { ask_mcp_at: (run.tool === 'claude' || run.askMcp) ? Date.now() : null });
 });
 
 // ---------- notifications on run completion ----------

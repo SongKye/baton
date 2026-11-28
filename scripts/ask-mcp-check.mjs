@@ -281,6 +281,83 @@ try {
     assert.equal(v6Done.hasMcpAsk, true, 'IPv6 [::1] callback must succeed');
   }
 
+  // 5b. OpenCode per-run OPENCODE_CONFIG_CONTENT injection (preserves existing user config + allows baton_ask_*)
+  const fakeOcScript = path.join(tmp, 'fake-opencode.mjs');
+  await fs.writeFile(fakeOcScript, `
+    import fs from 'node:fs';
+    import { spawn } from 'node:child_process';
+    const rawCfg = process.env.OPENCODE_CONFIG_CONTENT || '';
+    if (process.env.FAKE_OC_CFG_OUT) fs.writeFileSync(process.env.FAKE_OC_CFG_OUT, rawCfg);
+    const cfg = rawCfg ? JSON.parse(rawCfg) : {};
+    const srv = cfg?.mcp?.servers?.baton_ask;
+    console.log(JSON.stringify({ type: 'step_start', sessionID: 'ses_oc_ask_1' }));
+    if (srv?.command?.length >= 2 && srv?.environment?.BATON_ASK_URL && srv?.environment?.BATON_ASK_TOKEN) {
+      const child = spawn(srv.command[0], srv.command.slice(1), {
+        env: { ...process.env, ...srv.environment },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      let b = '';
+      await new Promise((resolve, reject) => {
+        child.stdout.setEncoding('utf8');
+        child.stdout.on('data', (c) => {
+          b += c;
+          for (const line of b.split('\\n')) {
+            if (!line.trim()) continue;
+            const m = JSON.parse(line);
+            if (m.id === 1) {
+              child.stdin.write(JSON.stringify({
+                jsonrpc: '2.0', id: 2, method: 'tools/call',
+                params: {
+                  name: 'ask_user',
+                  arguments: {
+                    questions: [{ header: 'Runtime', question: 'Node or Bun?', options: [{ label: 'Node' }, { label: 'Bun' }] }],
+                  },
+                },
+              }) + '\\n');
+            } else if (m.id === 2) {
+              child.stdin.end();
+              child.kill();
+              resolve(m);
+            }
+          }
+          b = b.endsWith('\\n') ? '' : b.slice(b.lastIndexOf('\\n') + 1);
+        });
+        child.on('error', reject);
+        child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'opencode', version: '2' } } }) + '\\n');
+      });
+    }
+    console.log(JSON.stringify({ type: 'text', sessionID: 'ses_oc_ask_1', part: { text: 'Question sent.' } }));
+    console.log(JSON.stringify({ type: 'step_finish', sessionID: 'ses_oc_ask_1', part: { reason: 'stop', tokens: { input: 10, output: 5 } } }));
+  `);
+  const ocShim = process.platform === 'win32' ? path.join(binDir, 'opencode.cmd') : path.join(binDir, 'opencode');
+  await fs.writeFile(
+    ocShim,
+    process.platform === 'win32'
+      ? `@"${process.execPath}" "${fakeOcScript}" %*\r\n`
+      : `#!/bin/sh\nexec "${process.execPath}" "${fakeOcScript}" "$@"\n`,
+    { mode: 0o755 },
+  );
+  const ocCfgOut = path.join(tmp, 'oc-cfg.json');
+  process.env.FAKE_OC_CFG_OUT = ocCfgOut;
+  const prevOcCfg = process.env.OPENCODE_CONFIG_CONTENT;
+  process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ theme: 'dark', mcp: { servers: { user_srv: { type: 'remote', url: 'https://example.com' } } } });
+  runner.setAskEndpoint(`http://127.0.0.1:${httpServer.address().port}/api/internal/ask`);
+  const ocRun = runner.startRun({ tool: 'opencode', cwd: tmp, prompt: 'pick runtime', perm: 'auto' });
+  const ocDone = await new Promise((resolve) => {
+    const listener = (ev) => { if (ev.t === 'done') { ocRun.listeners.delete(listener); resolve(ev); } };
+    ocRun.listeners.add(listener);
+  });
+  if (prevOcCfg === undefined) delete process.env.OPENCODE_CONFIG_CONTENT;
+  else process.env.OPENCODE_CONFIG_CONTENT = prevOcCfg;
+  assert.equal(ocDone.ok, true, `opencode run failed: ${ocDone.error}`);
+  assert.equal(ocDone.hasMcpAsk, true, 'opencode run must receive ask_user via OPENCODE_CONFIG_CONTENT');
+  const injectedOcCfg = JSON.parse(await fs.readFile(ocCfgOut, 'utf8'));
+  assert.equal(injectedOcCfg.theme, 'dark', 'existing OPENCODE_CONFIG_CONTENT keys must be preserved');
+  assert.equal(injectedOcCfg.mcp.servers.user_srv.url, 'https://example.com', 'existing user MCP servers must be preserved');
+  assert.equal(injectedOcCfg.permission['baton_ask_*'], 'allow');
+  assert.equal(ocRun.deferredAsk.questions[0].question, 'Node or Bun?');
+  assert.equal(runner.submitMcpAsk(ocRun.askToken, norm).ok, false, 'opencode ask token must expire after run finishes');
+
   runner.setAskEndpoint(null);
 
   // 6. Real Baton HTTP server regression checks:
@@ -348,6 +425,12 @@ try {
     const okDel = await fetch(`${base}/api/sessions/codex/${sid}/ask?requestId=req-q2`, { method: 'DELETE' });
     assert.equal(okDel.status, 200);
     assert.equal((await getSess()).pendingAsk, null);
+
+    // askMcpStrict: true when ask_mcp_at is fresh (run came from Baton with ask tooling), false when session was updated later outside Baton
+    store.patchSessionMeta(`codex:${sid}`, { ask_mcp_at: Date.now() + 60_000 });
+    assert.equal((await getSess()).askMcpStrict, true);
+    store.patchSessionMeta(`codex:${sid}`, { ask_mcp_at: Date.now() - 60_000 });
+    assert.equal((await getSess()).askMcpStrict, false);
   } finally {
     batonSrv.kill();
   }
