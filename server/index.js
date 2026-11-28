@@ -8,7 +8,7 @@ import os from 'node:os';
 import { ROOT, HOME, DAY, clip, shortHome } from './util.js';
 import * as store from './store.js';
 import { decoratedSessions, projectsList, findSession, readMessages, getSnapshot, forceRefresh } from './indexer.js';
-import { gitInfo, projectRoot, projectFingerprint } from './projects.js';
+import { gitInfo, projectRoot } from './projects.js';
 import { startRun, getRun, stopRun, answerRun, listRuns, publicRun, activeRunFor, bus, setAskEndpoint, markMcpAskReady, submitMcpAsk } from './runner.js';
 import { catalogs, fromLine } from './models.js';
 import { schedule, listScheduled, cancelScheduled, nextReset, startScheduler } from './schedule.js';
@@ -38,8 +38,6 @@ import { startMcpDraft, startInstall, mcpJob, cancelMcpJob, testExisting } from 
 import { qrSvg } from './qr.js';
 import { checkUpdate, updateCached, restartSelf } from './update.js';
 import crypto from 'node:crypto';
-import { ensureBrief, briefPending } from './brief.js';
-import { dozingProjects, sendNudge, startNudgeScheduler } from './nudge.js';
 import { startCompatWatch } from './compat-watch.js';
 import { pageMessages, slimMessage } from './sources/common.js';
 import { usageReport, startUsageScheduler } from './usage.js';
@@ -193,7 +191,6 @@ route('POST', '/api/setup/jobs/:id/stop', async (req, url, { id }) => ({ ok: sto
 route('GET', '/api/home', async () => {
   const sessions = await decoratedSessions();
   const projects = await projectsList();
-  const settings = store.getSettings();
   const live = sessions.filter((s) => s.live).slice(0, 12);
   // Runs the user didn't start themselves (automated, external runs) are not "where I left off": they get
   // their own Home widget instead of crowding "Continue". Live and pinned ones still show at the top.
@@ -202,14 +199,14 @@ route('GET', '/api/home', async () => {
   const bg = sessions.filter((s) => !s.live && unattended(s));
   const dayStart = new Date().setHours(0, 0, 0, 0);
   const pinned = sessions.filter((s) => s.pinned).slice(0, 10);
-  const dozing = dozingProjects(projects, settings).slice(0, 8);
-  const activeProjects = projects.filter((p) => p.status === 'active').sort((a, b) => b.lastActivity - a.lastActivity).slice(0, 6);
+  const visibleProjects = projects.filter((p) => !p.archived);
+  const activeProjects = [...visibleProjects].sort((a, b) => b.lastActivity - a.lastActivity).slice(0, 6);
   const week = sessions.filter((s) => !unattended(s) && Date.now() - s.updated < 7 * DAY);
   return {
     live: live.map(sessionView), recent: recent.map(sessionView), pinned: pinned.map(sessionView),
-    dozing, activeProjects,
+    activeProjects,
     unattended: { items: bg.slice(0, 4).map(sessionView), total: bg.length, today: bg.filter((s) => s.updated >= dayStart).length },
-    stats: { sessions: sessions.length, projects: projects.length, week: week.length, weekProjects: new Set(week.map((s) => s.project)).size },
+    stats: { sessions: sessions.length, projects: visibleProjects.length, week: week.length, weekProjects: new Set(week.map((s) => s.project)).size },
     runs: listRuns().slice(0, 10), unread: store.unreadCount(),
   };
 });
@@ -395,7 +392,7 @@ route('POST', '/api/runs/:id/answer', async (req, url, { id }) => { const b = aw
 route('GET', '/api/projects', async () => {
   const projects = await projectsList();
   projects.sort((a, b) => (b.pinned - a.pinned) || (b.lastActivity - a.lastActivity));
-  return { items: projects, dozing: dozingProjects(projects).map((p) => p.id) };
+  return { items: projects };
 });
 
 route('GET', '/api/projects/:pid', async (req, url, { pid }) => {
@@ -405,23 +402,21 @@ route('GET', '/api/projects/:pid', async (req, url, { pid }) => {
   if (!p) return [404, { error: tr('프로젝트를 찾을 수 없어요') }];
   const all = await decoratedSessions();
   const sessions = all.filter((s) => s.project === id).map(sessionView);
-  const brief = store.getBrief(id);
   const [git, services, servers] = await Promise.all([gitInfo(id), projectServices(id).catch(() => []), listServers({ project: id }).catch(() => [])]);
-  return { project: p, sessions, git, services, servers, brief, briefStale: !brief || brief.fingerprint !== projectFingerprint(p), briefPending: briefPending(id) };
+  return { project: p, sessions, git, services, servers };
 });
 
 route('POST', '/api/projects/:pid/meta', async (req, url, { pid }) => {
   const id = decodeURIComponent(pid);
   const b = await body(req);
   const patch = {};
-  if (b.status && ['active', 'paused', 'done', 'archived'].includes(b.status)) patch.status = b.status;
+  if ('archived' in b) patch.status = b.archived ? 'archived' : 'active';
+  else if (b.status && ['active', 'archived'].includes(b.status)) patch.status = b.status;
   if ('name' in b) patch.name = b.name ? String(b.name).slice(0, 80) : null;
   if ('pinned' in b) patch.pinned = Boolean(b.pinned);
   if ('note' in b) patch.note = b.note ? String(b.note).slice(0, 2000) : null;
   if ('muted' in b) patch.muted = Boolean(b.muted);
   if ('memoryOff' in b) patch.memory_off = Boolean(b.memoryOff);
-  if ('snoozeDays' in b) patch.snooze_until = b.snoozeDays ? Date.now() + Number(b.snoozeDays) * DAY : null;
-  if (b.status === 'active') patch.snooze_until = patch.snooze_until ?? null;
   return store.patchProjectMeta(id, patch);
 });
 
@@ -467,17 +462,6 @@ route('GET', '/api/projects/:pid/skills', async (req, url, { pid }) => {
   const id = decodeURIComponent(pid);
   if (!(await projectsList()).some((x) => x.id === id)) return [404, { error: tr('프로젝트를 찾을 수 없어요') }];
   return projectSkills(id);
-});
-
-route('POST', '/api/projects/:pid/brief', async (req, url, { pid }) => {
-  const id = decodeURIComponent(pid);
-  const p = (await projectsList()).find((x) => x.id === id);
-  if (!p) return [404, { error: tr('프로젝트를 찾을 수 없어요') }];
-  try {
-    return { brief: await ensureBrief(p, { force: url.searchParams.get('force') === '1' }) };
-  } catch (e) {
-    return [500, { error: e.message }];
-  }
 });
 
 // Browse directories on the Baton host, restricted to the user's real home tree.
@@ -567,7 +551,6 @@ route('POST', '/api/events/read', async () => { store.markEventsRead(); return {
 route('POST', '/api/push/subscribe', async (req) => { const b = await body(req); if (!b?.endpoint) return [400, { error: 'bad subscription' }]; store.addPushSub(b); return { ok: true }; });
 route('POST', '/api/push/unsubscribe', async (req) => { const b = await body(req); store.removePushSub(b.endpoint); return { ok: true }; });
 route('POST', '/api/push/test', async () => ({ sent: await notify({ kind: 'test', title: tr('🏃 Baton 알림 테스트'), body: tr('알림이 잘 도착했어요!'), url: '/#/' }) }));
-route('POST', '/api/nudge/now', async () => ({ nudge: await sendNudge({ ignoreCooldown: true }) }));
 
 route('GET', '/api/usage', async () => usageReport());
 
@@ -837,7 +820,6 @@ function serveI18n(res) {
   const js = `window.LANG=${JSON.stringify(L)};window.LOCALE=${JSON.stringify(L === 'ko' ? 'ko-KR' : 'en-US')};
 window.I18N_EN=${L === 'ko' ? '{}' : JSON.stringify(en)};
 window.t=function(ko,vars){var s=window.LANG==='ko'?ko:(window.I18N_EN[ko]!=null?window.I18N_EN[ko]:ko);if(vars)s=s.replace(/\\{(\\w+)\\}/g,function(m,k){return vars[k]!=null?vars[k]:m;});return s;};
-window.hourLabel=function(h){return new Date(2000,0,1,h).toLocaleTimeString(window.LOCALE,{hour:'numeric'});};
 document.documentElement.lang=window.LANG;`;
   res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
   res.end(js);
@@ -962,7 +944,6 @@ await (async () => {
   providersSummary().catch(() => {}); // warm the provider cache (model list, limits)
   if (process.platform === 'win32') setTimeout(() => listPorts().catch(() => {}), 3000).unref(); // first PowerShell start is slow (~7 s)
   if (envInfo.imported.length || envInfo.extra.length) console.log(`[baton] env: ${envInfo.imported.length} vars from ${envInfo.shell || 'shell'}, ${envInfo.extra.length} from settings`);
-  startNudgeScheduler();
   startCompatWatch();
   startScheduler();
   startWatcher();

@@ -22,7 +22,7 @@ export const WS_ICON = {
 
 export function createDesktopWorkspace(deps) {
   const {
-    app, G, TOOL, STATUS, ICON, glyph, t, esc, ago, projectName, api, toast, sheet, pick, store,
+    app, G, TOOL, ICON, glyph, t, esc, ago, projectName, api, toast, sheet, pick, store,
     mountChatPane, mountNewChatPane, mountProjectDrawer, drawRunPill, render, isKeyboardField,
   } = deps;
 
@@ -44,7 +44,7 @@ export function createDesktopWorkspace(deps) {
   let drawer = {
     open: false,
     projectId: null,
-    tab: store.get('drawerTab', 'overview'),
+    tab: store.get('drawerTab', 'sessions'),
     width: Math.max(300, Math.min(560, Number(store.get('drawerW', 380)) || 380)),
   };
 
@@ -420,13 +420,6 @@ export function createDesktopWorkspace(deps) {
         if (panes.length < MAX_PANES()) addPane({ kind: 'new', cwd });
         else { const cur = activePane(); if (cur) replacePane(cur, { kind: 'new', cwd }); }
       },
-      onInsertPrompt: (text) => {
-        const cur = activePane();
-        if (cur?.ctrl?.insertPrompt) {
-          cur.ctrl.insertPrompt(text);
-          toast(t('입력창에 내용을 넣었어요'));
-        }
-      },
     });
     syncChrome();
   }
@@ -467,7 +460,7 @@ export function createDesktopWorkspace(deps) {
         else addPane(spec);
       }
     }
-    if (openProjectId) openProjectDrawer(openProjectId, { tab: 'overview' });
+    if (openProjectId) openProjectDrawer(openProjectId, { tab: 'sessions' });
   }
 
   /**
@@ -500,7 +493,7 @@ export function createDesktopWorkspace(deps) {
       addPane(lastSessionSpec, { focus: false });
     }
     addPane(spec, { focus: true });
-    if (projectToOpen) openProjectDrawer(projectToOpen, { tab: 'overview' });
+    if (projectToOpen) openProjectDrawer(projectToOpen, { tab: 'sessions' });
     G.cleanup = () => destroy();
   }
 
@@ -607,6 +600,7 @@ export function createDesktopWorkspace(deps) {
         if (out.filter((x) => x.kind === 'session').length >= (needle ? 14 : 6)) break;
       }
       for (const p of cmdkCache.projects) {
+        if (!needle && p.archived) continue;
         if (!match(`${p.name} ${p.path || ''}`)) continue;
         out.push({
           group: t('프로젝트'),

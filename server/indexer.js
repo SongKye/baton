@@ -7,7 +7,7 @@ import { listOpencode, readOpencode } from './sources/opencode.js';
 import { listCursor, readCursor, noteCursorDirs } from './sources/cursor.js';
 import { liveSessions } from './live.js';
 import { projectRoot, groupProjects } from './projects.js';
-import { allSessionMeta, allProjectMeta, allBriefs, cwdOverrides } from './store.js';
+import { allSessionMeta, allProjectMeta, cwdOverrides } from './store.js';
 import { activeRunFor, childPids } from './runner.js';
 import { trashedKeys } from './trash.js';
 import { isInternalCwd } from './util.js';
@@ -90,7 +90,7 @@ export async function decoratedSessions({ includeHidden } = {}) {
 
 export async function projectsList() {
   const sessions = await decoratedSessions();
-  return groupProjects(sessions, allProjectMeta(), allBriefs());
+  return groupProjects(sessions, allProjectMeta());
 }
 
 export async function findSession(tool, id) {

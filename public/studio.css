@@ -29,8 +29,6 @@
 .studio-home .usage-mini .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 16px 20px; }
 .studio-home .usage-mini .row > div { min-width: 0; }
 .studio-home .usage-mini .row .small { overflow-wrap: anywhere; }
-.studio-home .hscroll { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; overflow: visible; scroll-snap-type: none; margin: 0; padding: 0; }
-.studio-home .doze { width: auto; max-width: none; min-width: 0; }
 /* 2-2: the FAB is a sibling of main.view (#app > .fab); the intro's 「새로운 작업 시작」 replaces it here. */
 .studio-home ~ .fab { display: none; }
 /* 2-1: update banner stays full width at the top. */
@@ -301,7 +299,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
   .ctx-head-t b { display: block; font-size: 14.5px; font-weight: 720; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ctx-head-t span { display: block; font-size: 11px; color: var(--text-3); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ctx-tabs {
-    flex: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px;
+    flex: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px;
     padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg);
   }
   .ctx-tab {
@@ -317,8 +315,6 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
   .ctx-body .section { margin: 0; }
   .ctx-body .section-h { margin-bottom: 8px; }
   .ctx-body .section-h h2 { font-size: 13px; color: var(--text-2); }
-  .ctx-body .brief { padding: 13px; gap: 10px; }
-  .ctx-body .brief .one { font-size: 14.5px; }
   .ctx-body .srow { padding: 10px 11px; }
   .ctx-body .srow .t { font-size: 13.5px; }
   .ctx-body .srow.is-open { background: var(--accent-soft); }

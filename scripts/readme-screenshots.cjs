@@ -23,13 +23,13 @@ function fixtures(lang) {
     updated: now - (i + 1) * 600000, ...extra,
   }));
   const projects = ['checkout', 'design-system', 'field-notes'].map((name, i) => ({
-    id: name, name, path: `~/workspace/${name}`, status: 'active', idleDays: 0,
+    id: name, name, path: `~/workspace/${name}`, status: 'active', archived: false, idleDays: 0,
     sessions: [12, 8, 4][i], tools: { claude: 2, codex: 2 },
-    brief: { oneLiner: [copy('결제부터 주문 내역까지', 'From checkout to order history'), copy('작은 요소부터 일관되게', 'Consistency in every component'), copy('다음 여행을 위한 작은 기록장', 'A little journal for the next trip')][i], progress: [80, 65, 40][i] },
+    lastSession: { title: [copy('결제부터 주문 내역까지', 'From checkout to order history'), copy('작은 요소부터 일관되게', 'Consistency in every component'), copy('다음 여행을 위한 작은 기록장', 'A little journal for the next trip')][i] },
   }));
   return {
     '/api/state': { tools: ['claude', 'codex', 'agy'].map(id => ({ id, installed: true })), settings: { setupDone: true }, runs: [], unread: 0, lastEventId: 0 },
-    '/api/home': { stats: { week: 24, weekProjects: 3 }, live: sessions.slice(0, 2), pinned: [sessions[2]], recent: sessions.slice(3), dozing: [], activeProjects: projects },
+    '/api/home': { stats: { week: 24, weekProjects: 3, projects: 3 }, live: sessions.slice(0, 2), pinned: [sessions[2]], recent: sessions.slice(3), activeProjects: projects },
     '/api/sessions': { items: sessions, total: sessions.length },
     '/api/usage': { tools: Object.fromEntries(['claude', 'codex', 'agy'].map((id, i) => [id, { periods: { today: { input: 25000 * (i + 1), output: 12000, cacheRead: 100000 } } }])) },
     '/api/limits': Object.fromEntries(['claude', 'codex', 'agy'].map((id, i) => [id, { windows: [{ label: '5h', usedPercent: [32, 58, 18][i], resetsAt: now + 7200000 }] }])),

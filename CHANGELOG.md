@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Removed
+- **Project status bar, dozing-project nudges, and AI project briefings.** Removed the 4-state segmented bar (`Active / Paused / Done / Archived`), daily dozing-project reminders (`server/nudge.js`, tab badge, Home cards, and Settings reminder options), and one-shot AI project briefings (`server/brief.js` and the top "Where was I?" card). Opening a project now jumps straight to its sessions, git log, memo, and shared memory. Old folders can still be hidden via **Hide from list (archive)** in the project `⋯` menu, with an **Archived** filter shown only when archived projects exist; previously paused/done projects stay visible as normal projects.
+
 ### Fixed
 - **No more "finished" notifications for chats that weren't running.** The session watcher treated any touch of a session file as work. Antigravity's empty `-wal` file changes whenever the database is merely opened, and a session id that appeared in several folders kept resetting the watcher, so pings arrived for long-finished chats, often two at once. A ping now needs new messages in the transcript.
 - **Shared memory keeps fewer, better items.** Merged items are no longer cut off mid-sentence at 260 characters (the limit is now 400 and cuts at a sentence end). The extractor and the ✨ Dream cleanup now drop plain work history that git already records (PRs opened or merged, reviews posted, releases) and keep only the reason or lesson behind it. Turns with nothing to remember, such as a small edit with no explanation, no longer trigger a background extraction call.

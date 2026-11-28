@@ -21,11 +21,11 @@ import { projectRoot, gitInfo } from './projects.js';
 import { findSession, readMessages, forceRefresh } from './indexer.js';
 import { oneShot } from './runner.js';
 import { buildHandoffNote, claudeMemory, filesTouched } from './handoff.js';
-import { aiTarget } from './brief.js';
+import { claudeProvider, codexProvider } from './providers.js';
 import { listPortsCached } from './ports.js';
 import { prettyCmd } from './servers.js';
 import { allLimits } from './limits.js';
-import { TOOLS } from './tools.js';
+import { TOOLS, TOOL_IDS, binFor } from './tools.js';
 import { HOME, ROOT, clip, oneLine, shortHome, cleanPrompt } from './util.js';
 import { tr, lang } from './i18n.js';
 
@@ -106,6 +106,20 @@ export function normalizeKind(raw) {
 }
 
 const toolLabel = (id) => TOOLS[id]?.name || id || 'CLI';
+
+/** The configured AI helper tool/model for shared memory, falling back to something that works on this setup. */
+async function aiTarget(st, toolKey = 'memoryTool', modelKey = 'memoryModel') {
+  let tool = st[toolKey];
+  if (!binFor(tool)) tool = TOOL_IDS.find((id) => binFor(id)) || tool;
+  let model = tool === st[toolKey] ? st[modelKey] : '';
+  if (tool === 'claude' && ['haiku', 'sonnet', 'opus'].includes(model)) {
+    // on gateways / self-hosted servers an alias like "haiku" may not exist — use the configured model
+    const p = await claudeProvider().catch(() => null);
+    if (p && (p.kind === 'gateway' || p.kind === 'apikey') && !p.models?.[model]) model = '';
+  }
+  if (tool === 'codex' && codexProvider().kind === 'custom') model = '';
+  return { tool, model };
+}
 const sourceTool = (sourceKey) => {
   if (!sourceKey || sourceKey === 'user') return 'user';
   return String(sourceKey).split(':')[0] || 'unknown';

@@ -1,5 +1,5 @@
 // Baton — mobile-first PWA front-end (no build step).
-import { createDesktopWorkspace, WS_ICON } from './workspace.js?v=1';
+import { createDesktopWorkspace, WS_ICON } from './workspace.js?v=2';
 import { parseChoices, parseQuestions } from './choice-parser.js?v=3';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -32,7 +32,6 @@ const PERM_AUTO_NOTE = {
   cursor: t('Cursor에서는 확인되지 않았어요. 명령 실행에는 전체 허용이 필요할 수 있어요'),
 };
 const permDesc = (tool, id) => (id === 'auto' && PERM_AUTO_NOTE[tool] ? `${PERM.auto.desc} · ${PERM_AUTO_NOTE[tool]}` : PERM[id]?.desc || '');
-const STATUS = { active: t('진행중'), paused: t('보류'), done: t('완료'), archived: t('보관') };
 const ICON = {
   back: '<svg class="i" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>',
   more: '<svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>',
@@ -114,7 +113,7 @@ function ago(ts) {
   return t('{n}년 전', { n: Math.floor(d / 365) });
 }
 function idleClass(days) { return days < 3 ? 'fresh' : days < 14 ? 'warm' : 'cold'; }
-function idleText(days) { return days === 0 ? t('오늘') : days === 1 ? t('어제') : t('{n}일째 쉼', { n: days }); }
+function idleText(days) { return days === 0 ? t('오늘') : days === 1 ? t('어제') : t('{n}일 전', { n: days }); }
 function shortPath(p) { return String(p || '').replace(/^\/home\/[^/]+/, '~'); }
 function projectName(p) { const b = String(p || '').split('/').filter(Boolean).pop() || '~'; return b.replace(/^\d{6}[_-]/, ''); }
 function fmtDur(ms) { const s = Math.floor(ms / 1000); return s < 60 ? t('{s}초', { s }) : t('{m}분 {s}초', { m: Math.floor(s / 60), s: s % 60 }); }
@@ -875,37 +874,12 @@ async function hideMany(keys, hidden = true) {
 }
 function toolDots(tools) { return `<span class="tooldots">${Object.keys(tools || {}).map((k) => `<i class="${k}"></i>`).join('')}</span>`; }
 function projectRow(p) {
-  const line = p.brief?.oneLiner || p.lastSession?.title || '';
+  const line = p.lastSession?.title || '';
   return `<a class="card prow" href="#/p/${encodeURIComponent(p.id)}">
-    <div class="top"><span class="name">${p.pinned ? '📌 ' : ''}${esc(p.name)}</span>${p.status !== 'active' ? `<span class="status-chip ${p.status}">${STATUS[p.status]}</span>` : ''}${p.live ? '<i class="live-dot"></i>' : ''}<span class="idle ${idleClass(p.idleDays)}">${idleText(p.idleDays)}</span></div>
+    <div class="top"><span class="name">${p.pinned ? '📌 ' : ''}${esc(p.name)}</span>${p.archived ? `<span class="status-chip archived">${t('보관')}</span>` : ''}${p.live ? '<i class="live-dot"></i>' : ''}<span class="idle ${idleClass(p.idleDays)}">${idleText(p.idleDays)}</span></div>
     ${line ? `<div class="line">${esc(line)}</div>` : ''}
-    ${p.brief?.progress != null ? `<div class="progress"><i style="width:${p.brief.progress}%"></i></div>` : ''}
     <div class="meta">${toolDots(p.tools)}<span>${t('세션 {n}', { n: p.sessions })}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span><span class="path">${esc(p.path)}</span></div>
   </a>`;
-}
-function dozeCard(p) {
-  const next = p.brief?.next?.title;
-  return `<div class="card doze">
-    <div class="top"><span class="name">${esc(p.name)}</span><span class="days ${p.idleDays > 21 ? 'old' : ''}">💤 ${t('{n}일', { n: p.idleDays })}</span></div>
-    <div class="next">${next ? `${t('다음 할 일:')} <b>${esc(next)}</b>` : esc(p.brief?.oneLiner || p.lastSession?.title || t('최근 기록을 정리해볼까요?'))}</div>
-    <div class="acts">
-      <a class="btn sm primary" href="#/p/${encodeURIComponent(p.id)}">${t('이어하기')}</a>
-      <button class="btn sm" data-snooze="${esc(p.id)}">${t('나중에')}</button>
-    </div></div>`;
-}
-async function snoozeFlow(id, after) {
-  const v = await pick(t('이 프로젝트를 어떻게 할까요?'), [
-    { value: 3, label: t('3일 뒤에 다시 알려줘') },
-    { value: 14, label: t('2주 동안 보류') },
-    { value: 'paused', label: t('보류 (알림 끄기)'), desc: t('프로젝트 목록 「보류」에서 다시 꺼낼 수 있어요') },
-    { value: 'done', label: t('완료했어요 🎉') },
-    { value: 'archived', label: t('그만둘래요 (보관)') },
-  ]);
-  if (v === undefined) return;
-  const body = typeof v === 'number' ? { snoozeDays: v } : { status: v };
-  await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body });
-  toast(typeof v === 'number' ? t('{n}일 뒤에 다시 알려드릴게요', { n: v }) : t('「{s}」로 옮겼어요', { s: STATUS[v] }));
-  after?.();
 }
 
 // ---------------------------------------------------------------- HOME
@@ -917,12 +891,11 @@ async function viewHome(_, params) {
   $('.topbar h1').insertAdjacentHTML('afterbegin', '<span class="baton-mark" aria-hidden="true"></span>');
   v.innerHTML = '<div class="section"><div class="skeleton" style="height:70px"></div></div><div class="section"><div class="skeleton" style="height:200px"></div></div>';
   const d = await api('/api/home');
-  const badge = $('#doze-badge'); badge.hidden = !d.dozing.length; badge.textContent = d.dozing.length;
   const parts = [];
   parts.push(`<div class="stats">
     <div class="card stat"><div class="v">${d.stats.week}</div><div class="l">${t('이번 주 세션')}</div></div>
     <div class="card stat"><div class="v">${d.stats.weekProjects}</div><div class="l">${t('이번 주 프로젝트')}</div></div>
-    <div class="card stat"><div class="v">${d.dozing.length}</div><div class="l">${t('잠자는 프로젝트')}</div></div>
+    <div class="card stat"><div class="v">${d.stats.projects}</div><div class="l">${t('전체 프로젝트')}</div></div>
   </div>`);
   parts.push('<div class="section" id="home-usage"><div class="skeleton" style="height:84px"></div></div>');
   if (d.live.length) {
@@ -940,16 +913,11 @@ async function viewHome(_, params) {
       <div class="small muted" style="margin:-4px 2px 8px">${t('직접 시작하지 않은 세션이에요')}${u.today ? ` · ${t('오늘 {n}개', { n: u.today })}` : ''}</div>
       <div class="card list">${u.items.map((s) => sessionRow(s)).join('')}</div></div>`);
   }
-  if (d.dozing.length) {
-    parts.push(`<div class="section"><div class="section-h"><h2>${t('잠자는 프로젝트 💤')}</h2><span class="count">${d.dozing.length}</span><a class="more" href="#/projects?f=dozing">${t('모두')}</a></div>
-      <div class="hscroll">${d.dozing.map(dozeCard).join('')}</div></div>`);
-  }
   if (d.activeProjects.length) {
     parts.push(`<div class="section"><div class="section-h"><h2>${t('최근 프로젝트')}</h2><a class="more" href="#/projects">${t('전체')}</a></div>
       <div class="list">${d.activeProjects.slice(0, 4).map(projectRow).join('')}</div></div>`);
   }
   v.innerHTML = parts.join('');
-  $$('[data-snooze]', v).forEach((b) => (b.onclick = () => snoozeFlow(b.dataset.snooze, () => render())));
   if (params?.get('update')) updateSheet();
   homeUsageCard();
 }
@@ -1104,23 +1072,25 @@ function versionCard(box) {
 // ---------------------------------------------------------------- PROJECTS
 async function viewProjects(_, params) {
   const v = shell({ title: t('프로젝트') });
-  let filter = params.get('f') || store.get('pfilter', 'active');
   v.innerHTML = '<div class="skeleton" style="height:300px;margin-top:10px"></div>';
   const d = await api('/api/projects');
   let query = '';
-  const dozing = new Set(d.dozing);
-  const counts = { active: 0, dozing: dozing.size, paused: 0, done: 0, archived: 0, all: d.items.length };
-  for (const p of d.items) counts[p.status] = (counts[p.status] || 0) + 1;
+  const active = d.items.filter((p) => !p.archived);
+  const archived = d.items.filter((p) => p.archived);
+  let showArchived = params.get('f') === 'archived' && archived.length > 0;
   const draw = () => {
-    store.set('pfilter', filter);
-    const items = d.items.filter((p) => filter === 'all' || (filter === 'dozing' ? dozing.has(p.id) : p.status === filter));
-    const labels = { active: t('진행중'), dozing: t('💤 잠자는'), paused: t('보류'), done: t('완료'), archived: t('보관'), all: t('전체') };
-    v.innerHTML = `<div class="chips" style="margin-bottom:12px">${Object.keys(labels).map((k) => `<button class="chip ${k === filter ? 'on' : ''}" data-f="${k}">${labels[k]} <span class="n">${counts[k] || 0}</span></button>`).join('')}</div>
-      ${filter === 'dozing' ? `<div class="banner" style="margin-bottom:10px">${t('한동안 손대지 않은 프로젝트예요. 이어서 할지, 보류할지 정리해두면 머리가 가벼워져요.')}</div>` : ''}
+    if (showArchived && !archived.length) showArchived = false;
+    const items = showArchived ? archived : active;
+    const filterHtml = archived.length ? `<div class="chips" style="margin-bottom:12px">
+      <button class="chip ${!showArchived ? 'on' : ''}" data-f="active">${t('프로젝트')} <span class="n">${active.length}</span></button>
+      <button class="chip ${showArchived ? 'on' : ''}" data-f="archived">${t('보관')} <span class="n">${archived.length}</span></button>
+    </div>` : '';
+    const renderList = () => items.filter((p) => `${p.name} ${p.id}`.toLowerCase().includes(query.toLowerCase())).map(projectRow).join('') || `<div class="empty"><b>${t('비어 있어요')}</b></div>`;
+    v.innerHTML = `${filterHtml}
       <input class="project-search" type="search" placeholder="${t('프로젝트 이름·경로 검색')}" aria-label="${t('프로젝트 이름·경로 검색')}" value="${esc(query)}">
-      <div class="list" data-project-list>${items.filter((p) => `${p.name} ${p.id}`.toLowerCase().includes(query.toLowerCase())).map(projectRow).join('') || `<div class="empty"><b>${t('비어 있어요')}</b></div>`}</div>`;
-    $('.project-search', v).oninput = (e) => { query = e.target.value; $('[data-project-list]', v).innerHTML = items.filter((p) => `${p.name} ${p.id}`.toLowerCase().includes(query.toLowerCase())).map(projectRow).join('') || `<div class="empty">${t('비어 있어요')}</div>`; };
-    $$('[data-f]', v).forEach((b) => (b.onclick = () => { filter = b.dataset.f; draw(); }));
+      <div class="list" data-project-list>${renderList()}</div>`;
+    $('.project-search', v).oninput = (e) => { query = e.target.value; $('[data-project-list]', v).innerHTML = renderList(); };
+    $$('[data-f]', v).forEach((b) => (b.onclick = () => { showArchived = b.dataset.f === 'archived'; draw(); }));
   };
   draw();
 }
@@ -1132,7 +1102,7 @@ async function viewProject([id]) {
   v.innerHTML = '<div class="skeleton" style="height:160px;margin-top:10px"></div>';
   let selecting = false, noteEditing = false, reloadAfterNote = false;
   const PAGE = matchMedia('(min-width: 1100px)').matches ? 6 : 4;
-  let page = G.restore.ppage || 0; // survives reloads (status change, memo save…) and Back from a chat
+  let page = G.restore.ppage || 0; // survives reloads (memo save, archive toggle…) and Back from a chat
   const sel = new Set();
   G.cleanup = () => document.body.classList.remove('selecting');
   const load = async () => {
@@ -1151,29 +1121,6 @@ async function viewProject([id]) {
     const listHtml = () => d.sessions.slice(page * PAGE, (page + 1) * PAGE).map((s) => (selecting ? selRow(s, { showProject: false }) : sessionRow(s, { showProject: false }))).join('') || `<div class="empty">${t('세션이 없어요')}</div>`;
     const pagerHtml = () => (pages > 1 ? `<button class="btn sm ghost" data-pg="-1" ${page ? '' : 'disabled'}>‹ ${t('이전')}</button><span class="pg-n">${page + 1} / ${pages}</span><button class="btn sm ghost" data-pg="1" ${page < pages - 1 ? '' : 'disabled'}>${t('다음')} ›</button>` : '');
     const latest = human[0] || d.sessions[0];
-    const b = d.brief;
-    const briefHtml = b ? `
-      <div class="card brief">
-        ${d.briefStale ? `<div class="banner warn">${t('브리핑 이후 새 활동이 있어요')} <button class="btn sm" data-brief="1">${t('업데이트')}</button></div>` : ''}
-        ${b.what ? `<div class="what">${esc(b.what)}</div>` : ''}
-        <div class="one">${esc(b.oneLiner)}</div>
-        ${b.progress != null ? `<div class="phase"><span>${esc(b.phase || '')}</span><div class="progress"><i style="width:${b.progress}%"></i></div><span>${b.progress}%</span></div>` : ''}
-        ${b.next?.length ? `<div><h3>${t('다음 할 일')}</h3>${b.next.map((n, i) => `
-          <div class="next-item"><div class="nt"><span class="num">${i + 1}</span><span>${esc(n.title)}</span></div>
-            ${n.why ? `<div class="why">${esc(n.why)}</div>` : ''}
-            ${n.prompt ? `<div class="np">${esc(n.prompt)}</div>` : ''}
-            <div style="display:flex;gap:6px"><button class="btn sm primary" data-go="${i}">${t('▶ 이 내용으로 이어가기')}</button></div>
-          </div>`).join('')}</div>` : ''}
-        ${b.lastDone?.length ? `<div><h3>${t('최근에 한 일')}</h3><ul>${b.lastDone.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
-        ${b.openQuestions?.length ? `<div><h3>${t('결정이 필요한 것')}</h3><ul>${b.openQuestions.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
-        ${b.resumeTip ? `<div class="tip">💡 ${esc(b.resumeTip)}</div>` : ''}
-        <div class="small muted" style="display:flex;align-items:center;gap:8px">${t('AI 브리핑')} · ${ago(b.created)} <button class="btn sm ghost" style="margin-left:auto" data-brief="force">${t('다시 정리')}</button></div>
-      </div>` : `
-      <div class="card brief" style="align-items:flex-start">
-        <div class="one">${t('어디까지 했더라? 🤔')}</div>
-        <div class="muted small">${t('최근 세션 대화·git 기록·문서를 읽고, 한 일과 다음 할 일을 정리해드려요. (20초 정도 걸려요)')}</div>
-        <button class="btn primary" data-brief="1">${t('AI로 정리하기')}</button>
-      </div>`;
     const git = d.git;
     const repo = (d.services || []).find((x) => REPO_KINDS.has(x.kind));
     const srvHtml = d.servers?.length ? `<div class="section" id="psrv"><div class="section-h"><h2>${t('개발 서버')}</h2><span class="count">${d.servers.filter((x) => x.running).length}/${d.servers.length}</span><a class="more" href="#/ports">${t('전체 ›')}</a></div>
@@ -1181,14 +1128,10 @@ async function viewProject([id]) {
     const gitHtml = git ? `<div class="section"><div class="section-h"><h2>Git</h2>${repo ? `<a class="more" href="${esc(repo.url)}" target="_blank" rel="noopener">${esc(repo.name)} ↗</a>` : ''}<span class="count">${esc(git.branch || '')}${git.dirty ? ` · ${t('미커밋 {n}개', { n: git.dirty })}` : ''}</span></div>
       <div class="card" style="padding:6px 14px">${git.commits.slice(0, 6).map((c) => `<div class="commit"><span class="h">${esc(c.hash)}</span><span class="s">${esc(c.subject)}</span><span class="d">${ago(c.ts)}</span></div>`).join('') || `<div class="muted small" style="padding:8px 0">${t('커밋이 아직 없어요')}</div>`}</div></div>` : '';
     v.innerHTML = `
-      <div class="section" style="margin-top:8px">
-        <div class="seg" id="pstatus">${Object.entries(STATUS).map(([k, l]) => `<button class="${p.status === k ? 'on' : ''}" data-st="${k}">${l}</button>`).join('')}</div>
-        ${p.snoozeUntil && p.snoozeUntil > Date.now() ? `<div class="banner" style="margin-top:8px">⏰ ${t('{date}까지 알림을 쉬어요', { date: new Date(p.snoozeUntil).toLocaleDateString(LOCALE) })}</div>` : ''}
-      </div>
-      ${p.muted ? `<div class="section"><div class="banner">🔕 ${t('이 프로젝트는 알림이 꺼져 있어요')} <button class="btn sm" id="punmute">${t('다시 켜기')}</button></div></div>` : ''}
+      ${p.archived ? `<div class="section" style="margin-top:8px"><div class="banner">${t('목록에서 숨겨둔 프로젝트예요')} <button class="btn sm" id="punarchive">${t('다시 보이기')}</button></div></div>` : ''}
+      ${p.muted ? `<div class="section"${p.archived ? '' : ' style="margin-top:8px"'}><div class="banner">🔕 ${t('이 프로젝트는 알림이 꺼져 있어요')} <button class="btn sm" id="punmute">${t('다시 켜기')}</button></div></div>` : ''}
       <div class="project-bento">
         <div class="project-main">
-          <div class="section" id="briefbox">${d.briefPending ? `<div class="card brief"><div class="phase"><div class="spinner"></div>${t('정리하는 중이에요…')}</div></div>` : briefHtml}</div>
           <div class="section"><div class="section-h"><h2>${t('세션')}</h2><span class="count">${d.sessions.length}${p.autoSessions ? ` · ${t('자동 {n}', { n: p.autoSessions })}` : ''}</span>
             ${d.sessions.length ? `<button class="more" id="pselbtn">${selecting ? t('완료') : t('선택')}</button>` : ''}</div>
             <div class="card list" id="plist">${listHtml()}</div>
@@ -1297,6 +1240,7 @@ async function viewProject([id]) {
       fold.hidden = false; paint();
       fold.onclick = () => { localStorage.setItem(key, localStorage.getItem(key) === '1' ? '0' : '1'); paint(); };
     }
+    $('#punarchive') && ($('#punarchive').onclick = async () => { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { archived: false } }); toast(t('목록에 다시 보이게 했어요')); load(); });
     $('#punmute') && ($('#punmute').onclick = async () => { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { muted: false } }); toast(t('알림을 다시 켰어요')); load(); });
     // session list: ⋯ / long-press menu, or checkboxes for bulk trash
     const shown = () => d.sessions.slice(page * PAGE, (page + 1) * PAGE);
@@ -1329,65 +1273,41 @@ async function viewProject([id]) {
       if (!(await hideMany([...sel]))) return;
       sel.clear(); selecting = false; document.body.classList.remove('selecting'); load();
     };
-    $$('[data-st]', v).forEach((btn) => (btn.onclick = async () => {
-      await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { status: btn.dataset.st, snoozeDays: 0 } });
-      toast(t('「{s}」로 바꿨어요', { s: STATUS[btn.dataset.st] })); load();
-    }));
-    $$('[data-brief]', v).forEach((btn) => (btn.onclick = async () => {
-      $('#briefbox').innerHTML = `<div class="card brief"><div class="phase"><div class="spinner"></div>${t('세션 기록과 git을 읽고 정리하는 중이에요… (20초 정도)')}</div></div>`;
-      try { await api(`/api/projects/${encodeURIComponent(id)}/brief${btn.dataset.brief === 'force' ? '?force=1' : ''}`, { method: 'POST' }); }
-      catch (e) { toast(e.message, true); }
-      load();
-    }));
-    $$('[data-go]', v).forEach((btn) => (btn.onclick = async () => {
-      const n = b.next[+btn.dataset.go];
-      const opts = [];
-      if (latest) opts.push({ value: 'latest', label: `${t('최근 세션에서 이어가기')}`, desc: `${TOOL[latest.tool].name} · ${latest.title}` });
-      for (const id of INSTALLED()) opts.push({ value: id, label: t('새 {name} 세션', { name: TOOL[id].name }) });
-      const where = await pick(t('어디서 이어갈까요?'), opts);
-      if (!where) return;
-      const text = n.prompt || n.title;
-      if (where === 'latest') { sessionStorage.setItem(`draft:${latest.tool}:${latest.id}`, text); location.hash = `#/s/${latest.tool}/${encodeURIComponent(latest.id)}`; }
-      else { sessionStorage.setItem('draft:new', text); location.hash = `#/new?cwd=${encodeURIComponent(p.path)}&tool=${where}`; }
-    }));
     $('#pmore').onclick = async () => {
       const act = await pick(p.name, [
         { value: 'pin', icon: glyph('pin'), label: p.pinned ? t('고정 해제') : t('상단 고정') },
         { value: 'rename', icon: glyph('edit'), label: t('이름 바꾸기') },
         { value: 'note', icon: glyph('doc'), label: p.note ? t('메모 고치기') : t('메모 남기기'), desc: t('다음에 돌아왔을 때 볼 메모 (메모를 눌러도 고칠 수 있어요)') },
         { value: 'mute', icon: glyph(p.muted ? 'bell' : 'bellOff'), label: p.muted ? t('이 프로젝트 알림 다시 켜기') : t('이 프로젝트 알림 끄기'), desc: p.muted ? t('세션 응답이 끝날 때마다 다시 알려줘요') : t('이 프로젝트의 모든 세션은 끝나도 알리지 않아요 (알림함에는 남아요)') },
-        { value: 'snooze', icon: glyph('clock'), label: t('알림 미루기 / 상태 정리') },
+        { value: 'archive', icon: ICON.box, label: p.archived ? t('목록에 다시 보이기') : t('목록에서 숨기기 (보관)'), desc: p.archived ? t('프로젝트 목록과 홈에 다시 표시해요') : t('프로젝트 목록 「보관」에서 언제든 다시 꺼낼 수 있어요') },
       ]);
       if (act === 'pin') await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { pinned: !p.pinned } });
       else if (act === 'rename') { const n = await promptSheet(t('프로젝트 이름'), p.name); if (n !== undefined) await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { name: n } }); }
       else if (act === 'note') { $('#pnote').scrollIntoView({ behavior: 'smooth', block: 'center' }); return editNote(); }
       else if (act === 'mute') { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { muted: !p.muted } }); toast(p.muted ? t('알림을 다시 켰어요') : t('이 프로젝트 알림을 껐어요')); }
-      else if (act === 'snooze') return snoozeFlow(id, load);
+      else if (act === 'archive') { await api(`/api/projects/${encodeURIComponent(id)}/meta`, { body: { archived: !p.archived } }); toast(p.archived ? t('목록에 다시 보이게 했어요') : t('목록에서 숨겼어요 (프로젝트 목록 「보관」에서 다시 꺼낼 수 있어요)')); }
       else return;
       load();
     };
-    // If a brief is generating in the background, poll until done.
-    if (d.briefPending) setTimeout(load, 4000);
   };
   await load();
 }
 
 /**
  * Compact docked Project Context Drawer displayed alongside chat panes on desktop.
- * Reuses live project brief, inline memo, sessions, shared memory, dev servers, git, skills & MCP.
+ * Reuses live sessions, inline memo, shared memory, dev servers, git, skills & MCP.
  */
 function mountProjectDrawer(root, projectId, opts = {}) {
   let destroyed = false;
-  let activeTab = opts.tab || 'overview';
-  let openKeys = opts.openKeys || new Set();
-  let data = null;
-
   const tabs = [
-    ['overview', t('개요')],
     ['sessions', t('세션')],
     ['memory', t('메모리')],
     ['env', t('환경')],
   ];
+  const validTabs = new Set(tabs.map(([k]) => k));
+  let activeTab = validTabs.has(opts.tab) ? opts.tab : 'sessions';
+  let openKeys = opts.openKeys || new Set();
+  let data = null;
 
   root.innerHTML = `<div class="ctx-head">
       <div class="ctx-head-t"><b data-ctx-name>${esc(projectName(projectId))}</b><span data-ctx-path>${esc(shortPath(projectId))}</span></div>
@@ -1411,67 +1331,7 @@ function mountProjectDrawer(root, projectId, opts = {}) {
   const renderTab = () => {
     if (destroyed || !bodyEl || !data) return;
     const p = data.project;
-    if (activeTab === 'overview') {
-      const b = data.brief;
-      const briefHtml = b ? `<div class="card brief">
-          ${data.briefStale ? `<div class="banner warn">${t('브리핑 이후 새 활동이 있어요')} <button class="btn sm" data-dbrief="1">${t('업데이트')}</button></div>` : ''}
-          ${b.what ? `<div class="what">${esc(b.what)}</div>` : ''}
-          <div class="one">${esc(b.oneLiner)}</div>
-          ${b.progress != null ? `<div class="phase"><span>${esc(b.phase || '')}</span><div class="progress"><i style="width:${b.progress}%"></i></div><span>${b.progress}%</span></div>` : ''}
-          ${b.next?.length ? `<div><h3>${t('다음 할 일')}</h3>${b.next.map((n, i) => `
-            <div class="next-item"><div class="nt"><span class="num">${i + 1}</span><span>${esc(n.title)}</span></div>
-              ${n.why ? `<div class="why">${esc(n.why)}</div>` : ''}
-              ${n.prompt ? `<div class="np">${esc(n.prompt)}</div>` : ''}
-              <div style="display:flex;gap:6px;flex-wrap:wrap">
-                <button type="button" class="btn sm primary" data-dinsert="${i}">${t('입력창에 넣기')}</button>
-              </div>
-            </div>`).join('')}</div>` : ''}
-          ${b.lastDone?.length ? `<div><h3>${t('최근에 한 일')}</h3><ul>${b.lastDone.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
-          ${b.resumeTip ? `<div class="tip">💡 ${esc(b.resumeTip)}</div>` : ''}
-          <div class="small muted" style="display:flex;align-items:center;gap:8px">${t('AI 브리핑')} · ${ago(b.created)} <button type="button" class="btn sm ghost" style="margin-left:auto" data-dbrief="force">${t('다시 정리')}</button></div>
-        </div>` : `<div class="card brief" style="align-items:flex-start">
-          <div class="one">${t('어디까지 했더라? 🤔')}</div>
-          <div class="muted small">${t('최근 세션 대화·git 기록·문서를 읽고, 한 일과 다음 할 일을 정리해드려요. (20초 정도 걸려요)')}</div>
-          <button type="button" class="btn sm primary" data-dbrief="1">${t('AI로 정리하기')}</button>
-        </div>`;
-      bodyEl.innerHTML = `
-        <div class="seg" data-dstatus>${Object.entries(STATUS).map(([k, l]) => `<button type="button" class="${p.status === k ? 'on' : ''}" data-st="${k}">${l}</button>`).join('')}</div>
-        <div data-dbriefbox>${data.briefPending ? `<div class="card brief"><div class="phase"><div class="spinner"></div>${t('정리하는 중이에요…')}</div></div>` : briefHtml}</div>
-        <div class="section" data-dnote><div class="section-h"><h2>${t('메모')}</h2></div>
-          ${p.note ? `<button type="button" class="card memo" data-dnotecard>${esc(p.note)}</button>` : `<button type="button" class="memo-empty" data-dnotecard>📝 ${t('메모 남기기')}</button>`}
-        </div>`;
-      bodyEl.querySelectorAll('[data-dstatus] [data-st]').forEach((btn) => {
-        btn.onclick = async () => {
-          await api(`/api/projects/${encodeURIComponent(projectId)}/meta`, { body: { status: btn.dataset.st, snoozeDays: 0 } });
-          toast(t('「{s}」로 바꿨어요', { s: STATUS[btn.dataset.st] }));
-          load();
-        };
-      });
-      bodyEl.querySelectorAll('[data-dbrief]').forEach((btn) => {
-        btn.onclick = async () => {
-          bodyEl.querySelector('[data-dbriefbox]').innerHTML = `<div class="card brief"><div class="phase"><div class="spinner"></div>${t('정리하는 중이에요…')}</div></div>`;
-          try { await api(`/api/projects/${encodeURIComponent(projectId)}/brief${btn.dataset.dbrief === 'force' ? '?force=1' : ''}`, { method: 'POST' }); }
-          catch (e) { toast(e.message, true); }
-          load();
-        };
-      });
-      bodyEl.querySelectorAll('[data-dinsert]').forEach((btn) => {
-        btn.onclick = () => {
-          const n = b?.next?.[+btn.dataset.dinsert];
-          if (n) opts.onInsertPrompt?.(n.prompt || n.title);
-        };
-      });
-      const noteBtn = bodyEl.querySelector('[data-dnotecard]');
-      if (noteBtn) {
-        noteBtn.onclick = async () => {
-          const val = await promptSheet(t('메모'), p.note || '', { multiline: true, placeholder: t('예) 결제 붙이기 전에 약관 먼저 정리') });
-          if (val === undefined || val === (p.note || '')) return;
-          await api(`/api/projects/${encodeURIComponent(projectId)}/meta`, { body: { note: val } });
-          toast(t('메모를 저장했어요'));
-          load();
-        };
-      }
-    } else if (activeTab === 'sessions') {
+    if (activeTab === 'sessions') {
       const list = data.sessions || [];
       bodyEl.innerHTML = `<div style="display:flex;gap:6px"><button type="button" class="btn sm primary block" data-dnew>${ICON.plus}${t('이 프로젝트에 새 세션')}</button></div>
         <div class="card list" data-dsessions>${list.map((s) => {
@@ -1498,7 +1358,19 @@ function mountProjectDrawer(root, projectId, opts = {}) {
         };
       });
     } else if (activeTab === 'memory') {
-      bodyEl.innerHTML = '<div data-dmem></div>';
+      bodyEl.innerHTML = `<div class="section" data-dnote><div class="section-h"><h2>${t('메모')}</h2></div>
+          ${p.note ? `<button type="button" class="card memo" data-dnotecard>${esc(p.note)}</button>` : `<button type="button" class="memo-empty" data-dnotecard>📝 ${t('메모 남기기')}</button>`}
+        </div><div data-dmem></div>`;
+      const noteBtn = bodyEl.querySelector('[data-dnotecard]');
+      if (noteBtn) {
+        noteBtn.onclick = async () => {
+          const val = await promptSheet(t('메모'), p.note || '', { multiline: true, placeholder: t('예) 결제 붙이기 전에 약관 먼저 정리') });
+          if (val === undefined || val === (p.note || '')) return;
+          await api(`/api/projects/${encodeURIComponent(projectId)}/meta`, { body: { note: val } });
+          toast(t('메모를 저장했어요'));
+          load();
+        };
+      }
       renderMemoryPanel(bodyEl.querySelector('[data-dmem]'), p.id);
     } else if (activeTab === 'env') {
       const git = data.git;
@@ -1523,7 +1395,6 @@ function mountProjectDrawer(root, projectId, opts = {}) {
       root.querySelector('[data-ctx-name]').textContent = d.project.name;
       root.querySelector('[data-ctx-path]').textContent = shortPath(d.project.path);
       renderTab();
-      if (d.briefPending) setTimeout(() => { if (!destroyed) load(); }, 4000);
     } catch (e) {
       if (!destroyed && bodyEl) bodyEl.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
     }
@@ -3077,8 +2948,8 @@ function organizeSettings(view) {
   const groups = [
     ['appearance', t('화면 · 언어'), t('색상 테마와 화면 밝기, 표시 언어'), ICON.image, ['appearance']],
     ['workspace', t('작업 · 세션'), t('기본 폴더, 실행 권한과 세션 관리'), ICON.folder, ['workspace', 'sessions']],
-    ['notifications', t('알림 · 리마인더'), t('응답 알림과 잠자는 프로젝트 챙기기'), ICON.bell, ['notifications', 'reminders']],
-    ['ai', t('AI 브리핑 · 공유 메모리'), t('브리핑과 프로젝트 공유 메모리에 쓸 도구와 모델'), ICON.send, ['ai', 'memory']],
+    ['notifications', t('알림'), t('세션 응답 완료 푸시 알림'), ICON.bell, ['notifications']],
+    ['memory', t('프로젝트 공유 메모리'), t('공유 메모리 사용 여부와 정리에 쓸 도구·모델'), ICON.send, ['memory']],
     ['advanced', t('고급 · 회사 환경'), t('CLI 연결과 환경 변수'), ICON.more, ['advanced']],
     ['clis', t('AI 도구 지원 버전'), t('Baton이 검증한 CLI 버전과 설치된 버전'), ICON.check, ['clis']],
   ];
@@ -3113,8 +2984,6 @@ async function viewSettings() {
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   const isIOS = /iPhone|iPad/.test(navigator.userAgent);
   const sw = (k) => `<label class="switch"><input type="checkbox" data-k="${k}" ${s[k] ? 'checked' : ''}><i></i></label>`;
-  const hours = Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${s.nudgeHour === h ? 'selected' : ''}>${hourLabel(h)}</option>`).join('');
-  const briefModels = (G.state?.catalogs?.[s.briefTool]?.models || []).map((m) => `<option value="${esc(m.id)}" ${m.id === s.briefModel ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
   const memoryModels = (G.state?.catalogs?.[s.memoryTool]?.models || []).map((m) => `<option value="${esc(m.id)}" ${m.id === s.memoryModel ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
   v.innerHTML = `
     <div class="section" data-settings="general"><div class="card">
@@ -3156,23 +3025,11 @@ async function viewSettings() {
     <div class="section" data-settings="advanced"><div class="section-h"><h2>${t('회사 환경 · CLI 환경 변수')}</h2></div><div class="card" id="envbox"><div class="skeleton" style="height:60px;margin:14px"></div></div></div>
     <div class="section" data-settings="notifications"><div class="section-h"><h2>${t('알림')}</h2></div><div class="card">
       ${!ps.supported || (isIOS && !standalone) ? `<div class="setting"><div class="l"><b>${t('홈 화면에 추가해야 알림을 받을 수 있어요')}</b><span>${t('Safari 공유 버튼 → 「홈 화면에 추가」 → 추가된 Baton 앱에서 이 화면을 다시 열어주세요')}</span></div></div>`
-        : `<div class="setting"><div class="l"><b>${t('푸시 알림')}</b><span>${ps.sub ? t('이 기기에서 켜져 있어요') : t('응답 완료·잠자는 프로젝트 알림을 받아요')}</span></div>
+        : `<div class="setting"><div class="l"><b>${t('푸시 알림')}</b><span>${ps.sub ? t('이 기기에서 켜져 있어요') : t('세션 응답이 끝날 때 알림을 받아요')}</span></div>
             ${ps.sub ? `<button class="btn sm" id="ptest">${t('테스트')}</button><button class="btn sm ghost" id="poff">${t('끄기')}</button>` : `<button class="btn sm primary" id="pon">${t('켜기')}</button>`}</div>`}
       <div class="setting"><div class="l"><b>${t('응답 완료 알림')}</b><span>${t('세션 응답이 끝날 때마다 알려줘요 (PC 터미널 포함). 세션·프로젝트 ⋯ 메뉴에서 따로 끌 수 있어요')}</span></div>${sw('notifyOnRunDone')}</div>
       <div class="setting"><div class="l"><b>${t('새 버전 알림')}</b><span>${t('새 버전 알림은 비활성화되어 있어요. 아래 버전 항목에서 직접 확인할 수 있어요.')}</span></div><label class="switch"><input type="checkbox" aria-label="${t('새 버전 알림')}" disabled><i></i></label></div>
       ${!IS_MOBILE_UA && osNotifySupported() && Notification.permission === 'denied' ? `<div class="setting"><div class="l"><b>${t('이 브라우저에서 알림이 차단돼 있어요')}</b><span style="color:var(--warn)">${t('주소창 왼쪽 자물쇠 → 알림 → 허용으로 바꾼 뒤 새로고침해주세요')}</span></div></div>` : ''}
-    </div></div>
-    <div class="section" data-settings="reminders"><div class="section-h"><h2>${t('잊혀가는 프로젝트 챙기기 💤')}</h2></div><div class="card">
-      <div class="setting"><div class="l"><b>${t('하루 한 번 넛지')}</b><span>${t('멈춰 있는 프로젝트 하나를 골라 다음 할 일과 함께 알려줘요')}</span></div>${sw('nudgeEnabled')}</div>
-      <div class="setting"><div class="l"><b>${t('알림 시간')}</b></div><select data-k="nudgeHour" data-num>${hours}</select></div>
-      <div class="setting"><div class="l"><b>${t('며칠 쉬면 「잠자는」 프로젝트?')}</b></div><select data-k="staleDays" data-num>${[3, 5, 7, 10, 14, 21].map((n) => `<option ${s.staleDays === n ? 'selected' : ''} value="${n}">${n}${t('일')}</option>`).join('')}</select></div>
-      <div class="setting"><div class="l"><b>${t('같은 프로젝트 다시 알림 간격')}</b></div><select data-k="nudgeCooldownDays" data-num>${[3, 5, 7, 10, 14, 30].map((n) => `<option ${s.nudgeCooldownDays === n ? 'selected' : ''} value="${n}">${n}${t('일')}</option>`).join('')}</select></div>
-      <div class="setting"><div class="l"><b>${t('이만큼 지나면 알림 그만')}</b><span>${t('너무 오래된 건 보관 대상으로 봐요')}</span></div><select data-k="forgetDays" data-num>${[60, 90, 180, 365].map((n) => `<option ${s.forgetDays === n ? 'selected' : ''} value="${n}">${n}${t('일')}</option>`).join('')}</select></div>
-      <div class="setting"><div class="l"><b>${t('지금 한 번 받아보기')}</b><span>${t('브리핑을 만들고 알림을 보내요 (최대 30초)')}</span></div><button class="btn sm" id="nudgenow">${t('보내기')}</button></div>
-    </div></div>
-    <div class="section" data-settings="ai"><div class="section-h"><h2>${t('AI 브리핑')}</h2></div><div class="card">
-      <div class="setting"><div class="l"><b>${t('요약에 쓸 도구')}</b><span>${t('가볍고 빠른 모델을 추천해요')}</span></div><select data-k="briefTool">${INSTALLED().map((k) => [k, TOOL[k]]).map(([k, tl]) => `<option value="${k}" ${s.briefTool === k ? 'selected' : ''}>${tl.name}</option>`).join('')}</select></div>
-      <div class="setting"><div class="l"><b>${t('모델')}</b></div><select data-k="briefModel">${briefModels}</select></div>
     </div></div>
     <div class="section" data-settings="memory"><div class="section-h"><h2>${t('프로젝트 공유 메모리 🧠')}</h2></div><div class="card">
       <div class="setting"><div class="l"><b>${t('공유 메모리 사용')}</b><span>${t('같은 프로젝트의 AI CLI끼리 결정·규칙·진행 상태를 자동으로 공유해요. 프로젝트마다 따로 끌 수 있어요')}</span></div>${sw('sharedMemory')}</div>
@@ -3194,13 +3051,12 @@ async function viewSettings() {
     const k = el.dataset.k;
     const val = el.type === 'checkbox' ? el.checked : el.dataset.num !== undefined ? Number(el.value) : el.value;
     const patch = { [k]: val };
-    if (k === 'briefTool') patch.briefModel = '';
     if (k === 'memoryTool') patch.memoryModel = '';
     await api('/api/settings', { body: patch });
     if (el.dataset.reload !== undefined) { location.reload(); return; }
     await loadState();
     toast(t('저장했어요'));
-    if (k === 'briefTool' || k === 'memoryTool') viewSettings();
+    if (k === 'memoryTool') viewSettings();
   }));
   $$('[name="appearance"]', v).forEach(input => {
     input.onchange = () => window.BatonTheme.set(input.value);
@@ -3218,12 +3074,6 @@ async function viewSettings() {
   $('#pon') && ($('#pon').onclick = async () => { try { await enablePush(); viewSettings(); } catch (e) { toast(e.message, true); } });
   $('#poff') && ($('#poff').onclick = async () => { const sub = ps.sub; await api('/api/push/unsubscribe', { body: { endpoint: sub.endpoint } }); await sub.unsubscribe(); toast(t('알림을 껐어요')); viewSettings(); });
   $('#ptest') && ($('#ptest').onclick = async () => { const r = await api('/api/push/test', { method: 'POST' }); toast(t('{n}개 기기로 보냈어요', { n: r.sent })); });
-  $('#nudgenow').onclick = async (e) => {
-    e.target.disabled = true; e.target.innerHTML = '<div class="spinner"></div>';
-    try { const r = await api('/api/nudge/now', { method: 'POST' }); toast(r.nudge ? t('보냈어요! 알림을 확인해보세요') : t('지금은 잠자는 프로젝트가 없어요 👏')); }
-    catch (err) { toast(err.message, true); }
-    e.target.disabled = false; e.target.textContent = t('보내기');
-  };
   $('#reindex').onclick = async () => { await api('/api/refresh', { method: 'POST' }); toast(t('새로 읽었어요')); };
   envSection(v);
 }
@@ -3253,7 +3103,7 @@ async function viewInbox() {
   const v = shell({ title: t('알림'), fab: false });
   const d = await api('/api/events');
   v.innerHTML = d.items.length ? `<div class="card" style="margin-top:8px">${d.items.map((e) => `<a class="ev ${e.read ? '' : 'unread'}" href="${esc(e.url || '#/')}"><div class="b"><div class="tt">${esc(e.title)}</div>${e.body ? `<div class="bd">${esc(e.body)}</div>` : ''}<div class="tm">${ago(e.ts)}</div></div></a>`).join('')}</div>`
-    : `<div class="empty" style="padding-top:20vh"><b>${t('알림이 없어요')}</b>${t('응답 완료나 잠자는 프로젝트 소식이 여기에 쌓여요')}</div>`;
+    : `<div class="empty" style="padding-top:20vh"><b>${t('알림이 없어요')}</b>${t('세션 응답 완료나 시스템 알림이 여기에 쌓여요')}</div>`;
   if (d.unread) { await api('/api/events/read', { method: 'POST' }); if (G.state) G.state.unread = 0; $('.badge-dot')?.remove(); }
 }
 
@@ -5433,7 +5283,7 @@ async function viewScheduled() {
 
 // ---------------------------------------------------------------- boot
 WS = createDesktopWorkspace({
-  app, G, TOOL, STATUS, ICON, glyph, t, esc, ago, projectName, api, toast, sheet, pick, store,
+  app, G, TOOL, ICON, glyph, t, esc, ago, projectName, api, toast, sheet, pick, store,
   mountChatPane, mountNewChatPane, mountProjectDrawer, drawRunPill, render, isKeyboardField,
 });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
