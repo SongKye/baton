@@ -14,6 +14,7 @@ import {
   redactSecrets,
   isWorthExtracting,
   parseMemoryJson,
+  clipItemText,
   applyMemoryOps,
   recordTurn,
   withMemory,
@@ -63,9 +64,19 @@ try {
   // 3. 0-token pre-filter & malformed JSON handling
   assert.equal(isWorthExtracting([{ userText: '응 고마워', reply: '네!', files: [], qaPairs: [] }]), false, 'trivial ack skipped');
   assert.equal(isWorthExtracting([{ userText: '로그인은 JWT로 하자', reply: '알겠습니다.', files: [], qaPairs: [] }]), true, 'decision signal passes');
-  assert.equal(isWorthExtracting([{ userText: '수정해줘', reply: '완료', files: ['server/auth.js'], qaPairs: [] }]), true, 'file edit passes');
+  assert.equal(isWorthExtracting([{ userText: '수정해줘', reply: '완료', files: ['server/auth.js'], qaPairs: [] }]), false, 'bare file edit with no explanation skipped');
+  assert.equal(isWorthExtracting([{ userText: '로그인 화면 손봐줘', reply: '세션 만료 처리를 고쳤습니다. '.repeat(30), files: ['server/auth.js'], qaPairs: [] }]), true, 'file edit with a real explanation passes');
+  assert.equal(isWorthExtracting([{ userText: 'support 페이지 report 버튼 prefix 정리', reply: '변경하고 해결했습니다.', files: [], qaPairs: [] }]), false, 'support/report/prefix are not port/fix signals');
+  assert.equal(isWorthExtracting([{ userText: '왜 안 돼?', reply: 'root cause는 캐시 키 충돌입니다.', files: [], qaPairs: [] }]), true, 'lesson in the reply passes');
   assert.equal(isWorthExtracting([{ userText: '골라줘', reply: '완료', files: [], qaPairs: ['Q: Auth? -> A: JWT'] }]), true, 'AskUserQuestion answer passes');
   assert.equal(parseMemoryJson('not valid json at all'), null, 'broken JSON ignored');
+  const longItem = `${'가'.repeat(150)}로 결정했다. ${'나'.repeat(150)} 때문이다. ${'다'.repeat(150)}`;
+  const parsedLong = parseMemoryJson(JSON.stringify({ add: [{ kind: 'decision', text: longItem }] })).add[0].text;
+  assert.ok(parsedLong.endsWith('때문이다.'), 'over-long item is cut at a sentence end, not mid-word');
+  assert.ok(parsedLong.length <= 400, 'item stays within the hard limit');
+  const mid = `${'a'.repeat(330)} 까지 이어지는 설명`;
+  assert.equal(parseMemoryJson(JSON.stringify({ add: [{ kind: 'gotcha', text: mid }] })).add[0].text, mid, '330-char item is no longer cut at 260');
+  assert.ok(clipItemText('x'.repeat(500)).endsWith('…') && clipItemText('x'.repeat(500)).length === 400, 'no sentence end -> hard clip with ellipsis');
   assert.deepEqual(parseMemoryJson('Sure:\n{"add":[{"kind":"convention","text":"Use tabs","tags":["style","tabs"]}],"update":[],"remove":[]}').add[0].kind, 'feedback', 'kind alias normalized');
 
   // 4. L0 instant bridge + AskUserQuestion capture BEFORE L1 runs

@@ -77,6 +77,9 @@ const q = (sql) => db.prepare(sql);
 const VALID_KINDS = new Set(['decision', 'feedback', 'state', 'gotcha', 'reference']);
 const KIND_ALIASES = { convention: 'feedback', preference: 'feedback', rule: 'feedback', caution: 'gotcha', warning: 'gotcha', bug: 'gotcha', todo: 'state', progress: 'state', status: 'state', ref: 'reference', link: 'reference' };
 const MAX_INLINE_CHARS = 4000;
+// One memory item. The prompts ask for <= ITEM_TARGET_CHARS; MAX_ITEM_CHARS is the hard stop (same as manual edits).
+const ITEM_TARGET_CHARS = 300;
+const MAX_ITEM_CHARS = 400;
 const MAX_ACTIVITIES_PER_PROJECT = 60;
 const PORT_TIMEOUT_MS = 250;
 
@@ -439,14 +442,24 @@ function extractTurnFromRun(run) {
 }
 
 // ---------- 0-token pre-filter for L1 extraction ----------
-const SIGNAL_RE = /결정|규칙|컨벤션|앞으로|사용하|쓰자|쓰지\s*마|바꾸|변경|대신|유지|고정|금지|주의|버그|원인|해결|실패|에러|포트|인증|로그인|결제|배포|스키마|마이그레이션|브랜치|TODO|FIXME|decid|convent|instead|prefer|always|never|avoid|switch|migrat|port|auth|fix|bug|gotcha|caveat|workaround|architect|schema|deploy|remember/i;
+// What the USER says is the strongest signal (decisions, rules, corrections). English words get word
+// boundaries so "support"/"report"/"prefix"/"author" don't count as port/fix/auth.
+const USER_SIGNAL_RE = /결정|규칙|컨벤션|앞으로|하자|쓰자|쓰지\s*마|하지\s*마|사용하|바꾸|변경|대신|유지|고정|금지|주의|버그|원인|해결|실패|에러|포트|인증|로그인|결제|배포|스키마|마이그레이션|브랜치|기억해|TODO|FIXME|\b(?:decid\w*|convention|instead|prefer|always|never|avoid|switch|migrat\w*|ports?|auth\w*|bugs?|gotcha|caveat|workaround|architect\w*|schema|deploy\w*|remember)\b/i;
+// Assistant replies mention "변경/해결/fix" on almost every coding turn, so only count words that
+// usually mark a lesson or a choice.
+const REPLY_SIGNAL_RE = /원인|함정|우회|주의할|결정했|하기로\s*했|\b(?:root\s+cause|gotcha|caveat|workaround|pitfall|decided|instead\s+of)\b/i;
+const EDIT_TURN_MIN_CHARS = 400;
+const LONG_TURN_MIN_CHARS = 1500;
 
 export function isWorthExtracting(turns) {
   for (const t of turns) {
-    if (t.files?.length > 0) return true;
+    const size = (t.userText?.length || 0) + (t.reply?.length || 0);
     if (t.qaPairs?.length > 0) return true;
-    if (SIGNAL_RE.test(t.userText || '') || SIGNAL_RE.test(t.reply || '')) return true;
-    if ((t.userText?.length || 0) + (t.reply?.length || 0) >= 240) return true;
+    if (USER_SIGNAL_RE.test(t.userText || '')) return true;
+    if (REPLY_SIGNAL_RE.test(t.reply || '')) return true;
+    // A file edit with only "수정해줘 / 완료" has nothing durable to extract.
+    if (t.files?.length > 0 && size >= EDIT_TURN_MIN_CHARS) return true;
+    if (size >= LONG_TURN_MIN_CHARS) return true;
   }
   return false;
 }
@@ -473,6 +486,22 @@ async function callMemoryAi(prompt, label) {
   return oneShot({ tool, model, prompt, timeoutMs: 90_000, failLabel: label });
 }
 
+/**
+ * Clip a memory text without cutting a sentence in half: prefer the last sentence end that keeps at
+ * least half the limit, and fall back to a hard clip with an ellipsis.
+ */
+export function clipItemText(text, max = MAX_ITEM_CHARS) {
+  const s = oneLine(text || '');
+  if (s.length <= max) return s;
+  const head = s.slice(0, max);
+  let cut = -1;
+  const re = /(?:[.!?。](?=\s|$)|다\.|요\.)/g;
+  let m;
+  while ((m = re.exec(head))) cut = m.index + m[0].length;
+  if (cut >= Math.floor(max / 2)) return head.slice(0, cut).trim();
+  return clip(s, max);
+}
+
 export function parseMemoryJson(raw) {
   const text = String(raw || '');
   const s = text.indexOf('{');
@@ -486,7 +515,7 @@ export function parseMemoryJson(raw) {
         .filter((x) => x && typeof x.text === 'string' && x.text.trim())
         .map((x) => ({
           kind: normalizeKind(x.kind),
-          text: redactSecrets(clip(oneLine(x.text), 260)),
+          text: redactSecrets(clipItemText(x.text)),
           tags: x.tags ? redactSecrets(clip(oneLine(Array.isArray(x.tags) ? x.tags.join(' ') : String(x.tags)), 120)) : null,
         }))
     : [];
@@ -496,7 +525,7 @@ export function parseMemoryJson(raw) {
         .map((x) => ({
           id: Number(x.id),
           kind: x.kind ? normalizeKind(x.kind) : null,
-          text: redactSecrets(clip(oneLine(x.text), 260)),
+          text: redactSecrets(clipItemText(x.text)),
           tags: x.tags !== undefined ? redactSecrets(clip(oneLine(Array.isArray(x.tags) ? x.tags.join(' ') : String(x.tags || '')), 120)) : undefined,
         }))
     : [];
@@ -579,11 +608,14 @@ Today is ${today}. Write all memory texts in ${language}.
 
 ## Strict rules
 - NEVER store generic facts easily read from the codebase (e.g. "uses React", file lists).
+- NEVER store work history that git/GitHub already records: "PR #N opened/merged/reviewed", "commit X landed", "released vX", "posted review comments", "branch deleted", "tests/CI passed". If the event came with a durable reason or lesson (why an approach was rejected, what broke and why), store ONLY that reason/lesson as a decision or gotcha, without the event narrative.
+- \`state\` is only for unfinished work or open blockers. When that work is done or merged, \`remove\` the state item; do not rewrite it into "X is done".
+- Prefer \`update\` of an existing item on the same topic over \`add\`-ing a near-duplicate.
 - NEVER store secrets, API keys, passwords, tokens, or credentials.
 - NEVER modify or remove items marked [PINNED].
 - If a new decision contradicts or updates an existing item, use \`update\` (or \`remove\` if cancelled/completed).
 - Convert relative times ("yesterday", "just now") to absolute dates (${today}).
-- Keep each item to 1-2 concise sentences. Include 2-5 space-separated search keywords/file names in \`tags\`.
+- Keep each item to 1-2 concise sentences, at most ${ITEM_TARGET_CHARS} characters (longer text is cut off). Include 2-5 space-separated search keywords/file names in \`tags\`.
 - If nothing durable changed, return empty arrays.${compactRule}
 - Output ONLY one valid JSON object with no markdown fences or explanation:
 {"add":[{"kind":"decision|feedback|gotcha|state|reference","text":"...","tags":"kw1 kw2"}],"update":[{"id":1,"kind":"...","text":"...","tags":"..."}],"remove":[2]}
@@ -611,12 +643,13 @@ function buildDreamPrompt({ pinned, editable, git, activities, language }) {
   return `You are running a periodic memory consolidation ("Dream") pass for a coding project's shared AI memory.
 Today is ${today}. Write all text values in ${language}.
 
-## Goals (4-phase consolidation)
-1. Merge duplicate or overlapping entries into a single sharper entry (keep one id via \`update\`, \`remove\` the redundant ids).
+## Goals
+1. Merge duplicate or overlapping entries into a single sharper entry (keep one id via \`update\`, \`remove\` the redundant ids). A merged text must stay within ${ITEM_TARGET_CHARS} characters (longer text is cut off): rewrite it tighter instead of concatenating, and leave entries separate if they cannot fit.
 2. Remove outdated \`state\` entries that appear completed or superseded in git commits / recent activity.
-3. Resolve contradictions (keep the newer truth; if an editable entry contradicts a [PINNED] entry, remove or align the editable entry).
-4. Normalize relative dates ("yesterday", "earlier") into absolute dates, strip trivial code-obvious facts, and drop dead file references.
-5. NEVER include any [PINNED] id in \`update\` or \`remove\`. NEVER invent facts. Target <= 25 crisp, high-signal entries.
+3. Remove entries that only record work history git/GitHub already shows (PR opened/merged/reviewed, commits landed, releases, review comments posted, CI passed). If such an entry also holds a non-obvious reason or lesson, \`update\` it to keep only that reason/lesson as a decision or gotcha.
+4. Resolve contradictions (keep the newer truth; if an editable entry contradicts a [PINNED] entry, remove or align the editable entry).
+5. Normalize relative dates ("yesterday", "earlier") into absolute dates, strip trivial code-obvious facts, and drop dead file references.
+6. NEVER include any [PINNED] id in \`update\` or \`remove\`. NEVER invent facts. Target <= 25 crisp, high-signal entries.
 
 Output ONLY one valid JSON object:
 {"update":[{"id":1,"kind":"decision|feedback|gotcha|state|reference","text":"...","tags":"..."}],"remove":[2,3],"add":[]}
@@ -955,7 +988,7 @@ export async function withMemory({ tool, sessionId = null, cwd, prompt, excludeS
     const kept = [];
     let used = head.length + 2;
     for (const ln of lines) {
-      const c = clip(ln, 320);
+      const c = clip(ln, MAX_ITEM_CHARS + 80);
       if (used + c.length + 1 > budget) break;
       kept.push(c);
       used += c.length + 1;
@@ -1177,7 +1210,7 @@ export function listMemory(project, { query = '' } = {}) {
 }
 
 export async function addMemoryItem(project, { kind = 'decision', text, tags = null, pinned = false, sourceKey = 'user', branch = null } = {}) {
-  const clean = redactSecrets(clip(oneLine(text || ''), 400));
+  const clean = redactSecrets(clipItemText(text || ''));
   if (!clean) throw new Error('empty memory text');
   const k = normalizeKind(kind);
   const seq = nextSeq(project);
@@ -1198,7 +1231,7 @@ export async function updateMemoryItem(project, id, patch = {}) {
   const cur = q('SELECT * FROM project_memory WHERE id = ? AND project = ? AND removed = 0').get(Number(id), project);
   if (!cur) return null;
   const nextKind = patch.kind !== undefined ? normalizeKind(patch.kind) : cur.kind;
-  const nextText = patch.text !== undefined ? redactSecrets(clip(oneLine(patch.text), 400)) : cur.text;
+  const nextText = patch.text !== undefined ? redactSecrets(clipItemText(patch.text)) : cur.text;
   if (!nextText) throw new Error('empty memory text');
   const nextTags = patch.tags !== undefined ? (patch.tags ? redactSecrets(clip(oneLine(patch.tags), 120)) : null) : cur.tags;
   const nextPinned = patch.pinned !== undefined ? (patch.pinned ? 1 : 0) : cur.pinned;

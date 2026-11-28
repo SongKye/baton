@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- **Shared memory keeps fewer, better items.** Merged items are no longer cut off mid-sentence at 260 characters (the limit is now 400 and cuts at a sentence end). The extractor and the ✨ Dream cleanup now drop plain work history that git already records (PRs opened or merged, reviews posted, releases) and keep only the reason or lesson behind it. Turns with nothing to remember, such as a small edit with no explanation, no longer trigger a background extraction call.
+
 ## [0.14.0] - 2026-11-28
 
 ### Added
