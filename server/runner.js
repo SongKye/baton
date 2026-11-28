@@ -9,6 +9,7 @@
 //   {t:'mcp', servers}           MCP servers the CLI loaded for this run ([{name, status}], Claude only)
 //   {t:'done', ok, error, result, cost, usage, durationMs}
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { spawnCli, IS_WIN } from './platform.js';
@@ -21,7 +22,7 @@ import { agyArtifactsInArgs, agyArtifactBlock } from './sources/agy.js';
 import { getKV, setKV, patchSessionMeta } from './store.js';
 import { codexDefaultFallback } from './providers.js';
 import { clip, ONESHOT_DIR, ROOT } from './util.js';
-import { noteMcpStatus } from './mcp.js';
+import { noteMcpStatus, stripJsonc, isServer } from './mcp.js';
 import { createRunEvents } from './run-events.js';
 import { claudePermArgs, codexPermArgs, agyPermArgs, opencodePermArgs, codexSandboxBlock, tomlString } from './permissions.js';
 import { normalizeAskQuestions } from './mcp-ask.js';
@@ -142,26 +143,53 @@ const OPENCODE_RUN = ['run', '--format', 'json', '--standalone'];
 const OPENCODE_V1_USAGE = /^opencode run \[message\.\.\]/m;
 const opencodeV1Error = () => tr('OpenCode 1은 더 이상 지원하지 않아요. 설정 → 시작하기에서 OpenCode를 업데이트해주세요');
 
-/** Merge Baton's per-run `baton_ask` MCP server into any pre-existing OPENCODE_CONFIG_CONTENT JSON. */
-function opencodeAskConfig(askMcp, existingRaw = process.env.OPENCODE_CONFIG_CONTENT) {
+const isPlainObj = (v) => Boolean(v && typeof v === 'object' && !Array.isArray(v));
+
+/**
+ * Merge Baton's per-run `baton_ask` MCP server into any pre-existing OPENCODE_CONFIG_CONTENT (JSON/JSONC).
+ * Returns null if `existingRaw` is non-empty and cannot be safely parsed, so user config is never wiped.
+ */
+export function opencodeAskConfig(askMcp, existingRaw = process.env.OPENCODE_CONFIG_CONTENT) {
   let base = {};
-  if (existingRaw) {
-    try { const parsed = JSON.parse(existingRaw); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) base = parsed; } catch { /* ignore malformed user env */ }
+  const trimmed = typeof existingRaw === 'string' ? existingRaw.trim() : '';
+  if (trimmed) {
+    try {
+      const parsed = JSON.parse(stripJsonc(trimmed));
+      if (!isPlainObj(parsed)) return null;
+      base = parsed;
+    } catch {
+      return null;
+    }
   }
-  const mcpBase = base.mcp && typeof base.mcp === 'object' && !Array.isArray(base.mcp) ? base.mcp : {};
-  const serversBase = mcpBase.servers && typeof mcpBase.servers === 'object' && !Array.isArray(mcpBase.servers) ? mcpBase.servers : {};
-  const permBase = base.permission && typeof base.permission === 'object' && !Array.isArray(base.permission) ? base.permission : {};
+  const mcpBase = isPlainObj(base.mcp) ? base.mcp : {};
+  const hasV2Servers = isPlainObj(mcpBase.servers) && !isServer(mcpBase.servers);
+  const mcpRest = {};
+  const legacyServers = {};
+  for (const [k, v] of Object.entries(mcpBase)) {
+    if (k === 'servers' && hasV2Servers) continue;
+    if (isServer(v)) legacyServers[k] = v;
+    else mcpRest[k] = v;
+  }
+  const serversBase = hasV2Servers ? mcpBase.servers : {};
+  const permPatch = Array.isArray(base.permissions)
+    ? { permissions: [...base.permissions, { action: 'baton_ask_*', resource: '*', effect: 'allow' }] }
+    : {
+        permission: typeof base.permission === 'string'
+          ? { '*': base.permission, 'baton_ask_*': 'allow' }
+          : { ...(isPlainObj(base.permission) ? base.permission : {}), 'baton_ask_*': 'allow' },
+      };
   return JSON.stringify({
     ...base,
-    permission: { ...permBase, 'baton_ask_*': 'allow' },
+    ...permPatch,
     mcp: {
-      ...mcpBase,
+      ...mcpRest,
       servers: {
+        ...legacyServers,
         ...serversBase,
         baton_ask: {
           type: 'local',
           command: [process.execPath, askMcp.script],
-          environment: { BATON_ASK_URL: askMcp.url, BATON_ASK_TOKEN: askMcp.token },
+          environment: { BATON_ASK_FILE: askMcp.tokenFile },
         },
       },
     },
@@ -175,7 +203,7 @@ function opencodeCmd({ sessionId, model, effort, perm, prompt, images, askMcp })
   if (model) args.push('--model', opencodeModelArg(model, effort));
   args.push(...opencodePermArgs(perm));
   for (const im of images || []) args.push('--file', im.path);
-  const env = askMcp ? { OPENCODE_CONFIG_CONTENT: opencodeAskConfig(askMcp) } : null;
+  const env = askMcp?.configContent ? { OPENCODE_CONFIG_CONTENT: askMcp.configContent } : null;
   return { bin: 'opencode', args, stdin: prompt, env };
 }
 
@@ -198,6 +226,7 @@ function claudeParser(run) {
   const toolIdx = new Map();
   return (e) => {
     if (e.type === 'system' && e.subtype === 'init') {
+      run.structuredAsk = true;
       if (e.session_id) run.setSession(e.session_id);
       if (e.model) run.model = run.model || e.model;
       if (Array.isArray(e.mcp_servers)) {
@@ -375,16 +404,36 @@ export function startRun({ tool, sessionId, cwd, prompt, wirePrompt = null, mode
     const existing = activeRunFor(`${tool}:${sessionId}`);
     if (existing) throw Object.assign(new Error(tr('이 세션은 이미 응답 중이에요')), { code: 'BUSY', runId: existing.id });
   }
-  const askToken = askEndpointUrl && MCP_ASK_TOOLS.has(tool) ? crypto.randomBytes(24).toString('hex') : null;
-  const askMcp = askToken ? { script: MCP_ASK_SCRIPT, url: askEndpointUrl, token: askToken } : null;
+  const runId = crypto.randomUUID();
+  let askToken = askEndpointUrl && MCP_ASK_TOOLS.has(tool) ? crypto.randomBytes(24).toString('hex') : null;
+  let askTokenFile = null;
+  let askMcp = askToken ? { script: MCP_ASK_SCRIPT, url: askEndpointUrl, token: askToken } : null;
+  if (askMcp && tool === 'opencode') {
+    const tokenFile = path.join(os.tmpdir(), `baton-ask-${runId}.json`);
+    const configContent = opencodeAskConfig({ script: MCP_ASK_SCRIPT, tokenFile });
+    if (configContent) {
+      fs.writeFileSync(tokenFile, JSON.stringify({ url: askEndpointUrl, token: askToken }), { mode: 0o600 });
+      askTokenFile = tokenFile;
+      askMcp = { ...askMcp, tokenFile, configContent };
+    } else {
+      askToken = null;
+      askMcp = null;
+    }
+  }
   const opts = { sessionId, model, effort, perm, prompt: wirePrompt || prompt, images, cwd, askMcp };
-  const cmd = BUILDERS[tool](opts);
+  let cmd;
+  try {
+    cmd = BUILDERS[tool](opts);
+  } catch (e) {
+    if (askTokenFile) fs.unlink(askTokenFile, () => {});
+    throw e;
+  }
   const eventLog = createRunEvents();
 
   const run = {
-    id: crypto.randomUUID(), tool, sessionId: sessionId || null, cwd, prompt, model: model || null, reqModel: model || null, effort: effort || null, images: images?.length || 0, perm: perm || 'auto',
+    id: runId, tool, sessionId: sessionId || null, cwd, prompt, model: model || null, reqModel: model || null, effort: effort || null, images: images?.length || 0, perm: perm || 'auto',
     title: title || null, status: 'running', startedAt: Date.now(), endedAt: null, events: eventLog.events, eventLog, result: null, error: null,
-    stderr: '', listeners: new Set(), child: null, lastText: '', askToken, askMcp: Boolean(askMcp), deferredAsk: null,
+    stderr: '', listeners: new Set(), child: null, lastText: '', askToken, askTokenFile, askMcp: Boolean(askMcp), structuredAsk: false, deferredAsk: null,
   };
   if (askToken) runByAskToken.set(askToken, run);
   run.emit = (ev) => {
@@ -471,6 +520,7 @@ export function startRun({ tool, sessionId, cwd, prompt, wirePrompt = null, mode
     run.denied = denied;
     run.emit({ t: 'done', ok, error, denied, limited: run.limited, hasMcpAsk: Boolean(run.deferredAsk), result: res.result ? clip(res.result, 4000) : null, cost: res.cost ?? null, usage: res.usage ?? null, durationMs: run.endedAt - run.startedAt });
     if (run.askToken) runByAskToken.delete(run.askToken);
+    if (run.askTokenFile) fs.unlink(run.askTokenFile, () => {});
     if (run.sessionId) activeByKey.delete(`${tool}:${run.sessionId}`);
     bus.emit('run_end', run);
     setTimeout(() => { run.listeners.clear(); runs.delete(run.id); eventLog.dispose(); }, 45 * 60 * 1000).unref();
@@ -496,11 +546,21 @@ export function answerRun(id, requestId, answers) {
   return ok;
 }
 
+/** Mark a running session as having successfully loaded Baton's MCP `ask_user` tool (called on `tools/list`). */
+export function markMcpAskReady(token) {
+  if (!token || typeof token !== 'string') return { ok: false, status: 401, error: 'missing token' };
+  const run = runByAskToken.get(token);
+  if (!run || run.status !== 'running') return { ok: false, status: 401, error: 'unknown or finished run' };
+  run.structuredAsk = true;
+  return { ok: true };
+}
+
 /** Receive structured questions from Baton's non-blocking stdio MCP `ask_user` server. */
 export function submitMcpAsk(token, rawQuestions) {
   if (!token || typeof token !== 'string') return { ok: false, status: 401, error: 'missing token' };
   const run = runByAskToken.get(token);
   if (!run || run.status !== 'running') return { ok: false, status: 401, error: 'unknown or finished run' };
+  run.structuredAsk = true;
   if (run.deferredAsk) return { ok: false, status: 409, error: 'questions were already sent in this turn; end your turn and wait for the user reply' };
   const questions = normalizeAskQuestions(rawQuestions);
   if (!questions) return { ok: false, status: 400, error: 'invalid questions' };
@@ -530,9 +590,9 @@ export function stopRun(id) {
 // Ctrl+C or launchd's group kill along with Baton. End them whenever Baton exits; process.kill
 // is synchronous, so this works inside an 'exit' handler. Windows children are not detached.
 process.once('exit', () => {
-  if (IS_WIN) return;
   for (const run of runs.values()) {
-    if (run.status === 'running' && run.child?.pid) { try { process.kill(-run.child.pid, 'SIGTERM'); } catch { /* already exited */ } }
+    if (run.askTokenFile) { try { fs.unlinkSync(run.askTokenFile); } catch { /* already unlinked */ } }
+    if (!IS_WIN && run.status === 'running' && run.child?.pid) { try { process.kill(-run.child.pid, 'SIGTERM'); } catch { /* already exited */ } }
   }
 });
 

@@ -191,4 +191,16 @@ const rStrictPlan = detectStrict(strictKoreanPlan);
 assert.equal(rStrictPlan?.kind, 'single');
 assert.deepEqual(rStrictPlan.options.map((o) => o.label), ['안 A: Postgres', '안 B: SQLite']);
 
+// 10b. Strict mode word-boundary checks: ordinary words starting with "Option"/"Choice"/"안" must NOT match
+assert.equal(detectStrict(`Which features should we keep?\n- Optional logging\n- Optional tracing`), null, 'Optional must not match Option prefix');
+assert.equal(detectStrict(`Which view needs cleanup?\n- Options page\n- Options modal`), null, 'Options must not match Option prefix');
+assert.equal(detectStrict(`Which widget library should we inspect?\n- Choices.js\n- Choices UI`), null, 'Choices must not match Choice prefix');
+assert.equal(detectStrict(`어느 문서를 먼저 볼까요?\n- 안내 사항\n- 안전 점검`), null, 'Korean words starting with 안 must not match 안 A/1 prefix');
+const rStrictOptEn = detectStrict(`Which approach should we take?\n- Option 1: Fast path\n- Option 2: Safe path`);
+assert.equal(rStrictOptEn?.kind, 'single');
+assert.deepEqual(rStrictOptEn.options.map((o) => o.label), ['Option 1: Fast path', 'Option 2: Safe path']);
+const rStrictOptAlpha = detectStrict(`Which approach should we take?\n- Option A — Keep current\n- Option B — Rewrite`);
+assert.equal(rStrictOptAlpha?.kind, 'single');
+assert.deepEqual(rStrictOptAlpha.options.map((o) => o.label), ['Option A', 'Option B']);
+
 console.log('PASS: choice-parser regression suite (FAQ filtering, user prompts, A/B markers, mixed boundaries, tail references, strict mode, markdown headings)');

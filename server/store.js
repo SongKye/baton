@@ -120,6 +120,9 @@ export function allSessionMeta() {
   for (const r of q('SELECT * FROM session_meta').all()) map.set(r.key, r);
   return map;
 }
+export function getSessionMeta(key) {
+  return q('SELECT * FROM session_meta WHERE key = ?').get(key) || null;
+}
 /** Same patch for many sessions in one transaction (bulk hide from the list or the cleanup page). */
 export function patchSessionMetaMany(keys, patch) {
   db.exec('BEGIN');

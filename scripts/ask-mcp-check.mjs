@@ -125,7 +125,12 @@ try {
     import fs from 'node:fs';
     import { spawn } from 'node:child_process';
     const args = process.argv.slice(2);
+    const prompt = fs.readFileSync(0, 'utf8');
     if (process.env.FAKE_ARGS_OUT) fs.writeFileSync(process.env.FAKE_ARGS_OUT, JSON.stringify(args));
+    if (prompt.includes('__fail__')) {
+      console.log(JSON.stringify({ type: 'turn.failed', error: { message: 'simulated failure' } }));
+      process.exit(1);
+    }
     const envArg = args.find((a) => a.startsWith('mcp_servers.baton_ask.env='));
     const scriptArg = args.find((a) => a.startsWith('mcp_servers.baton_ask.args='));
     const cmdArg = args.find((a) => a.startsWith('mcp_servers.baton_ask.command='));
@@ -133,8 +138,11 @@ try {
     const tokM = envArg?.match(/BATON_ASK_TOKEN="([^"]+)"/);
     const script = scriptArg ? JSON.parse(scriptArg.slice('mcp_servers.baton_ask.args='.length))[0] : null;
     const cmd = cmdArg ? JSON.parse(cmdArg.slice('mcp_servers.baton_ask.command='.length)) : process.execPath;
-    console.log(JSON.stringify({ type: 'thread.started', thread_id: 'codex-ask-session-1' }));
-    if (urlM && tokM && script) {
+    const sid = args.includes('resume') ? args[args.length - 2] : 'codex-ask-session-1';
+    console.log(JSON.stringify({ type: 'thread.started', thread_id: sid }));
+    const readyOnly = prompt.includes('__ready_only__');
+    const skipMcp = prompt.includes('__no_mcp__');
+    if (!skipMcp && urlM && tokM && script) {
       const child = spawn(cmd, [script], { env: { ...process.env, BATON_ASK_URL: urlM[1], BATON_ASK_TOKEN: tokM[1] }, stdio: ['pipe', 'pipe', 'pipe'] });
       let b = '';
       const results = {};
@@ -142,10 +150,20 @@ try {
         child.stdout.setEncoding('utf8');
         child.stdout.on('data', (c) => {
           b += c;
-          for (const line of b.split('\\n')) {
+          const parts = b.split('\\n');
+          b = parts.pop();
+          for (const line of parts) {
             if (!line.trim()) continue;
             const m = JSON.parse(line);
             if (m.id === 1) {
+              child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 10, method: 'tools/list', params: {} }) + '\\n');
+            } else if (m.id === 10) {
+              if (readyOnly) {
+                child.stdin.end();
+                child.kill();
+                resolve(m);
+                return;
+              }
               child.stdin.write(JSON.stringify({
                 jsonrpc: '2.0', id: 2, method: 'tools/call',
                 params: {
@@ -175,7 +193,6 @@ try {
               resolve(m);
             }
           }
-          b = b.endsWith('\\n') ? '' : b.slice(b.lastIndexOf('\\n') + 1);
         });
         child.on('error', reject);
         child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'codex', version: '1' } } }) + '\\n');
@@ -204,7 +221,8 @@ try {
     for await (const c of req) chunks.push(c);
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
     const m = /^Bearer\s+([A-Za-z0-9._-]+)$/.exec(String(req.headers.authorization || ''));
-    const out = runner.submitMcpAsk(m?.[1] || '', body?.questions);
+    const token = m?.[1] || '';
+    const out = body?.ready === true ? runner.markMcpAskReady(token) : runner.submitMcpAsk(token, body?.questions);
     res.writeHead(out.ok ? 200 : (out.status || 400), { 'content-type': 'application/json' });
     res.end(JSON.stringify(out));
   });
@@ -281,17 +299,64 @@ try {
     assert.equal(v6Done.hasMcpAsk, true, 'IPv6 [::1] callback must succeed');
   }
 
-  // 5b. OpenCode per-run OPENCODE_CONFIG_CONTENT injection (preserves existing user config + allows baton_ask_*)
+  // 5b. Unit checks for opencodeAskConfig merge edge cases (scalar permission, V2 permissions, JSONC, legacy V1 mcp, malformed abort)
+  {
+    const sampleMcp = { script: MCP_SCRIPT, tokenFile: '/tmp/baton-ask-sample.json' };
+    // Scalar permission: "deny" must become { '*': 'deny', 'baton_ask_*': 'allow' }
+    const scalarOut = JSON.parse(runner.opencodeAskConfig(sampleMcp, JSON.stringify({ permission: 'deny', model: 'openai/gpt-5' })));
+    assert.deepEqual(scalarOut.permission, { '*': 'deny', 'baton_ask_*': 'allow' });
+    assert.equal(scalarOut.model, 'openai/gpt-5');
+    assert.equal(scalarOut.mcp.servers.baton_ask.environment.BATON_ASK_FILE, '/tmp/baton-ask-sample.json');
+    assert.equal(scalarOut.mcp.servers.baton_ask.environment.BATON_ASK_TOKEN, undefined, 'raw token must never appear in OPENCODE_CONFIG_CONTENT');
+
+    // V2 permissions array preserves prior deny rules and appends baton_ask_* allow rule last
+    const v2PermOut = JSON.parse(runner.opencodeAskConfig(sampleMcp, JSON.stringify({
+      permissions: [{ action: '*', resource: '*', effect: 'deny' }],
+    })));
+    assert.equal(v2PermOut.permission, undefined);
+    assert.deepEqual(v2PermOut.permissions, [
+      { action: '*', resource: '*', effect: 'deny' },
+      { action: 'baton_ask_*', resource: '*', effect: 'allow' },
+    ]);
+
+    // JSONC with comments + trailing commas must parse cleanly and preserve user config
+    const jsoncRaw = `{
+      // user comment
+      "model": "anthropic/claude-sonnet",
+      /* block comment */
+      "permission": "ask",
+    }`;
+    const jsoncOut = JSON.parse(runner.opencodeAskConfig(sampleMcp, jsoncRaw));
+    assert.equal(jsoncOut.model, 'anthropic/claude-sonnet');
+    assert.deepEqual(jsoncOut.permission, { '*': 'ask', 'baton_ask_*': 'allow' });
+
+    // Unparseable or non-object user config must abort injection cleanly (return null) so user env is never wiped
+    assert.equal(runner.opencodeAskConfig(sampleMcp, '{broken jsonc'), null);
+    assert.equal(runner.opencodeAskConfig(sampleMcp, '["not","an","object"]'), null);
+
+    // Legacy V1 sibling MCP entries are migrated into mcp.servers while non-server keys (e.g. timeout) remain on mcp
+    const legacyOut = JSON.parse(runner.opencodeAskConfig(sampleMcp, JSON.stringify({
+      mcp: { timeout: 30000, my_srv: { type: 'local', command: ['echo', 'hi'] } },
+    })));
+    assert.equal(legacyOut.mcp.timeout, 30000);
+    assert.equal(legacyOut.mcp.my_srv, undefined, 'legacy V1 server must be moved into mcp.servers');
+    assert.deepEqual(legacyOut.mcp.servers.my_srv, { type: 'local', command: ['echo', 'hi'] });
+    assert.equal(legacyOut.mcp.servers.baton_ask.type, 'local');
+  }
+
+  // 5c. OpenCode per-run OPENCODE_CONFIG_CONTENT injection (uses one-shot BATON_ASK_FILE, unlinks after boot, marks structuredAsk)
   const fakeOcScript = path.join(tmp, 'fake-opencode.mjs');
   await fs.writeFile(fakeOcScript, `
     import fs from 'node:fs';
     import { spawn } from 'node:child_process';
     const rawCfg = process.env.OPENCODE_CONFIG_CONTENT || '';
     if (process.env.FAKE_OC_CFG_OUT) fs.writeFileSync(process.env.FAKE_OC_CFG_OUT, rawCfg);
-    const cfg = rawCfg ? JSON.parse(rawCfg) : {};
+    let cfg = {};
+    try { cfg = rawCfg ? JSON.parse(rawCfg) : {}; } catch { cfg = {}; }
     const srv = cfg?.mcp?.servers?.baton_ask;
     console.log(JSON.stringify({ type: 'step_start', sessionID: 'ses_oc_ask_1' }));
-    if (srv?.command?.length >= 2 && srv?.environment?.BATON_ASK_URL && srv?.environment?.BATON_ASK_TOKEN) {
+    if (srv?.command?.length >= 2 && srv?.environment?.BATON_ASK_FILE) {
+      const tokenFile = srv.environment.BATON_ASK_FILE;
       const child = spawn(srv.command[0], srv.command.slice(1), {
         env: { ...process.env, ...srv.environment },
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -301,10 +366,17 @@ try {
         child.stdout.setEncoding('utf8');
         child.stdout.on('data', (c) => {
           b += c;
-          for (const line of b.split('\\n')) {
+          const parts = b.split('\\n');
+          b = parts.pop();
+          for (const line of parts) {
             if (!line.trim()) continue;
             const m = JSON.parse(line);
             if (m.id === 1) {
+              child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 10, method: 'tools/list', params: {} }) + '\\n');
+            } else if (m.id === 10) {
+              if (process.env.FAKE_OC_FILE_EXISTS_OUT) {
+                fs.writeFileSync(process.env.FAKE_OC_FILE_EXISTS_OUT, JSON.stringify({ existsAfterBoot: fs.existsSync(tokenFile) }));
+              }
               child.stdin.write(JSON.stringify({
                 jsonrpc: '2.0', id: 2, method: 'tools/call',
                 params: {
@@ -320,7 +392,6 @@ try {
               resolve(m);
             }
           }
-          b = b.endsWith('\\n') ? '' : b.slice(b.lastIndexOf('\\n') + 1);
         });
         child.on('error', reject);
         child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'opencode', version: '2' } } }) + '\\n');
@@ -338,25 +409,52 @@ try {
     { mode: 0o755 },
   );
   const ocCfgOut = path.join(tmp, 'oc-cfg.json');
-  process.env.FAKE_OC_CFG_OUT = ocCfgOut;
+  const ocFileOut = path.join(tmp, 'oc-file-check.json');
   const prevOcCfg = process.env.OPENCODE_CONFIG_CONTENT;
-  process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ theme: 'dark', mcp: { servers: { user_srv: { type: 'remote', url: 'https://example.com' } } } });
-  runner.setAskEndpoint(`http://127.0.0.1:${httpServer.address().port}/api/internal/ask`);
-  const ocRun = runner.startRun({ tool: 'opencode', cwd: tmp, prompt: 'pick runtime', perm: 'auto' });
-  const ocDone = await new Promise((resolve) => {
-    const listener = (ev) => { if (ev.t === 'done') { ocRun.listeners.delete(listener); resolve(ev); } };
-    ocRun.listeners.add(listener);
-  });
-  if (prevOcCfg === undefined) delete process.env.OPENCODE_CONFIG_CONTENT;
-  else process.env.OPENCODE_CONFIG_CONTENT = prevOcCfg;
-  assert.equal(ocDone.ok, true, `opencode run failed: ${ocDone.error}`);
-  assert.equal(ocDone.hasMcpAsk, true, 'opencode run must receive ask_user via OPENCODE_CONFIG_CONTENT');
-  const injectedOcCfg = JSON.parse(await fs.readFile(ocCfgOut, 'utf8'));
-  assert.equal(injectedOcCfg.theme, 'dark', 'existing OPENCODE_CONFIG_CONTENT keys must be preserved');
-  assert.equal(injectedOcCfg.mcp.servers.user_srv.url, 'https://example.com', 'existing user MCP servers must be preserved');
-  assert.equal(injectedOcCfg.permission['baton_ask_*'], 'allow');
-  assert.equal(ocRun.deferredAsk.questions[0].question, 'Node or Bun?');
-  assert.equal(runner.submitMcpAsk(ocRun.askToken, norm).ok, false, 'opencode ask token must expire after run finishes');
+  try {
+    process.env.FAKE_OC_CFG_OUT = ocCfgOut;
+    process.env.FAKE_OC_FILE_EXISTS_OUT = ocFileOut;
+    process.env.OPENCODE_CONFIG_CONTENT = `{
+      // preserve JSONC user config & scalar permission
+      "theme": "dark",
+      "permission": "deny",
+      "mcp": { "servers": { "user_srv": { "type": "remote", "url": "https://example.com" } } },
+    }`;
+    runner.setAskEndpoint(`http://127.0.0.1:${httpServer.address().port}/api/internal/ask`);
+    const ocRun = runner.startRun({ tool: 'opencode', cwd: tmp, prompt: 'pick runtime', perm: 'auto' });
+    const ocDone = await new Promise((resolve) => {
+      const listener = (ev) => { if (ev.t === 'done') { ocRun.listeners.delete(listener); resolve(ev); } };
+      ocRun.listeners.add(listener);
+    });
+    assert.equal(ocDone.ok, true, `opencode run failed: ${ocDone.error}`);
+    assert.equal(ocDone.hasMcpAsk, true, 'opencode run must receive ask_user via OPENCODE_CONFIG_CONTENT');
+    assert.equal(ocRun.structuredAsk, true, 'opencode run must mark structuredAsk after tools/list');
+    const injectedOcCfg = JSON.parse(await fs.readFile(ocCfgOut, 'utf8'));
+    assert.equal(injectedOcCfg.theme, 'dark', 'existing OPENCODE_CONFIG_CONTENT keys must be preserved');
+    assert.equal(injectedOcCfg.mcp.servers.user_srv.url, 'https://example.com', 'existing user MCP servers must be preserved');
+    assert.deepEqual(injectedOcCfg.permission, { '*': 'deny', 'baton_ask_*': 'allow' }, 'scalar deny permission must be preserved');
+    assert.equal(injectedOcCfg.mcp.servers.baton_ask.environment.BATON_ASK_TOKEN, undefined, 'token must not leak into OPENCODE_CONFIG_CONTENT');
+    assert.equal(JSON.parse(await fs.readFile(ocFileOut, 'utf8')).existsAfterBoot, false, 'BATON_ASK_FILE must be unlinked on MCP boot');
+    assert.equal(ocRun.deferredAsk.questions[0].question, 'Node or Bun?');
+    assert.equal(runner.submitMcpAsk(ocRun.askToken, norm).ok, false, 'opencode ask token must expire after run finishes');
+
+    // Malformed user OPENCODE_CONFIG_CONTENT must abort injection and preserve the raw env verbatim
+    const rawBroken = '{ user broken jsonc';
+    process.env.OPENCODE_CONFIG_CONTENT = rawBroken;
+    const ocRawRun = runner.startRun({ tool: 'opencode', cwd: tmp, prompt: 'no injection', perm: 'auto' });
+    const ocRawDone = await new Promise((resolve) => {
+      const listener = (ev) => { if (ev.t === 'done') { ocRawRun.listeners.delete(listener); resolve(ev); } };
+      ocRawRun.listeners.add(listener);
+    });
+    assert.equal(ocRawDone.ok, true);
+    assert.equal(ocRawRun.structuredAsk, false, 'aborted injection must not mark structuredAsk');
+    assert.equal(await fs.readFile(ocCfgOut, 'utf8'), rawBroken, 'malformed OPENCODE_CONFIG_CONTENT must pass through untouched');
+  } finally {
+    delete process.env.FAKE_OC_CFG_OUT;
+    delete process.env.FAKE_OC_FILE_EXISTS_OUT;
+    if (prevOcCfg === undefined) delete process.env.OPENCODE_CONFIG_CONTENT;
+    else process.env.OPENCODE_CONFIG_CONTENT = prevOcCfg;
+  }
 
   runner.setAskEndpoint(null);
 
@@ -426,11 +524,49 @@ try {
     assert.equal(okDel.status, 200);
     assert.equal((await getSess()).pendingAsk, null);
 
-    // askMcpStrict: true when ask_mcp_at is fresh (run came from Baton with ask tooling), false when session was updated later outside Baton
+    // askMcpStrict: true when ask_mcp_at is fresh (run came from Baton with verified ask tooling), false when session was updated later outside Baton
     store.patchSessionMeta(`codex:${sid}`, { ask_mcp_at: Date.now() + 60_000 });
     assert.equal((await getSess()).askMcpStrict, true);
     store.patchSessionMeta(`codex:${sid}`, { ask_mcp_at: Date.now() - 60_000 });
     assert.equal((await getSess()).askMcpStrict, false);
+
+    // Helper to trigger a real resumed run on the isolated Baton server and wait for it to finish
+    const runAndWait = async (prompt) => {
+      const r = await fetch(`${base}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tool: 'codex', sessionId: sid, prompt }),
+      });
+      assert.equal(r.status, 200);
+      const { run: created } = await r.json();
+      for (let i = 0; i < 50; i++) {
+        await new Promise((res) => setTimeout(res, 100));
+        const { runs } = await (await fetch(`${base}/api/runs`)).json();
+        const cur = runs.find((x) => x.id === created.id);
+        if (cur && cur.status !== 'running') return cur;
+      }
+      throw new Error(`run ${created.id} did not finish in time`);
+    };
+
+    // Failed resumed run must NOT overwrite prior ask_mcp_at=null (terminal reply keeps its fallback buttons)
+    store.patchSessionMeta(`codex:${sid}`, { ask_mcp_at: null });
+    const fail1 = await runAndWait('__fail__');
+    assert.equal(fail1.status, 'error');
+    assert.equal((await getSess()).askMcpStrict, false, 'failed run must not flip askMcpStrict to true');
+
+    // Completed run where MCP ask_user never booted (__no_mcp__) must NOT enable strict mode
+    const noMcp = await runAndWait('__no_mcp__');
+    assert.equal(noMcp.status, 'done');
+    assert.equal((await getSess()).askMcpStrict, false, 'run without verified MCP tools/list must keep askMcpStrict=false');
+
+    // Completed run where MCP ask_user completes tools/list (__ready_only__) enables strict mode even without calling ask_user
+    const readyOnly = await runAndWait('__ready_only__');
+    assert.equal(readyOnly.status, 'done');
+    assert.equal((await getSess()).askMcpStrict, true, 'verified tools/list must enable askMcpStrict=true');
+
+    // Subsequent failed resumed run must preserve prior askMcpStrict=true
+    const fail2 = await runAndWait('__fail__');
+    assert.equal(fail2.status, 'error');
+    assert.equal((await getSess()).askMcpStrict, true, 'failed run must preserve prior askMcpStrict=true');
   } finally {
     batonSrv.kill();
   }

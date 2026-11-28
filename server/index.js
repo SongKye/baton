@@ -9,7 +9,7 @@ import { ROOT, HOME, DAY, clip, shortHome } from './util.js';
 import * as store from './store.js';
 import { decoratedSessions, projectsList, findSession, readMessages, getSnapshot, forceRefresh } from './indexer.js';
 import { gitInfo, projectRoot, projectFingerprint } from './projects.js';
-import { startRun, getRun, stopRun, answerRun, listRuns, publicRun, activeRunFor, bus, setAskEndpoint, submitMcpAsk } from './runner.js';
+import { startRun, getRun, stopRun, answerRun, listRuns, publicRun, activeRunFor, bus, setAskEndpoint, markMcpAskReady, submitMcpAsk } from './runner.js';
 import { catalogs, fromLine } from './models.js';
 import { schedule, listScheduled, cancelScheduled, nextReset, startScheduler } from './schedule.js';
 import { vapidPublicKey, notify, setPublicOrigin } from './push.js';
@@ -269,16 +269,17 @@ route('GET', '/api/sessions/:tool/:id', async (req, url, { tool, id }) => {
   const lk = linksOf(s.key);
   const describe = (l) => { const x = byKey.get(l.key); const [tool, ...rest] = l.key.split(':'); return { key: l.key, tool, id: rest.join(':'), title: x?.title || null, created: l.created }; };
   const links = { from: lk.from.map(describe), to: lk.to.map(describe) };
+  const continuedOutside = (at) => Boolean(s.updated && at && s.updated > at + 5000);
   let pendingAsk = run ? null : store.getPendingAsk(s.key);
   // If the session was continued outside Baton (e.g. PC terminal) after the ask turn ended, expire the stale card.
-  if (pendingAsk && s.updated && s.updated > pendingAsk.at + 5000) {
+  if (pendingAsk && continuedOutside(pendingAsk.at)) {
     store.clearPendingAsk(s.key, pendingAsk.requestId);
     pendingAsk = null;
   }
-  const metaRow = store.allSessionMeta().get(s.key);
-  // Runs where Baton provided structured ask tooling (Claude AskUserQuestion or MCP ask_user) use strict plain-text fallback
+  const metaRow = store.getSessionMeta(s.key);
+  // Runs where Baton verified structured ask tooling (Claude AskUserQuestion or loaded MCP ask_user) use strict plain-text fallback
   // unless the session was later continued outside Baton (e.g. PC terminal).
-  const askMcpStrict = Boolean(metaRow?.ask_mcp_at && !(s.updated && s.updated > metaRow.ask_mcp_at + 5000));
+  const askMcpStrict = Boolean(metaRow?.ask_mcp_at && !continuedOutside(metaRow.ask_mcp_at));
   return { session: sessionView(view), ...page, messages: page.messages.map((message) => {
     const { imageRefs, ...m } = slimMessage(message);
     return { ...m, ...(imageRefs?.length ? { imageUrls: imageRefs.map((ref) => `/api/sessions/claude/${encodeURIComponent(s.id)}/images/${ref}`) } : {}) };
@@ -800,8 +801,12 @@ bus.on('run_end', (run) => {
   else store.clearRunOutcome(key);
   if (run.deferredAsk && !run.stopped) store.setPendingAsk(key, run.deferredAsk);
   else store.clearPendingAsk(key);
-  // Record whether this completed Baton turn had structured ask tooling available (Claude AskUserQuestion or MCP ask_user).
-  store.patchSessionMeta(key, { ask_mcp_at: (run.tool === 'claude' || run.askMcp) ? Date.now() : null });
+  // Record whether this completed turn actually had verified structured ask tooling available.
+  // Failed, stopped, or empty-reply turns preserve the previous turn's strict-mode state.
+  const hasReply = Boolean(run.lastText || run.result?.result || run.deferredAsk);
+  if (run.status === 'done' && !run.stopped && hasReply) {
+    store.patchSessionMeta(key, { ask_mcp_at: run.structuredAsk ? Date.now() : null });
+  }
 });
 
 // ---------- notifications on run completion ----------
@@ -886,7 +891,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const m = /^Bearer\s+([A-Za-z0-9._-]+)$/.exec(String(req.headers.authorization || ''));
       const b = await body(req);
-      const out = submitMcpAsk(m?.[1] || '', b?.questions);
+      const token = m?.[1] || '';
+      const out = b?.ready === true ? markMcpAskReady(token) : submitMcpAsk(token, b?.questions);
       return send(res, out.ok ? 200 : (out.status || 400), out);
     } catch (e) {
       return send(res, 400, { ok: false, error: e.message });

@@ -17,7 +17,7 @@ const USER_ASKED_RE = /할까요|볼까요|좋을까요|원하시|원해|고르|
 const FAQ_KO_RE = /(?:무엇인가요|뭐가\s*좋|뭔가요|인가요|쓰이나요|동작하나요|작동하나요|그런가요|발생하나요|차이인가요|필요한가요|해야\s*하나요|포함되나요|지원하나요|가능한가요)\s*[?？]$/;
 const FAQ_EN_RE = /^(?:(?:what|why|where)\s+(?:is|are|does|can|gets?|do)\b|how\s+(?:does|do|it|to)\b|when\s+(?:is|does|to)\b|which\b.*\b(?:is|are|was|were)\b)/i;
 const EXPLICIT_MARKER_RE = /^(?:[A-Ha-h][.)]|\([A-Ha-h1-9]\))$/;
-const EXPLICIT_OPT_PREFIX_RE = /^(?:안|옵션|방안|선택지|option|choice)\s*[A-Za-z0-9]/i;
+const EXPLICIT_OPT_PREFIX_RE = /^(?:(?:안|옵션|방안|선택지)\s*(?:[A-Za-z]|\d+)|(?:option|choice)\s+(?:[A-Za-z]|\d+))(?=$|[\s:.)—–-])/i;
 const DECL_KO_RE = /(?:입니다|합니다|됩니다|있습니다|없습니다|겠습니다|드립니다|않습니다|못합니다|필요합니다|가능합니다|지원합니다|동작합니다|제공합니다|의미합니다|사용합니다|보여줍니다|해줍니다|했습니다|됐습니다|였습니다|예요|에요|어요|아요|해요|돼요|줘요|네요|군요|죠|이다|한다|된다|있다|없다)[.!?。]?$/;
 
 const stripMd = (x) => String(x || '').replace(/\*\*|__|`/g, '').trim();

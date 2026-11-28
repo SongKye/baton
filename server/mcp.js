@@ -41,7 +41,7 @@ function cached(file, parse) {
 export const readJson = (f) => cached(f, (t) => JSON.parse(t));
 /** JSON with comments / trailing commas (opencode.jsonc, VS Code-style files). */
 export const readJsonc = (f) => cached(f, (t) => JSON.parse(stripJsonc(t)));
-function stripJsonc(t) {
+export function stripJsonc(t) {
   let out = '', i = 0, str = false;
   while (i < t.length) {
     const c = t[i];
@@ -54,7 +54,7 @@ function stripJsonc(t) {
   return out.replace(/,(\s*[}\]])/g, '$1');
 }
 const readToml = (f) => cached(f, parseToml);
-const isServer = (v) => v && typeof v === 'object' && !Array.isArray(v) && Boolean(v.type || v.command || v.url || v.serverUrl || v.httpUrl);
+export const isServer = (v) => v && typeof v === 'object' && !Array.isArray(v) && Boolean(v.type || v.command || v.url || v.serverUrl || v.httpUrl);
 /** OpenCode keeps servers under "mcp" (until 2026) or "mcp.servers" (V2, next to "mcp.timeout"). */
 export function opencodeServers(cfg) {
   const m = cfg?.mcp;

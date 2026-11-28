@@ -1,6 +1,6 @@
 // Baton — mobile-first PWA front-end (no build step).
 import { createDesktopWorkspace, WS_ICON } from './workspace.js?v=1';
-import { parseChoices, parseQuestions } from './choice-parser.js?v=2';
+import { parseChoices, parseQuestions } from './choice-parser.js?v=3';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const app = $('#app');

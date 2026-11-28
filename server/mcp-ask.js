@@ -3,6 +3,7 @@
 // Spawned per-run by CLIs that support per-invocation MCP config (starting with Codex `-c mcp_servers.*`).
 // Delivers structured questions out-of-band to Baton's localhost endpoint using a per-run bearer token,
 // then immediately instructs the agent to end its turn so MCP tool timeouts never interrupt long user pauses.
+import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 export const ASK_USER_TOOL = {
@@ -80,6 +81,49 @@ export function normalizeAskQuestions(raw) {
 const DEFAULT_PROTOCOL = '2025-06-18';
 const SERVER_INFO = { name: 'baton-ask', version: '1.0.0' };
 
+let cachedFileConfig = null;
+let readyNotified = false;
+
+/**
+ * Load per-run Baton callback credentials.
+ * Prefers one-shot `BATON_ASK_FILE` (read into memory and immediately unlinked so grandchildren never inherit the token),
+ * falling back to `BATON_ASK_URL` + `BATON_ASK_TOKEN` env vars (Codex `-c mcp_servers.*.env` & direct tests).
+ */
+function getAskConfig() {
+  if (cachedFileConfig) return cachedFileConfig;
+  const file = process.env.BATON_ASK_FILE;
+  if (file) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (parsed?.url && parsed?.token) {
+        cachedFileConfig = { url: String(parsed.url), token: String(parsed.token) };
+      }
+    } catch { /* missing or unreadable file */ }
+    try { fs.unlinkSync(file); } catch { /* already removed */ }
+    if (cachedFileConfig) return cachedFileConfig;
+  }
+  return {
+    url: process.env.BATON_ASK_URL || '',
+    token: process.env.BATON_ASK_TOKEN || '',
+  };
+}
+
+/** Notify Baton once when the host CLI actually discovers `ask_user` (`tools/list`), enabling strict text fallback. */
+async function notifyReady() {
+  if (readyNotified) return;
+  const { url, token } = getAskConfig();
+  if (!url || !token) return;
+  readyNotified = true;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ ready: true }),
+      signal: AbortSignal.timeout(1500),
+    });
+  } catch { /* best-effort only */ }
+}
+
 async function handleToolCall(params) {
   const name = params?.name;
   if (name !== ASK_USER_TOOL.name) {
@@ -89,8 +133,7 @@ async function handleToolCall(params) {
   if (!questions) {
     return { isError: true, content: [{ type: 'text', text: 'Invalid arguments: provide 1-4 questions, each with a non-empty question and 2-6 options with labels.' }] };
   }
-  const url = process.env.BATON_ASK_URL;
-  const token = process.env.BATON_ASK_TOKEN;
+  const { url, token } = getAskConfig();
   if (!url || !token) {
     return { content: [{ type: 'text', text: 'Baton UI is not attached to this session. Ask the user directly in plain text instead.' }] };
   }
@@ -130,6 +173,7 @@ export async function handleRpcMessage(msg) {
     return { jsonrpc: '2.0', id, result: {} };
   }
   if (method === 'tools/list') {
+    await notifyReady();
     return { jsonrpc: '2.0', id, result: { tools: [ASK_USER_TOOL] } };
   }
   if (method === 'tools/call') {
@@ -140,6 +184,8 @@ export async function handleRpcMessage(msg) {
 }
 
 function startStdio() {
+  // Consume and unlink one-shot BATON_ASK_FILE immediately on boot before any user tool executes.
+  getAskConfig();
   let buf = '';
   let useContentLength = false;
   const send = (obj) => {
