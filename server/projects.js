@@ -52,7 +52,7 @@ export function projectDatePrefix(root) {
 }
 
 /** Group visible sessions into projects. */
-export function groupProjects(sessions, metaMap, briefs) {
+export function groupProjects(sessions, metaMap) {
   const map = new Map();
   for (const s of sessions) {
     const root = s.project;
@@ -60,15 +60,15 @@ export function groupProjects(sessions, metaMap, briefs) {
     let p = map.get(root);
     if (!p) {
       const meta = metaMap.get(root);
+      const archived = meta?.status === 'archived';
       p = {
         id: root,
         path: shortHome(root),
         name: meta?.name || projectName(root),
         started: projectDatePrefix(root),
-        status: meta?.status || 'active',
+        archived,
+        status: archived ? 'archived' : 'active',
         pinned: Boolean(meta?.pinned),
-        snoozeUntil: meta?.snooze_until || null,
-        lastNudged: meta?.last_nudged || null,
         note: meta?.note || null,
         muted: Boolean(meta?.muted),
         memoryOff: Boolean(meta?.memory_off),
@@ -96,15 +96,8 @@ export function groupProjects(sessions, metaMap, briefs) {
   for (const p of out) {
     if (p.firstActivity === Infinity) p.firstActivity = p.lastActivity;
     p.idleDays = Math.floor((Date.now() - p.lastActivity) / DAY);
-    const b = briefs.get(p.id);
-    p.brief = b ? { oneLiner: b.oneLiner, next: b.next?.[0] || null, progress: b.progress ?? null, created: b.created, fingerprint: b.fingerprint } : null;
   }
   return out;
-}
-
-/** Fingerprint used to decide if a brief is out of date. */
-export function projectFingerprint(p) {
-  return `${p.lastActivity}:${p.sessions}:${p.autoSessions}`;
 }
 
 const gitCache = new Map();
@@ -134,7 +127,7 @@ export async function gitInfo(root) {
   return value;
 }
 
-/** Readme / todo hints that help the brief. */
+/** Readme / todo hints for a project. */
 export function projectDocs(root) {
   const out = [];
   if (!root) return out;

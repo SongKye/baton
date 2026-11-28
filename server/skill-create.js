@@ -237,11 +237,11 @@ ${request || '(editing an existing skill; see the current version below)'}
 ${previous ? `\n--- current version ---\n${bundleText(previous)}\n\n--- requested changes ---\n${feedback || 'Improve it: sharper description, tighter and more useful body.'}\nRewrite the whole skill with these changes; keep what still fits. Output every file again, unchanged helper files included: a file you leave out is deleted.` : ''}`;
 }
 
-/** The CLI that writes drafts: the one asked for, else the brief/summary CLI, else any installed one. */
+/** The CLI that writes drafts: the one asked for, else the helper CLI, else any installed one. */
 export function writerTool(asked) {
   if (asked && TOOL_IDS.includes(asked) && binFor(asked)) return asked;
   const st = getSettings();
-  if (binFor(st.briefTool)) return st.briefTool;
+  if (binFor(st.memoryTool)) return st.memoryTool;
   const any = TOOL_IDS.find((id) => binFor(id));
   if (!any) throw fail(tr('먼저 설치해주세요'));
   return any;

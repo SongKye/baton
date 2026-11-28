@@ -1,4 +1,4 @@
-// Persistent state for Baton (pins, hides, project status, briefs, push subscriptions, settings).
+// Persistent state for Baton (pins, hides, project metadata, push subscriptions, settings).
 // Uses node:sqlite (built into Node 22.5+).
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
@@ -76,13 +76,6 @@ function getKVRaw(k) { return db.prepare('SELECT v FROM kv WHERE k = ?').get(k);
 const DEFAULT_SETTINGS = {
   lang: 'en',                   // UI language: 'en' (default) or 'ko'
   setupDone: false,             // onboarding finished or skipped
-  nudgeEnabled: true,
-  nudgeHour: 21,                // local hour to send the daily nudge
-  staleDays: 5,                 // a project is "dozing" after N idle days
-  forgetDays: 180,              // stop nudging after N days (probably abandoned)
-  nudgeCooldownDays: 10,        // don't nudge the same project again within N days
-  briefTool: 'claude',
-  briefModel: 'haiku',
   sharedMemory: true,
   memoryTool: 'claude',
   memoryModel: 'haiku',
@@ -190,25 +183,6 @@ export function patchProjectMeta(id, patch) {
        snooze_until=excluded.snooze_until, last_nudged=excluded.last_nudged, note=excluded.note, muted=excluded.muted, memory_off=excluded.memory_off`)
     .run(id, next.name ?? null, next.status || 'active', next.pinned ? 1 : 0, next.snooze_until ?? null, next.last_nudged ?? null, next.note ?? null, next.muted ? 1 : 0, next.memory_off ? 1 : 0);
   return next;
-}
-
-// ---------- briefs ----------
-export function getBrief(project) {
-  const r = q('SELECT * FROM briefs WHERE project = ?').get(project);
-  if (!r) return null;
-  try { return { ...JSON.parse(r.json), fingerprint: r.fingerprint, created: r.created }; } catch { return null; }
-}
-export function allBriefs() {
-  const map = new Map();
-  for (const r of q('SELECT * FROM briefs').all()) {
-    try { map.set(r.project, { ...JSON.parse(r.json), fingerprint: r.fingerprint, created: r.created }); } catch { /* skip */ }
-  }
-  return map;
-}
-export function saveBrief(project, fingerprint, obj) {
-  q(`INSERT INTO briefs (project, fingerprint, created, json) VALUES (?, ?, ?, ?)
-     ON CONFLICT(project) DO UPDATE SET fingerprint=excluded.fingerprint, created=excluded.created, json=excluded.json`)
-    .run(project, fingerprint, Date.now(), JSON.stringify(obj));
 }
 
 // ---------- push subscriptions ----------
