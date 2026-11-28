@@ -1,5 +1,6 @@
 // Baton — mobile-first PWA front-end (no build step).
 import { createDesktopWorkspace, WS_ICON } from './workspace.js?v=1';
+import { parseChoices, parseQuestions } from './choice-parser.js?v=1';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const app = $('#app');
@@ -1844,75 +1845,6 @@ function msgsHtml(msgs) {
   }).join('');
 }
 
-/**
- * "Question + list of choices" at the end of a reply -> { question, options } for quick-reply buttons.
- * For CLIs whose question tool doesn't reach Baton (Codex exec, Antigravity -p): they ask in plain text.
- * Deliberately strict, so a summary list followed by "shall I commit?" does not turn into buttons.
- */
-function parseChoices(text) {
-  const raw = String(text || '').replace(/\r/g, '');
-  if (/```\s*$/.test(raw.trim())) return null;
-  const lines = raw.split('\n').map((l) => l.trim());
-  while (lines.length && !lines[lines.length - 1]) lines.pop();
-  const OPT = /^(?:[-*•]|\d{1,2}[.)]|[A-Ha-h][.)]|\([A-Ha-h1-9]\))\s+(.+)$/;
-  const CHOOSE = /골라|고르|선택|어느|어떤|어떻게|중에|중 하나|which|choose|pick|select|prefer|or\b|또는|아니면/i;
-  const strip = (x) => x.replace(/\*\*|__|`/g, '').trim();
-  let end = lines.length, tail = null;
-  if (end && !OPT.test(lines[end - 1])) { tail = lines[end - 1]; end--; while (end && !lines[end - 1]) end--; }
-  const opts = [];
-  let i = end;
-  while (i > 0 && OPT.test(lines[i - 1])) { opts.unshift(lines[i - 1].match(OPT)[1]); i--; }
-  if (opts.length < 2 || opts.length > 6 || opts.some((o) => o.length > 120)) return null;
-  let j = i;
-  while (j > 0 && !lines[j - 1]) j--;
-  const before = j > 0 ? lines[j - 1] : '';
-  const isQ = (x) => /[?？]\**\s*$|[:：]\**\s*$/.test(x);
-  const q = tail ? (isQ(tail) && CHOOSE.test(tail) ? tail : null) : (isQ(before) ? before : null);
-  if (!q || q.length > 240) return null;
-  return { question: strip(q), options: opts.map(choiceOf) };
-}
-
-/**
- * Several "question + choices" blocks at the end of a reply -> [{ question, options }] (2+ questions), else null.
- * CLIs without a question tool that reaches Baton ask like this:
- *   1. Which database?        **Auth:** which provider?
- *      - Postgres             a) Google
- *      - SQLite               b) GitHub
- * Every block must be a real question (ends with "?", or ":" plus a choosing word) with 2-6 options.
- */
-function parseQuestions(text) {
-  const raw = String(text || '').replace(/\r/g, '');
-  if (/```\s*$/.test(raw.trim())) return null;
-  const lines = raw.split('\n').map((l) => l.trim());
-  while (lines.length && !lines[lines.length - 1]) lines.pop();
-  const OPT = /^(?:[-*•]|\d{1,2}[.)]|[A-Ha-h][.)]|\([A-Ha-h1-9]\))\s+(.+)$/;
-  const CHOOSE = /골라|고르|선택|어느|어떤|어떻게|중에|중 하나|which|choose|pick|select|prefer|또는|아니면/i;
-  const strip = (x) => x.replace(/\*\*|__|`/g, '').trim();
-  const qText = (x) => strip(x).replace(/^#{1,6}\s+/, '').replace(/^(?:Q\s*)?\d{1,2}[.)]\s+|^(?:Q|질문)\s*\d{1,2}\s*[.:)]\s*/i, '').trim();
-  const isQ = (x) => { const y = qText(x); return y.length > 1 && y.length <= 240 && (/[?？]$/.test(y) || (/[:：]$/.test(y) && CHOOSE.test(y))); };
-  // up to two closing lines ("Tell me and I'll start") after the last block
-  let end = lines.length, tail = 0;
-  while (end && (!lines[end - 1] || (!OPT.test(lines[end - 1]) && !isQ(lines[end - 1]) && tail < 2))) { if (lines[end - 1]) tail++; end--; }
-  const blocks = [];
-  let i = end;
-  for (;;) {
-    const opts = [];
-    while (i > 0 && OPT.test(lines[i - 1]) && !isQ(lines[i - 1])) { opts.unshift(lines[i - 1].match(OPT)[1]); i--; }
-    let j = i;
-    while (j > 0 && !lines[j - 1]) j--;
-    if (opts.length < 2 || opts.length > 6 || opts.some((o) => o.length > 120) || !j || !isQ(lines[j - 1])) break;
-    blocks.unshift({ question: qText(lines[j - 1]), options: opts.map(choiceOf) });
-    i = j - 1;
-    while (i > 0 && !lines[i - 1]) i--;
-  }
-  return blocks.length >= 2 ? blocks : null;
-}
-/** "**Postgres** — reliable, needs a server" -> { label: 'Postgres', full: '…' } */
-function choiceOf(o) {
-  const x = o.replace(/\*\*|__|`/g, '').trim();
-  const m = x.match(/^(.{1,50}?)\s+(?:—|–|-|:)\s+.+$/);
-  return { label: (m ? m[1] : x).replace(/^[A-Ha-h1-9][.)]\s+/, '').replace(/[.。]$/, ''), full: x };
-}
 /** The pager for questions asked in plain text; the answers go back as one ordinary message. */
 function textAskCard(qs, sendText) {
   const card = askPager(qs.map((q) => ({ question: q.question, header: '', multiSelect: false, options: q.options.map((o) => ({ label: o.label, description: o.full !== o.label ? o.full : '' })) })), {
