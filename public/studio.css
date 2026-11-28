@@ -357,12 +357,22 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 
 @media (min-width: 1100px) {
   /* ---------- project detail 2-column bento layout ---------- */
-  .project-bento { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr); gap: 24px; align-items: start; margin-top: 8px; }
+  .phead { flex-direction: row; align-items: center; justify-content: space-between; gap: 14px; margin-top: 6px; margin-bottom: 14px; }
+  .pmeta { flex-wrap: wrap; overflow: visible; padding-bottom: 0; }
+  .pacts { flex: none; margin-left: auto; }
+  .pacts .btn { flex: none; height: 34px; padding: 0 13px; }
+  .pacts .pacts-split { display: inline-flex; }
+  .proj-mtabs { display: none; }
+  .proj-stabs { display: grid; }
+  .pmem-preview { display: none !important; }
+  .project-bento { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(340px, 1fr); gap: 24px; align-items: start; margin-top: 4px; }
   .project-bento .project-main,
-  .project-bento .project-side { min-width: 0; display: flex; flex-direction: column; gap: 18px; }
-  .project-bento .section { margin: 0; }
-  .project-quick-bar { display: flex; gap: 8px; flex-wrap: wrap; }
-  .project-quick-bar .btn { flex: 1 1 auto; }
+  .project-bento .project-side { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+  .project-bento .section { margin: 0; order: 0 !important; }
+  .project-bento[data-mtab] [data-m]:not([data-m=""]) { display: block; }
+  .project-bento[data-mtab][data-stab="memory"] [data-s]:not([data-s="memory"]),
+  .project-bento[data-mtab][data-stab="env"] [data-s]:not([data-s="env"]) { display: none; }
+  .project-side #pmem .mem-list { max-height: 460px; overflow-y: auto; padding-right: 2px; }
 }
 
 @media (min-width: 1180px) {

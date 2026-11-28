@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Changed
+- **Project detail screen redesigned with tabs and compact shared memory.** Added a top summary & quick-action bar (Git branch/dirty state, dev server status, repo link, and `+ New session` / `Open latest session` / `Split view`). On mobile and narrow screens (`< 1100px`), project sections are organized into `Work` (sessions, memo, dev servers, and a 3-item shared memory preview), `Memory`, and `Env & Git` tabs. On desktop (`>= 1100px`), the 2-column layout keeps sessions, dev servers, and Git on the left while balancing the right column with a persistent memo above `Memory` / `Env & Git` tabs and a scrollable memory list. Shared memory now supports 8-item pagination, line clamping, pinned/auto filtering, and preserved search focus; empty linked services, skills, and MCP sections render as compact single-row cards.
+
 ### Removed
 - **Project status bar, dozing-project nudges, and AI project briefings.** Removed the 4-state segmented bar (`Active / Paused / Done / Archived`), daily dozing-project reminders (`server/nudge.js`, tab badge, Home cards, and Settings reminder options), and one-shot AI project briefings (`server/brief.js` and the top "Where was I?" card). Opening a project now jumps straight to its sessions, git log, memo, and shared memory. Old folders can still be hidden via **Hide from list (archive)** in the project `⋯` menu, with an **Archived** filter shown only when archived projects exist; previously paused/done projects stay visible as normal projects.
 
