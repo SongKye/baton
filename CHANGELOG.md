@@ -6,6 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Fixed
+- **No more "finished" notifications for chats that weren't running.** The session watcher treated any touch of a session file as work. Antigravity's empty `-wal` file changes whenever the database is merely opened, and a session id that appeared in several folders kept resetting the watcher, so pings arrived for long-finished chats, often two at once. A ping now needs new messages in the transcript.
 - **Shared memory keeps fewer, better items.** Merged items are no longer cut off mid-sentence at 260 characters (the limit is now 400 and cuts at a sentence end). The extractor and the ✨ Dream cleanup now drop plain work history that git already records (PRs opened or merged, reviews posted, releases) and keep only the reason or lesson behind it. Turns with nothing to remember, such as a small edit with no explanation, no longer trigger a background extraction call.
 
 ## [0.14.0] - 2026-11-28
