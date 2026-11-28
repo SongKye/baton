@@ -69,7 +69,8 @@ export async function listCursor() {
       const st = await statSafe(file);
       if (!st) continue;
       const wal = await statSafe(file + '-wal');
-      const stamp = `${st.mtimeMs}:${wal?.mtimeMs || 0}`;
+      // Sizes too: back-to-back WAL writes can land within one mtime tick.
+      const stamp = `${st.mtimeMs}:${st.size}:${wal?.mtimeMs || 0}:${wal?.size || 0}`;
       const c = cache.get(file);
       if (c && c.stamp === stamp) { out.push(c.row); continue; }
       let db;
@@ -87,7 +88,7 @@ export async function listCursor() {
       const row = {
         tool: 'cursor', id, // the chat folder name is what `cursor-agent --resume` takes
         title: meta.name && meta.name !== 'New Agent' ? meta.name : clip(oneLine(cleanPrompt(users[0] || '')), 80) || '(untitled)',
-        cwd, created: meta.createdAt || st.birthtimeMs, updated: Math.max(st.mtimeMs, wal?.mtimeMs || 0),
+        cwd, created: meta.createdAt || st.birthtimeMs, updated: Math.max(st.mtimeMs, wal?.size > 0 ? wal.mtimeMs : 0), // an empty -wal is touched by mere opens
         firstPrompt: clip(oneLine(cleanPrompt(users[0] || '')), 240), lastPrompt: clip(oneLine(cleanPrompt(users.length > 1 ? users[users.length - 1] : '')), 240),
         lastReply: clip(oneLine(lastAsst ? textOf(lastAsst.content) : ''), 400),
         model: meta.lastUsedModel || null, automated: !batonIds.has(id) && users.length === 0, file, size: st.size,

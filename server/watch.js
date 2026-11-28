@@ -59,8 +59,9 @@ export function watchStep(st, { now, mtime, updated = 0, busy = false, quietMs }
 }
 
 /**
- * What the "did new messages arrive" check compares: the newest message time from the transcript, or for
- * sources whose `updated` is only a file mtime (Cursor) the id of the newest message.
+ * What the "did new messages arrive" check compares. Sources set `progress` from conversation records only
+ * (Claude/Codex: newest user/assistant message time, Cursor: newest message rowid), so usage events, title
+ * changes and other bookkeeping don't count. Sources without it fall back to `updated`.
  */
 export function progressOf(s) {
   return Number(s?.progress ?? s?.updated) || 0;

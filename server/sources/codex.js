@@ -51,12 +51,13 @@ async function walk(dir, out) {
 }
 
 async function summarize(file, st, batonIds) {
-  const head = await headJsonl(file, 64 * 1024, 200);
+  // Small files are read whole (no line cap), bigger ones as a capped head plus the tail.
+  const small = st.size < 64 * 1024;
+  const head = await headJsonl(file, 64 * 1024, small ? Infinity : 200);
   const meta = head.find((e) => e.type === 'session_meta')?.payload;
   if (!meta) return null;
-  // The head stops at 200 lines even in a small file; read the tail then too so the latest reply is seen.
-  const tail = st.size > 64 * 1024 || head.length >= 200 ? await tailJsonl(file, 192 * 1024) : head;
-  let firstPrompt = null, lastPrompt = null, lastReply = null, updated = null, model = null;
+  const tail = small ? head : await tailJsonl(file, 192 * 1024);
+  let firstPrompt = null, lastPrompt = null, lastReply = null, updated = null, progress = 0, model = null;
   for (const e of head) {
     const u = userText(e);
     if (u && !firstPrompt) firstPrompt = cleanPrompt(u);
@@ -69,6 +70,8 @@ async function summarize(file, st, batonIds) {
     const a = assistantText(e);
     if (a) lastReply = a;
     if (e.type === 'event_msg' && e.payload?.type === 'task_complete' && e.payload.last_agent_message) lastReply = e.payload.last_agent_message;
+    // Only conversation records count as progress; token_count / rate-limit events don't.
+    if (e.timestamp && (u || a || (e.type === 'event_msg' && e.payload?.type === 'task_complete'))) progress = Date.parse(e.timestamp) || progress;
     if (e.type === 'turn_context' && e.payload?.model) model = e.payload.model;
   }
   // Images and long setup messages can push the first user event beyond the
@@ -94,6 +97,7 @@ async function summarize(file, st, batonIds) {
     cwd,
     created: Date.parse(meta.timestamp) || st.birthtimeMs,
     updated: updated || st.mtimeMs,
+    progress,
     firstPrompt: clip(oneLine(firstPrompt), 240),
     lastPrompt: clip(oneLine(lastPrompt), 240),
     lastReply: clip(oneLine(lastReply), 400),

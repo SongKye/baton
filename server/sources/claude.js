@@ -31,10 +31,11 @@ function isRealUserPrompt(e) {
 
 async function summarize(file, st) {
   const id = path.basename(file, '.jsonl');
-  const head = await headJsonl(file, 96 * 1024, 300);
-  // The head stops at 300 lines even in a small file, so a long run of short records also needs the tail;
-  // otherwise lastReply/updated would freeze at line 300.
-  const tail = st.size > 96 * 1024 || head.length >= 300 ? await tailJsonl(file, 256 * 1024) : head;
+  // A file under the head window is read whole in one go (no line cap: a long run of short records would
+  // otherwise freeze lastReply/updated at line 300). Bigger files read a capped head plus the tail.
+  const small = st.size < 96 * 1024;
+  const head = await headJsonl(file, 96 * 1024, small ? Infinity : 300);
+  const tail = small ? head : await tailJsonl(file, 256 * 1024);
   let cwd = null, created = null, entrypoint = null, firstPrompt = null, gitBranch = null;
   for (const e of head) {
     if (!cwd && e.cwd) cwd = e.cwd;
@@ -43,13 +44,14 @@ async function summarize(file, st) {
     if (!gitBranch && e.gitBranch) gitBranch = e.gitBranch;
     if (!firstPrompt && isRealUserPrompt(e)) firstPrompt = cleanPrompt(textOf(e.message.content));
   }
-  let aiTitle = null, customTitle = null, summaryTitle = null, lastPrompt = null, lastReply = null, updated = null, model = null, sidechainOnly = true, usedTools = false;
+  let aiTitle = null, customTitle = null, summaryTitle = null, lastPrompt = null, lastReply = null, updated = null, progress = 0, model = null, sidechainOnly = true, usedTools = false;
   const scan = (arr) => {
     for (const e of arr) {
       if (e.type === 'ai-title' && e.aiTitle) aiTitle = e.aiTitle;
       if (e.type === 'custom-title' && e.customTitle) customTitle = e.customTitle;
       if (e.type === 'summary' && e.summary) summaryTitle = e.summary;
       if (e.timestamp) updated = Date.parse(e.timestamp) || updated;
+      if ((e.type === 'user' || e.type === 'assistant') && e.timestamp) progress = Date.parse(e.timestamp) || progress;
       if (e.isSidechain === false) sidechainOnly = false;
       if (isRealUserPrompt(e)) lastPrompt = cleanPrompt(textOf(e.message.content));
       if (e.type === 'assistant' && !e.isSidechain) {
@@ -89,6 +91,8 @@ async function summarize(file, st) {
     cwd,
     created: created || st.birthtimeMs,
     updated: updated || st.mtimeMs,
+    // Time of the newest conversation message; bookkeeping records (titles, snapshots) don't move it.
+    progress,
     firstPrompt: clip(oneLine(firstPrompt), 240),
     lastPrompt: clip(oneLine(lastPrompt), 240),
     lastReply: clip(oneLine(lastReply), 400),
